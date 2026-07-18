@@ -423,23 +423,13 @@ public class ServerManagerService
             throw;
         }
 
-        if (!native)
-        {
-            proc.BeginOutputReadLine();
-            proc.BeginErrorReadLine();
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
 
-            // Output is captured in HighPop — hide any window the process creates.
-            // CreateNoWindow only suppresses the console host; some servers (e.g. Rust)
-            // still create a Win32 window via AllocConsole/CreateWindow internally.
-            // Poll until the window appears, then hide it completely.
-            _ = ApplyWindowStyleAsync(proc, SW_HIDE, 30);
-        }
-        else
-        {
-            // Native-console server: has its own useful console window.
-            // Minimize to taskbar without stealing focus — user can open it with Console button.
-            _ = ApplyWindowStyleAsync(proc, SW_SHOWMINNOACTIVE, 20);
-        }
+        // Rust output is captured in HighPop, so hide any window the process creates.
+        // CreateNoWindow suppresses the console host, while this also handles a window
+        // created later by RustDedicated via AllocConsole/CreateWindow.
+        _ = ApplyWindowStyleAsync(proc, SW_HIDE, 30);
 
         // Apply CPU affinity
         if (server.CpuAffinityMask != 0)
@@ -608,9 +598,8 @@ public class ServerManagerService
 
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-    private const int SW_HIDE            = 0; // hide window completely
-    private const int SW_SHOWMINNOACTIVE = 7; // minimize without stealing focus
-    private const int SW_RESTORE         = 9;
+    private const int SW_HIDE    = 0; // hide window completely
+    private const int SW_RESTORE = 9;
 
     public void ShowWindow(GameServer server)
     {
