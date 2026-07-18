@@ -27,6 +27,8 @@
     <Optimize>true</Optimize>
     <DebugType>embedded</DebugType>
     <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and '$(RuntimeIdentifier)' != ''">
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
@@ -64,7 +66,6 @@
   </ItemGroup>
 
 </Project>
-
 
 
 
