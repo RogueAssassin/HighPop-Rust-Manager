@@ -41,9 +41,6 @@
                             Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}"/>
                     <Button Content="💀" Style="{StaticResource DangerButton}" Margin="0,0,4,0" Width="36" Padding="0"
                             Command="{Binding KillCommand}" IsEnabled="{Binding CanStop}" ToolTip="Kill process immediately"/>
-                    <Button Content="🖥" Style="{StaticResource GhostButton}" Margin="0,0,4,0" Width="36" Padding="0"
-                            Command="{Binding ShowWindowCommand}" IsEnabled="{Binding IsRunning}" ToolTip="Bring server console to front"
-                            Visibility="{Binding UseNativeConsole, Converter={StaticResource BoolToVis}}"/>
                     <Button Content="↺" Style="{StaticResource GhostButton}" Margin="0,0,4,0" Width="36" Padding="0"
                             Command="{Binding RestartCommand}" IsEnabled="{Binding CanStop}" ToolTip="Restart"/>
                     <Button Content="{Binding Loc.BtnInstall}" Style="{StaticResource GhostButton}" Margin="0,0,4,0"
@@ -193,14 +190,6 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-
-                    <!-- Native console notice -->
-                    <Border Grid.Row="0" Background="{StaticResource BgSurface2Brush}"
-                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8"
-                            Visibility="{Binding UseNativeConsole, Converter={StaticResource BoolToVis}}">
-                        <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"
-                                   Text="⚠ This game runs in its own console window, so live game output isn't shown here. HighPop status messages (port checks, backups, scheduled tasks...) still appear below, and the command box still works if this game supports remote commands."/>
-                    </Border>
 
                     <!-- Filter bar -->
                     <Border Grid.Row="1" Background="{StaticResource BgSurfaceBrush}"
@@ -412,11 +401,7 @@
                                     <TextBox Text="{Binding Server.QueryPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
                                 </StackPanel>
 
-                                <StackPanel Grid.Row="6" Grid.Column="0">
-                                    <TextBlock Text="Steam port" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox Text="{Binding Server.SteamPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
-                                </StackPanel>
-                                <StackPanel Grid.Row="6" Grid.Column="2">
+                                <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="3">
                                     <TextBlock Text="Password" Style="{StaticResource FieldLabel}"/>
                                     <TextBox Text="{Binding Server.ServerPassword, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
                                 </StackPanel>
@@ -433,11 +418,6 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="3">
-                                    <TextBlock Text="GSLT (Login Token)" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox Text="{Binding Server.Gslt, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="3">
                                     <TextBlock Text="Extra start parameters" Style="{StaticResource FieldLabel}"/>
                                     <TextBox Text="{Binding Server.CustomArgs, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource DarkTextBox}"
@@ -447,7 +427,7 @@
                                 </StackPanel>
 
                                 <!-- Notes -->
-                                <StackPanel Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                                <StackPanel Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
                                     <TextBlock Text="Notes" Style="{StaticResource FieldLabel}"/>
                                     <TextBox Text="{Binding Server.Notes, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource DarkTextBox}"
@@ -742,7 +722,7 @@
                                 <TextBlock Text="Server Hygiene" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
                                 <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,10"
-                                           Text="Scans for leftover log files, Unreal Engine crash report folders and stray temp files from interrupted updates. Mod loader folders (BepInEx, MelonLoader, SML2) are skipped so their own logs never show up here. Only works while the server is stopped."/>
+                                           Text="Scans for leftover Rust log files, crash dumps, and interrupted-update temp files. Oxide and Carbon folders are always protected. Only works while the server is stopped."/>
                                 <Button Content="🧹 Scan &amp; clean up junk files" Style="{StaticResource GhostButton}"
                                         HorizontalAlignment="Left" Command="{Binding CleanupJunkFilesCommand}"/>
                             </StackPanel>
@@ -1036,15 +1016,7 @@
                                         <TextBlock Text="Build number" Style="{StaticResource FieldLabel}"/>
                                         <TextBlock Grid.Column="1" Text="{Binding InstalledVersionText}" FontWeight="SemiBold"/>
                                     </Grid>
-                                    <StackPanel Visibility="{Binding ShowUpdateCheckButton, Converter={StaticResource BoolToVis}}">
-                                        <Button Content="🔍 Check for update" Style="{StaticResource GhostButton}"
-                                                HorizontalAlignment="Left" Command="{Binding CheckForGameUpdateCommand}"/>
-                                        <TextBlock Text="{Binding UpdateCheckResult}" Margin="0,8,0,0" FontSize="12"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                   Visibility="{Binding UpdateCheckResult, Converter={StaticResource NullToVis}}"/>
-                                    </StackPanel>
                                     <TextBlock Text="SteamCMD checks for updates automatically every time you click Install/Update."
-                                               Visibility="{Binding ShowUpdateCheckButton, Converter={StaticResource InvBoolToVis}}"
                                                FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
@@ -1131,275 +1103,9 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Minecraft server JARs — visible for any Minecraft plugin -->
-                        <Border Style="{StaticResource Card}" Margin="0,0,0,16"
-                                Visibility="{Binding HasMinecraftSupport, Converter={StaticResource BoolToVis}}">
-                            <StackPanel>
-                                <TextBlock Text="Minecraft Server JAR" FontSize="14" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                                <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12">
-                                    Downloads and installs a server.jar. All options support Bukkit/Spigot plugins (except Vanilla and Fabric which use their own mod systems).
-                                </TextBlock>
-
-                                <!-- Paper -->
-                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Paper" FontWeight="SemiBold" FontSize="13"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="Best for plugin servers. Fastest, most stable Paper fork. Supports Bukkit/Spigot plugins."
-                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" Content="⬇ Install" Style="{StaticResource PrimaryButton}"
-                                                VerticalAlignment="Center" Margin="12,0,0,0"
-                                                Command="{Binding InstallPaperCommand}"
-                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- Spigot -->
-                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Spigot" FontWeight="SemiBold" FontSize="13"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="Classic plugin server. Compiled locally with BuildTools (requires Java + Git). Takes 5–10 min."
-                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" Content="⬇ Build &amp; Install" Style="{StaticResource PrimaryButton}"
-                                                VerticalAlignment="Center" Margin="12,0,0,0"
-                                                Command="{Binding InstallSpigotCommand}"
-                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- Purpur -->
-                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Purpur" FontWeight="SemiBold" FontSize="13"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="Paper fork with extra gameplay tweaks and config options. Supports all Paper/Bukkit plugins."
-                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" Content="⬇ Install" Style="{StaticResource PrimaryButton}"
-                                                VerticalAlignment="Center" Margin="12,0,0,0"
-                                                Command="{Binding InstallPurpurCommand}"
-                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- Fabric -->
-                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Fabric" FontWeight="SemiBold" FontSize="13"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="Best for mod packs. Lightweight, fast to update. Uses Fabric mods (not Bukkit plugins)."
-                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" Content="⬇ Install" Style="{StaticResource PrimaryButton}"
-                                                VerticalAlignment="Center" Margin="12,0,0,0"
-                                                Command="{Binding InstallFabricCommand}"
-                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- Forge -->
-                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="4" Padding="12,10" Margin="0,0,0,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Forge" FontWeight="SemiBold" FontSize="13"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="Industry-standard mod loader. Downloads and runs the official Forge installer automatically."
-                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" Content="⬇ Install" Style="{StaticResource PrimaryButton}"
-                                                VerticalAlignment="Center" Margin="12,0,0,0"
-                                                Command="{Binding InstallForgeCommand}"
-                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
-                                    </Grid>
-                                </Border>
-
-                                <!-- Vanilla -->
-                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="4" Padding="12,10" Margin="0,0,0,12">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Vanilla" FontWeight="SemiBold" FontSize="13"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                            <TextBlock Text="Official Mojang server. No plugins or mods. Always up-to-date with the latest release."
-                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" Content="⬇ Install" Style="{StaticResource GhostButton}"
-                                                VerticalAlignment="Center" Margin="12,0,0,0"
-                                                Command="{Binding InstallVanillaCommand}"
-                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
-                                    </Grid>
-                                </Border>
-
-                                <Button Content="📂 Open plugins folder" Style="{StaticResource GhostButton}"
-                                        HorizontalAlignment="Left"
-                                        Command="{Binding OpenPluginFolderCommand}"/>
-                            </StackPanel>
-                        </Border>
 
                     </StackPanel>
                 </ScrollViewer>
-            </TabItem>
-
-            <!-- ── SOURCEMOD PLUGINS ── -->
-            <TabItem Header="🔌 Plugins"
-                     Visibility="{Binding HasSourceModSupport, Converter={StaticResource BoolToVis}}"
-                     GotFocus="PluginsTab_GotFocus">
-                <Grid Background="{StaticResource BgDeepBrush}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Header -->
-                    <StackPanel Grid.Row="0" Margin="24,24,24,12">
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                            <TextBlock Text="SourceMod Plugins" Style="{StaticResource SectionHeader}" Margin="0"/>
-                            <Button Content="🔄 Refresh" Style="{StaticResource GhostButton}"
-                                    FontSize="11" Margin="16,0,0,0" VerticalAlignment="Center"
-                                    Command="{Binding RefreshSourceModCommand}"/>
-                        </StackPanel>
-                        <TextBlock Text="{Binding SourceModStatusText}" FontSize="12"
-                                   Foreground="{StaticResource TextMutedBrush}"/>
-                    </StackPanel>
-
-                    <!-- Two-column layout: Active | Disabled -->
-                    <Grid Grid.Row="1" Margin="24,0,24,24">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="16"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Active plugins -->
-                        <Border Grid.Column="0" Style="{StaticResource Card}" Padding="0">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-                                <Border Grid.Row="0" Background="{StaticResource BgSurface2Brush}"
-                                        Padding="12,8" CornerRadius="6,6,0,0">
-                                    <TextBlock Text="✅ Active" FontSize="12" FontWeight="SemiBold"
-                                               Foreground="{StaticResource AccentGreenBrush}"/>
-                                </Border>
-                                <ListBox Grid.Row="1" ItemsSource="{Binding SourceModActive}"
-                                         Background="Transparent" BorderThickness="0"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         MaxHeight="400">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                                           FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"
-                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="Disable"
-                                                        Style="{StaticResource GhostButton}" FontSize="11"
-                                                        Foreground="{StaticResource AccentYellowBrush}"
-                                                        Margin="8,0,0,0"
-                                                        CommandParameter="{Binding}"
-                                                        Command="{Binding DataContext.DisableSourceModPluginCommand,
-                                                            RelativeSource={RelativeSource AncestorType=ListBox}}"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                    <ListBox.ItemContainerStyle>
-                                        <Style TargetType="ListBoxItem">
-                                            <Setter Property="Padding" Value="12,6"/>
-                                            <Setter Property="Background" Value="Transparent"/>
-                                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        </Style>
-                                    </ListBox.ItemContainerStyle>
-                                </ListBox>
-                            </Grid>
-                        </Border>
-
-                        <!-- Disabled plugins -->
-                        <Border Grid.Column="2" Style="{StaticResource Card}" Padding="0">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
-                                </Grid.RowDefinitions>
-                                <Border Grid.Row="0" Background="{StaticResource BgSurface2Brush}"
-                                        Padding="12,8" CornerRadius="6,6,0,0">
-                                    <TextBlock Text="⏸ Disabled" FontSize="12" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextSecondaryBrush}"/>
-                                </Border>
-                                <ListBox Grid.Row="1" ItemsSource="{Binding SourceModDisabled}"
-                                         Background="Transparent" BorderThickness="0"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         MaxHeight="400">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                                           FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                <Button Grid.Column="1" Content="Enable"
-                                                        Style="{StaticResource GhostButton}" FontSize="11"
-                                                        Foreground="{StaticResource AccentGreenBrush}"
-                                                        Margin="8,0,0,0"
-                                                        CommandParameter="{Binding}"
-                                                        Command="{Binding DataContext.EnableSourceModPluginCommand,
-                                                            RelativeSource={RelativeSource AncestorType=ListBox}}"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                    <ListBox.ItemContainerStyle>
-                                        <Style TargetType="ListBoxItem">
-                                            <Setter Property="Padding" Value="12,6"/>
-                                            <Setter Property="Background" Value="Transparent"/>
-                                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        </Style>
-                                    </ListBox.ItemContainerStyle>
-                                </ListBox>
-                            </Grid>
-                        </Border>
-                    </Grid>
-                </Grid>
             </TabItem>
 
             <!-- ── SCHEDULE ── -->
@@ -1868,187 +1574,6 @@
                             </ControlTemplate>
                         </oxy:PlotView.DefaultTrackerTemplate>
                     </oxy:PlotView>
-                </Grid>
-            </TabItem>
-
-            <!-- ── WORKSHOP ── -->
-            <TabItem Header="🎮 Workshop"
-                     Visibility="{Binding HasWorkshop, Converter={StaticResource BoolToVis}}">
-                <Grid Background="{StaticResource BgDeepBrush}">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Toolbar -->
-                    <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}"
-                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
-                        <StackPanel>
-                            <!-- Search row -->
-                            <TextBlock Text="Search Steam Workshop" Style="{StaticResource FieldLabel}"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,4,0,8">
-                                <TextBox Style="{StaticResource DarkTextBox}" Width="280"
-                                         Text="{Binding WorkshopSearchQuery, UpdateSourceTrigger=PropertyChanged}"
-                                         Margin="0,0,6,0">
-                                    <TextBox.InputBindings>
-                                        <KeyBinding Key="Return" Command="{Binding SearchWorkshopCommand}"/>
-                                    </TextBox.InputBindings>
-                                </TextBox>
-                                <Button Content="🔍 Search" Style="{StaticResource PrimaryButton}"
-                                        Command="{Binding SearchWorkshopCommand}"
-                                        IsEnabled="{Binding WorkshopBusy, Converter={StaticResource InvBool}}"
-                                        Margin="0,0,8,0"/>
-                                <Button Content="↻ Refresh" Style="{StaticResource GhostButton}"
-                                        Command="{Binding RefreshWorkshopCommand}"
-                                        IsEnabled="{Binding WorkshopBusy, Converter={StaticResource InvBool}}"
-                                        Margin="0,0,8,0"/>
-                                <Button Content="⬆ Update All" Style="{StaticResource GhostButton}"
-                                        Command="{Binding UpdateAllModsCommand}"
-                                        IsEnabled="{Binding WorkshopBusy, Converter={StaticResource InvBool}}"
-                                        ToolTip="Re-download all active mods via SteamCMD"
-                                        Margin="0,0,8,0"/>
-                                <Button Content="🔍 Check Updates" Style="{StaticResource GhostButton}"
-                                        Command="{Binding CheckOutdatedModsCommand}"
-                                        IsEnabled="{Binding WorkshopBusy, Converter={StaticResource InvBool}}"
-                                        ToolTip="Compare installed mods against Steam — shows which ones have newer versions"/>
-                            </StackPanel>
-                            <!-- Direct ID install -->
-                            <TextBlock Text="Install by Workshop ID" Style="{StaticResource FieldLabel}"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                <TextBox Style="{StaticResource DarkTextBox}" Width="200"
-                                         Text="{Binding WorkshopItemId, UpdateSourceTrigger=PropertyChanged}"
-                                         FontFamily="Consolas" Margin="0,0,6,0"/>
-                                <Button Content="⬇ Install" Style="{StaticResource GhostButton}"
-                                        Command="{Binding InstallWorkshopItemCommand}"
-                                        IsEnabled="{Binding WorkshopBusy, Converter={StaticResource InvBool}}"/>
-                            </StackPanel>
-                            <TextBlock Text="{Binding WorkshopItemIdPreview}" FontSize="11" Margin="0,4,0,0"
-                                       Foreground="{StaticResource TextMutedBrush}"/>
-                            <!-- Busy indicator -->
-                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
-                                        Visibility="{Binding WorkshopBusy, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="⏳" FontSize="13" Margin="0,0,6,0"/>
-                                <TextBlock Text="Working..." FontSize="13" Foreground="{StaticResource AccentBlueBrush}"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Content area -->
-                    <Grid Grid.Row="1">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Installed mods (from DB) -->
-                        <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="16">
-                            <StackPanel>
-                                <TextBlock Text="Installed Mods" Style="{StaticResource SectionHeader}"/>
-                                <TextBlock Text="No mods installed." FontSize="13"
-                                           Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"
-                                           Visibility="{Binding WorkshopDbMods.Count, Converter={StaticResource ZeroToVis}, Mode=OneWay}"/>
-
-                                <!-- Outdated mods banner -->
-                                <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="6"
-                                        Background="#1ED29922" BorderBrush="#80D29922" BorderThickness="1"
-                                        Visibility="{Binding OutdatedMods.Count, Converter={StaticResource ZeroToInvVis}, Mode=OneWay}">
-                                    <StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <TextBlock Text="⚠ " FontSize="13" Foreground="#D29922"/>
-                                            <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="#D29922"
-                                                       Text="{Binding OutdatedMods.Count, StringFormat='{}{0} outdated mod(s) found'}"/>
-                                        </StackPanel>
-                                        <ItemsControl ItemsSource="{Binding OutdatedMods}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                                                               Text="{Binding ModName}" Margin="0,1"/>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <Button Content="⬆ Update Outdated" Style="{StaticResource PrimaryButton}"
-                                                HorizontalAlignment="Left" Margin="0,8,0,0"
-                                                Command="{Binding UpdateOutdatedModsCommand}"
-                                                IsEnabled="{Binding WorkshopBusy, Converter={StaticResource InvBool}}"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <ItemsControl ItemsSource="{Binding WorkshopDbMods}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Style="{StaticResource Card}" Margin="0,0,0,6">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <CheckBox Grid.Column="0" VerticalAlignment="Center" Margin="0,0,10,0"
-                                                              IsChecked="{Binding IsEnabled}"
-                                                              Command="{Binding DataContext.ToggleModEnabledCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                              CommandParameter="{Binding}"
-                                                              ToolTip="Enable/disable mod in startup args"/>
-                                                    <StackPanel Grid.Column="1">
-                                                        <TextBlock FontWeight="SemiBold" FontSize="13" Text="{Binding ModName}"/>
-                                                        <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}"
-                                                                   Text="{Binding ModId, StringFormat='ID: {0}'}"/>
-                                                        <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}"
-                                                                   Text="{Binding LastUpdated, StringFormat='Updated: {0:dd.MM.yyyy}'}"/>
-                                                    </StackPanel>
-                                                    <Button Grid.Column="2" Content="🗑" Style="{StaticResource DangerButton}"
-                                                            Width="36" Padding="0" VerticalAlignment="Center"
-                                                            Command="{Binding DataContext.UninstallWorkshopItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}"
-                                                            ToolTip="Remove mod"/>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </ScrollViewer>
-
-                        <!-- Divider -->
-                        <Border Grid.Column="1" Width="1" Background="{StaticResource BorderBrush}" Margin="0,16"/>
-
-                        <!-- Search results -->
-                        <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Padding="16">
-                            <StackPanel>
-                                <TextBlock Text="Search Results" Style="{StaticResource SectionHeader}"/>
-                                <TextBlock Text="Search above to find Workshop mods." FontSize="13"
-                                           Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0"
-                                           Visibility="{Binding WorkshopSearchResults.Count, Converter={StaticResource ZeroToVis}, Mode=OneWay}"/>
-                                <ItemsControl ItemsSource="{Binding WorkshopSearchResults}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Style="{StaticResource Card}" Margin="0,0,0,6">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <StackPanel>
-                                                        <TextBlock FontWeight="SemiBold" FontSize="13" Text="{Binding Title}"/>
-                                                        <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}"
-                                                                   Text="{Binding PublishedFileId, StringFormat='ID: {0}'}" Margin="0,2,0,0"/>
-                                                        <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
-                                                                   Text="{Binding Description}" TextWrapping="Wrap"
-                                                                   MaxWidth="300" Margin="0,4,0,0"/>
-                                                    </StackPanel>
-                                                    <Button Grid.Column="1" Content="⬇ Install" Style="{StaticResource PrimaryButton}"
-                                                            VerticalAlignment="Top" Margin="8,0,0,0"
-                                                            Command="{Binding DataContext.InstallWorkshopFromSearchCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                            CommandParameter="{Binding}"
-                                                            IsEnabled="{Binding DataContext.WorkshopBusy, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InvBool}}"/>
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Grid>
                 </Grid>
             </TabItem>
 

@@ -142,7 +142,7 @@ public class ServerManagerService
     public async Task StartAsync(GameServer server)
     {
         var plugin = GameRegistry.Get(server.GameId);
-        if (plugin == null) throw new InvalidOperationException("Unknown game: " + server.GameId);
+        if (plugin == null) throw new InvalidOperationException("This profile is not a Rust Dedicated Server.");
 
         var validationError = plugin.ValidateBeforeStart(server);
         if (validationError != null) throw new InvalidOperationException(validationError);
@@ -154,7 +154,7 @@ public class ServerManagerService
 
         // Pre-flight: kill any zombie instance of THIS server's own executable.
         // Must match on the resolved install-path exe, not just process name — two
-        // servers running the same game (e.g. two Palworld instances) share a process
+        // Rust servers share the RustDedicated process name, so killing by name alone
         // name, and killing by name alone would kill the other server's process.
         var inst0 = new ServerInstance(server);
         _running[server.Id] = inst0;
@@ -267,7 +267,6 @@ public class ServerManagerService
         }
 
         var args = plugin.BuildStartArguments(server);
-        if (!string.IsNullOrWhiteSpace(server.Gslt))       args += $" +sv_setsteamaccount {server.Gslt}";
         if (!string.IsNullOrWhiteSpace(server.CustomArgs)) args += $" {server.CustomArgs.Replace(Environment.NewLine, " ")}";
         var exe  = Path.Combine(server.InstallPath, plugin.Executable);
 
@@ -277,70 +276,25 @@ public class ServerManagerService
             var found = TryFindExecutable(server.InstallPath, plugin.Executable);
             if (found != null)
                 exe = found;
-            else if (!plugin.Executable.Contains(Path.DirectorySeparatorChar) && !Path.HasExtension(plugin.Executable))
-                // Bare command name with no extension/path (e.g. "java" for the Minecraft family) —
-                // not something HighPop installed itself, so don't look for it inside InstallPath at
-                // all; let Process.Start resolve it from the system PATH like any other command.
-                exe = plugin.Executable;
             else
                 throw new FileNotFoundException("Server executable not found in: " + server.InstallPath);
         }
 
-        // Wrap .bat/.cmd files with cmd.exe so stdout/stderr can be captured
-        var ext = Path.GetExtension(exe);
-        if (ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase))
-        {
-            args = $"/c \"{exe}\" {args}";
-            exe  = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
-        }
-
-        // WorkingDirectory must be the exe's own folder (not just InstallPath) — but a bare PATH
-        // command (e.g. "java") has no directory component at all, so GetDirectoryName returns ""
-        // (not null), which would otherwise launch with HighPop's own folder as the working directory
-        // instead of the server's. Plugins can override via GetWorkingDirectory() when the exe lives
-        // in a sub-folder but the server must run from install root (e.g. Project Zomboid).
-        var exeDirRaw = Path.GetDirectoryName(exe);
-        var exeDir = plugin.GetWorkingDirectory(server)
-                     ?? (string.IsNullOrEmpty(exeDirRaw) ? server.InstallPath : exeDirRaw);
-
-        // SteamClientAppId == 0 means "don't write steam_appid.txt or set Steam env vars"
-        // SteamClientAppId > 0 means explicit override; otherwise fall back to SteamAppId
-        var steamFileId = plugin.SteamClientAppId;
-        var steamEnvId  = plugin.SteamClientAppId > 0 ? plugin.SteamClientAppId : plugin.SteamAppId;
-
-        if (steamFileId > 0)
-        {
-            try { File.WriteAllText(Path.Combine(exeDir, "steam_appid.txt"), steamFileId.ToString()); }
-            catch { }
-        }
-
-        var native = plugin.UseNativeConsole;
+        var exeDir = Path.GetDirectoryName(exe) ?? server.InstallPath;
         var psi = new ProcessStartInfo
         {
             FileName               = exe,
             Arguments              = args,
             WorkingDirectory       = exeDir,
             UseShellExecute        = false,
-            RedirectStandardOutput = !native,
-            RedirectStandardError  = !native,
-            RedirectStandardInput  = !native,
-            CreateNoWindow         = !native,
-            // WindowStyle.Hidden sets STARTF_USESHOWWINDOW|SW_HIDE in STARTUPINFO.
-            // This propagates to AllocConsole() AND to Windows Terminal so the tab
-            // is created hidden rather than stealing focus.
-            WindowStyle            = native ? ProcessWindowStyle.Normal : ProcessWindowStyle.Hidden,
-            StandardOutputEncoding = native ? null : System.Text.Encoding.UTF8,
-            StandardErrorEncoding  = native ? null : System.Text.Encoding.UTF8,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            RedirectStandardInput  = true,
+            CreateNoWindow         = true,
+            WindowStyle            = ProcessWindowStyle.Hidden,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding  = System.Text.Encoding.UTF8,
         };
-
-        // Steam environment variables — skip if plugin explicitly set SteamClientAppId = 0
-        if (steamFileId > 0)
-        {
-            psi.EnvironmentVariables["SteamAppId"]          = steamEnvId.ToString();
-            psi.EnvironmentVariables["SteamOverlayGameId"]  = steamEnvId.ToString();
-            psi.EnvironmentVariables["SteamGameId"]         = steamEnvId.ToString();
-        }
 
         var inst = inst0;
 
@@ -352,9 +306,7 @@ public class ServerManagerService
 
         void AddLog(string text, ConsoleMessageType type)
         {
-            // FXServer/txAdmin (and some other engines) colorize stdout with ANSI escape
-            // codes even when piped to a non-tty — strip them or the embedded console
-            // renders raw escape sequences as garbled text instead of plain lines.
+            // Keep Rust console output readable if a mod emits ANSI escape codes.
             text = AnsiEscapeRegex.Replace(text, "");
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
             var threshold = System.Diagnostics.Stopwatch.Frequency / 5; // 200 ms
@@ -546,9 +498,7 @@ public class ServerManagerService
         var plugin = GameRegistry.Get(server.GameId);
         var stopCmd = plugin?.GetStopCommand(server);
 
-        // Native-console games don't redirect stdin — StandardInput is null and must not be written to
-        var nativeConsole = plugin?.UseNativeConsole == true;
-        if (stopCmd != null && !nativeConsole && inst.Process?.HasExited == false)
+        if (stopCmd != null && inst.Process?.HasExited == false)
         {
             try { await inst.Process.StandardInput.WriteLineAsync(stopCmd); }
             catch { }
@@ -593,26 +543,7 @@ public class ServerManagerService
     public async Task SendCommandAsync(string serverId, string command)
     {
         if (!_running.TryGetValue(serverId, out var inst)) return;
-        var plugin = GameRegistry.Get(inst.Server.GameId);
-
-        // Plugins whose process has no redirected stdin (native console) must route
-        // commands through their own REST/RCON mechanism instead.
-        if (plugin is IRestCommandPlugin restCmd)
-        {
-            var (handled, response) = await restCmd.TrySendRestCommandAsync(inst.Server, command);
-            if (handled)
-            {
-                if (!string.IsNullOrEmpty(response))
-                {
-                    var msg = new ConsoleMessage { Text = response, Type = ConsoleMessageType.Info };
-                    inst.AddToLog(msg);
-                    LogReceived?.Invoke(serverId, msg);
-                }
-                return;
-            }
-        }
-
-        if (plugin?.UseNativeConsole != true && inst.Process != null)
+        if (inst.Process != null)
             await inst.Process.StandardInput.WriteLineAsync(command);
     }
 

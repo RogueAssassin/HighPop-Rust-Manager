@@ -66,9 +66,4 @@ public partial class ServerDetailView : System.Windows.Controls.UserControl
         vm.AddScheduledTaskCommand.Execute(dlg.Result);
     }
 
-    private void PluginsTab_GotFocus(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is ServerViewModel vm)
-            vm.RefreshSourceModCommand.Execute(null);
-    }
 }

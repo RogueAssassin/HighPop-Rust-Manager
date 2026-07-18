@@ -329,28 +329,7 @@ public class BackupService
             return result.ToArray();
         }
 
-        return server.GameId switch
-        {
-            "valheim"          => [Path.Combine(server.InstallPath, "saves")],
-            "minecraft"        => [Path.Combine(server.InstallPath, "world"), Path.Combine(server.InstallPath, "plugins")],
-            "conanexiles"      => [Path.Combine(server.InstallPath, "ConanSandbox", "Saved")],
-            "rust"             => [Path.Combine(server.InstallPath, "server")],
-            "7daystodie"       => [Path.Combine(server.InstallPath, "Saves"), Path.Combine(server.InstallPath, "UserDataFolder")],
-            "theforest"        => [Path.Combine(server.InstallPath, "saves")],
-            "sonsoftheforest"  => [Path.Combine(server.InstallPath, "Saves")],
-            "armareforger"     => [Path.Combine(server.InstallPath, "ArmaReforgerServer", "Worlds")],
-            "enshrouded"       => [Path.Combine(server.InstallPath, "savegame")],
-            "palworld"         => [Path.Combine(server.InstallPath, "Pal", "Saved", "SaveGames")],
-            "ark"              => [Path.Combine(server.InstallPath, "ShooterGame", "Saved")],
-            "arksa"            => [Path.Combine(server.InstallPath, "ShooterGame", "Saved")],
-            "dayz"             => [Path.Combine(server.InstallPath, "mpmissions")],
-            "vrising"          => [Path.Combine(server.InstallPath, "VRisingServer_Data", "StreamingAssets", "Settings"),
-                                   Path.Combine(server.InstallPath, "save-data")],
-            "satisfactory"     => [Path.Combine(server.InstallPath, "FactoryGame", "Saved")],
-            "zomboid"          => [Path.Combine(server.InstallPath, "Saves")],
-            "terraria"         => [Path.Combine(server.InstallPath, "Worlds")],
-            _                  => [server.InstallPath],
-        };
+        return [Path.Combine(server.InstallPath, "server")];
     }
 
     private static bool ContainsReparsePointBelowRoot(string root, string candidate)

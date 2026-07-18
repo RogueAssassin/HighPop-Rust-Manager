@@ -6,8 +6,8 @@ using HighPop.Models;
 namespace HighPop.Services;
 
 /// <summary>
-/// Monitors running servers for freezes: the OS process is alive but the game
-/// no longer responds to A2S/REST queries.  After N consecutive failed health
+/// Monitors running Rust servers for freezes: the OS process is alive but WebRCON
+/// no longer accepts connections. After N consecutive failed health
 /// checks it takes the configured action (notify / restart).
 /// </summary>
 public class ServerHealthService : IDisposable
@@ -116,40 +116,16 @@ public class ServerHealthService : IDisposable
     {
         try
         {
-            if (plugin is IA2SQueryPlugin a2s)
-            {
-                // A2S INFO query — more reliable than player query for freeze detection
-                using var udp = new UdpClient();
-                udp.Client.ReceiveTimeout = 3000;
-                udp.Client.SendTimeout    = 3000;
-                byte[] infoReq = [0xFF, 0xFF, 0xFF, 0xFF, 0x54,
-                    .. System.Text.Encoding.UTF8.GetBytes("Source Engine Query\0")];
-                var ep = new System.Net.IPEndPoint(
-                    System.Net.IPAddress.Parse(a2s.A2SHost), a2s.GetA2SPort(server));
-                await udp.SendAsync(infoReq, infoReq.Length, ep);
-                var cts = new CancellationTokenSource(3000);
-                var res = await udp.ReceiveAsync(cts.Token);
-                return res.Buffer.Length > 5;
-            }
-
-            if (plugin is IRestPlayersPlugin rest)
-            {
-                // A REST response (even empty list) means the game is up
-                var players = await rest.GetPlayersAsync(server);
-                return rest.LastRestApiError == null;
-            }
-
             if (plugin.HasRcon && server.RconPort > 0 && !string.IsNullOrEmpty(server.RconPassword))
             {
-                // Try a lightweight TCP connect to RCON port
+                // A lightweight TCP connect verifies the Rust WebRCON listener is responsive.
                 using var tcp = new TcpClient();
                 var cts = new CancellationTokenSource(3000);
                 await tcp.ConnectAsync("127.0.0.1", server.RconPort, cts.Token);
                 return tcp.Connected;
             }
 
-            // No query method available — assume alive
-            return true;
+            return false;
         }
         catch
         {
@@ -183,9 +159,7 @@ public class ServerHealthService : IDisposable
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static bool CanHealthCheck(GameServer server, IGamePlugin plugin)
-        => plugin is IA2SQueryPlugin
-        || plugin is IRestPlayersPlugin
-        || (plugin.HasRcon && server.RconPort > 0 && !string.IsNullOrEmpty(server.RconPassword));
+        => plugin.HasRcon && server.RconPort > 0 && !string.IsNullOrEmpty(server.RconPassword);
 }
 
 public enum HealthCheckAction { Notify, Restart }

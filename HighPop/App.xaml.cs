@@ -80,11 +80,6 @@ public partial class App : System.Windows.Application
                 System.Windows.MessageBoxImage.Warning);
         }
 
-        // Custom games created in the Plugin Creator were only ever loaded into the registry
-        // right after being saved — never on a fresh startup — so they vanished from every list
-        // (Add Server, etc.) the moment HighPop was restarted.
-        Games.GameRegistry.LoadCustomPlugins(ViewModels.PluginCreatorViewModel.PluginsPath);
-
         // UI-säikeen poikkeukset
         DispatcherUnhandledException += (_, ex) =>
         {
@@ -190,14 +185,11 @@ public partial class App : System.Windows.Application
         s.AddSingleton<TrayService>();
         s.AddSingleton<SystemMetricsService>();
         s.AddSingleton<ModManagerService>();
-        s.AddSingleton<SourceModService>();
         s.AddSingleton<DiscordBotService>();
         s.AddSingleton<ConfigEditorService>();
         s.AddSingleton<ConfigPresetService>();
         s.AddSingleton<PlayerStatsService>();
         s.AddSingleton<PerfHistoryService>();
-        s.AddSingleton<SteamWorkshopService>();
-        s.AddSingleton<WorkshopDbService>();
         s.AddSingleton<UPnPService>();
         s.AddSingleton<TemplateService>();
         s.AddSingleton<NetworkMonitorService>();
@@ -218,7 +210,6 @@ public partial class App : System.Windows.Application
             var main = sp.GetRequiredService<MainViewModel>();
             return main.Dashboard;
         });
-        s.AddTransient<PluginCreatorViewModel>();
     }
 
     protected override void OnExit(System.Windows.ExitEventArgs e)

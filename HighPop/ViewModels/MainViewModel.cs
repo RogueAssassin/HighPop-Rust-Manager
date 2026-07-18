@@ -19,13 +19,10 @@ public partial class MainViewModel : BaseViewModel
     private readonly TrayService               _tray;
     private readonly SystemMetricsService      _metrics;
     private readonly ModManagerService         _mods;
-    private readonly SourceModService          _sourceMod;
     private readonly DiscordBotService         _bot;
     private readonly ConfigEditorService       _configEditor;
     private readonly PlayerStatsService        _playerStats;
     private readonly PerfHistoryService        _perfHistory;
-    private readonly SteamWorkshopService      _workshop;
-    private readonly WorkshopDbService         _workshopDb;
     private readonly NetworkMonitorService     _network;
     private readonly TemplateService           _templates;
     private readonly UserService               _users;
@@ -55,11 +52,9 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private bool _showAddDialog;
     [ObservableProperty] private string _newServerName    = string.Empty;
     [ObservableProperty] private string _newServerInstall = string.Empty;
-    [ObservableProperty] private IGamePlugin? _newServerGame;
-    [ObservableProperty] private int  _newServerPort      = 7777;
-    [ObservableProperty] private int  _newServerQueryPort = 27015;
-    [ObservableProperty] private int  _newServerSteamPort = 0;
-    [ObservableProperty] private bool _newServerHasSteamPort = false;
+    [ObservableProperty] private IGamePlugin? _newServerGame = GameRegistry.RustServer;
+    [ObservableProperty] private int  _newServerPort      = 28015;
+    [ObservableProperty] private int  _newServerQueryPort = 28017;
     [ObservableProperty] private bool _showSettingsPage;
     [ObservableProperty] private bool _showDashboard;
     [ObservableProperty] private bool _showSupport;
@@ -129,12 +124,11 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private string _newUserRole = "Viewer";
     public List<Services.WgsUser> Users => _users.GetAll();
 
-    public string[] SortModes { get; } = ["name-asc", "name-desc", "game-asc", "status"];
+    public string[] SortModes { get; } = ["name-asc", "name-desc", "status"];
 
     public IEnumerable<ServerViewModel> SortedServers => SortMode switch
     {
         "name-desc"  => Servers.OrderByDescending(s => s.Server.DisplayName),
-        "game-asc"   => Servers.OrderBy(s => s.Server.GameId),
         "status"     => Servers.OrderByDescending(s => (int)s.Server.Status),
         _            => Servers.OrderBy(s => s.Server.DisplayName),
     };
@@ -142,15 +136,12 @@ public partial class MainViewModel : BaseViewModel
     public IEnumerable<RemoteServerViewModel> SortedRemoteServers => SortMode switch
     {
         "name-desc"  => RemoteServers.OrderByDescending(s => s.DisplayName),
-        "game-asc"   => RemoteServers.OrderBy(s => s.GameId),
         "status"     => RemoteServers.OrderByDescending(s => RemoteStatusRank(s.Status)),
         _            => RemoteServers.OrderBy(s => s.DisplayName),
     };
 
     private static int RemoteStatusRank(string status)
         => Enum.TryParse<ServerStatus>(status, out var s) ? (int)s : -1;
-
-    public IEnumerable<IGamePlugin> AvailableGames => GameRegistry.All.OrderBy(g => g.GameName);
 
     public int TotalServers  => Servers.Count;
     public int RunningCount  => Servers.Count(s => s.Server.Status == ServerStatus.Running);
@@ -159,9 +150,8 @@ public partial class MainViewModel : BaseViewModel
     public MainViewModel(ConfigService config, ServerManagerService manager, SteamCmdService steamCmd,
         BackupService backup, NotificationService notifications, PerformanceMonitorService perfMonitor,
         TrayService tray, SettingsViewModel settings, SystemMetricsService metrics,
-        ModManagerService mods, SourceModService sourceMod, DiscordBotService bot,
+        ModManagerService mods, DiscordBotService bot,
         ConfigEditorService configEditor, PlayerStatsService playerStats, PerfHistoryService perfHistory,
-        SteamWorkshopService workshop, WorkshopDbService workshopDb,
         NetworkMonitorService network, TemplateService templates, UserService users,
         ServerGroupService groups, WebApiService webApi, ScheduledTaskService scheduler,
         RemoteMachineService remoteMachines, CrashPredictionService crashPrediction,
@@ -182,16 +172,13 @@ public partial class MainViewModel : BaseViewModel
         _tray            = tray;
         _metrics         = metrics;
         _mods            = mods;
-        _sourceMod       = sourceMod;
         _bot             = bot;
         _configEditor    = configEditor;
         _playerStats     = playerStats;
         _perfHistory     = perfHistory;
-        _workshop        = workshop;
         _network         = network;
         _templates       = templates;
         _users           = users;
-        _workshopDb      = workshopDb;
         _groups          = groups;
         _webApi          = webApi;
         _scheduler       = scheduler;
@@ -503,7 +490,8 @@ public partial class MainViewModel : BaseViewModel
     private void LoadServers()
     {
         int num = 1;
-        foreach (var srv in _config.LoadServers())
+        foreach (var srv in _config.LoadServers()
+                     .Where(s => s.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase)))
         {
             srv.Status = ServerStatus.Stopped;
             bool reattached = _manager.TryReattach(srv);
@@ -715,7 +703,7 @@ public partial class MainViewModel : BaseViewModel
     private ServerViewModel MakeVm(GameServer srv)
     {
         var vm = new ServerViewModel(srv, _manager, _steamCmd, _backup, _notifications, _perfMonitor, _config, _mods,
-               _sourceMod, _configEditor, _playerStats, _perfHistory, _workshop, _workshopDb, _templates, _scheduler,
+               _configEditor, _playerStats, _perfHistory, _templates, _scheduler,
                _network, _groupBans, _hygiene, _presets);
         vm.BatchSelectionChanged = () => OnPropertyChanged(nameof(BatchSelectedCount));
         return vm;
@@ -725,7 +713,7 @@ public partial class MainViewModel : BaseViewModel
     private void OpenAddDialog()
     {
         NewServerName    = string.Empty;
-        NewServerGame    = AvailableGames.FirstOrDefault();
+        NewServerGame    = GameRegistry.RustServer;
         // ports are set by OnNewServerGameChanged above
         ShowAddDialog    = true;
     }
@@ -768,15 +756,11 @@ public partial class MainViewModel : BaseViewModel
         UpdateInstallPath();
         if (value == null) return;
         // Auto-assign free ports, incrementing by 1 until no conflict
-        var (gp, qp, sp) = AllocatePorts(
+        var (gp, qp) = AllocatePorts(
             value.DefaultPort,
-            value.DefaultQueryPort,
-            value.DefaultSteamPort,
-            reserveRustPorts: value.GameId == "rust");
+            value.DefaultQueryPort);
         NewServerPort         = gp;
         NewServerQueryPort    = qp;
-        NewServerSteamPort    = sp;
-        NewServerHasSteamPort = value.DefaultSteamPort > 0;
     }
     partial void OnNewServerNameChanged(string value)      => UpdateInstallPath();
 
@@ -803,12 +787,8 @@ public partial class MainViewModel : BaseViewModel
 
         var requestedPorts = new List<int> { NewServerPort };
         if (NewServerQueryPort > 0) requestedPorts.Add(NewServerQueryPort);
-        if (NewServerSteamPort > 0) requestedPorts.Add(NewServerSteamPort);
-        if (NewServerGame.GameId == "rust")
-        {
-            requestedPorts.Add(NewServerPort + 1);  // WebRCON
-            requestedPorts.Add(NewServerPort + 68); // Rust+ companion app
-        }
+        requestedPorts.Add(NewServerPort + 1);  // WebRCON
+        requestedPorts.Add(NewServerPort + 68); // Rust+ companion app
         var usedPorts = UsedPorts();
         if (requestedPorts.Any(p => p is <= 0 or > 65535)
             || requestedPorts.Distinct().Count() != requestedPorts.Count
@@ -828,25 +808,19 @@ public partial class MainViewModel : BaseViewModel
             InstallPath   = NewServerInstall,
             ServerPort    = NewServerPort,
             QueryPort     = NewServerQueryPort,
-            RconPort      = NewServerGame.GameId == "rust" ? NewServerPort + 1 : 0,
-            RconPassword  = NewServerGame.GameId == "rust"
-                ? Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16))
-                : string.Empty,
-            SteamPort     = NewServerSteamPort,
+            RconPort      = NewServerPort + 1,
+            RconPassword  = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
             MaxPlayers    = NewServerGame.DefaultMaxPlayers,
             Status        = ServerStatus.NotInstalled,
             GameSpecificSettings = NewServerGame.GetDefaultSettings(),
         };
 
-        if (srv.GameId == "rust")
-        {
-            srv.GameSpecificSettings["appPort"] = (srv.RconPort + 67).ToString();
-            var identity = new string(NewServerName
-                .ToLowerInvariant()
-                .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_')
-                .ToArray());
-            srv.GameSpecificSettings["identity"] = string.IsNullOrWhiteSpace(identity) ? "highpop" : identity;
-        }
+        srv.GameSpecificSettings["appPort"] = (srv.RconPort + 67).ToString();
+        var identity = new string(NewServerName
+            .ToLowerInvariant()
+            .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_')
+            .ToArray());
+        srv.GameSpecificSettings["identity"] = string.IsNullOrWhiteSpace(identity) ? "highpop" : identity;
 
         var vm = MakeVm(srv);
         vm.ServerNumber = Servers.Count + 1;
@@ -867,11 +841,9 @@ public partial class MainViewModel : BaseViewModel
         if (plugin == null) return;
 
         // Allocate fresh ports so clone doesn't conflict
-        var (gp, qp, sp) = AllocatePorts(
+        var (gp, qp) = AllocatePorts(
             src.ServerPort,
-            src.QueryPort,
-            src.SteamPort,
-            reserveRustPorts: src.GameId == "rust");
+            src.QueryPort);
 
         // Build a unique name and install path
         var cloneName = $"{src.DisplayName} (Copy)";
@@ -888,11 +860,8 @@ public partial class MainViewModel : BaseViewModel
             InstallPath          = clonePath,
             ServerPort           = gp,
             QueryPort            = qp,
-            SteamPort            = sp,
-            RconPort             = src.RconPort > 0 ? gp + 1 : 0,
-            RconPassword         = src.GameId == "rust"
-                ? Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16))
-                : src.RconPassword,
+            RconPort             = gp + 1,
+            RconPassword         = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
             MaxPlayers           = src.MaxPlayers,
             AutoRestart          = src.AutoRestart,
             AutoUpdate           = src.AutoUpdate,
@@ -901,18 +870,14 @@ public partial class MainViewModel : BaseViewModel
             DiscordAlertsEnabled = src.DiscordAlertsEnabled,
             BackupEnabled        = src.BackupEnabled,
             BackupRetention      = src.BackupRetention,
-            Gslt                 = src.Gslt,
             CpuAffinityMask      = src.CpuAffinityMask,
             ProcessPriority      = src.ProcessPriority,
             Status               = ServerStatus.NotInstalled,
             GameSpecificSettings = new Dictionary<string, string>(src.GameSpecificSettings),
         };
 
-        if (clone.GameId == "rust")
-        {
-            clone.GameSpecificSettings["appPort"] = (clone.RconPort + 67).ToString();
-            clone.GameSpecificSettings["identity"] = "highpop_" + clone.Id[..8];
-        }
+        clone.GameSpecificSettings["appPort"] = (clone.RconPort + 67).ToString();
+        clone.GameSpecificSettings["identity"] = "highpop_" + clone.Id[..8];
 
         var vm = MakeVm(clone);
         vm.ServerNumber = Servers.Count + 1;
@@ -1109,95 +1074,6 @@ public partial class MainViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    private void OpenPluginCreator()
-    {
-        var vm  = new PluginCreatorViewModel();
-        var win = new PluginCreatorView(vm);
-        win.Owner = WpfApplication.Current.MainWindow;
-        bool created = false;
-        vm.PluginCreated += () => created = true;
-        win.ShowDialog();
-        if (created)
-        {
-            OnPropertyChanged(nameof(AvailableGames));
-            System.Windows.MessageBox.Show(
-                $"✅ Game module '{vm.GameName}' created! You can now add a server using it.",
-                "Module created",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-        }
-    }
-
-    [RelayCommand]
-    private void ImportCsPlugin()
-    {
-        using var dlg = new System.Windows.Forms.OpenFileDialog
-        {
-            Title  = "Import plugin (.cs)",
-            Filter = "C# source files (*.cs)|*.cs",
-        };
-        if (dlg.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
-
-        var (plugin, error) = HighPop.Services.PluginCompilerService.CompileAndLoad(dlg.FileName);
-        if (plugin == null)
-        {
-            System.Windows.MessageBox.Show(error, "Import failed",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-            return;
-        }
-
-        if (GameRegistry.All.Any(p => p.GameId == plugin.GameId))
-        {
-            System.Windows.MessageBox.Show(
-                $"Plugin '{plugin.GameId}' is already registered.",
-                "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
-            return;
-        }
-
-        GameRegistry.Register(plugin);
-        OnPropertyChanged(nameof(AvailableGames));
-        System.Windows.MessageBox.Show(
-            $"✅ Plugin '{plugin.GameName}' imported successfully!",
-            "Import", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-    }
-
-    [RelayCommand]
-    private void ExportCsPlugin()
-    {
-        // Pick which plugin to export
-        var all = AvailableGames.ToList();
-        if (all.Count == 0) return;
-
-        var win = new HighPop.Views.ExportPluginDialog(all);
-        win.Owner = WpfApplication.Current.MainWindow;
-        if (win.ShowDialog() != true || win.SelectedPlugin == null) return;
-
-        var plugin = win.SelectedPlugin;
-        using var save = new System.Windows.Forms.SaveFileDialog
-        {
-            Title            = "Export plugin as .cs",
-            Filter           = "C# source files (*.cs)|*.cs",
-            FileName         = $"{plugin.GameId}_plugin.cs",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-        };
-        if (save.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
-
-        try
-        {
-            HighPop.Services.PluginExporterService.ExportToFile(plugin, save.FileName);
-            System.Windows.MessageBox.Show(
-                $"✅ Plugin '{plugin.GameName}' exported to:\n{save.FileName}",
-                "Export", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-        }
-        catch (Exception ex)
-        {
-            System.Windows.MessageBox.Show(
-                $"Export failed: {ex.Message}", "Export",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
-        }
-    }
-
-    [RelayCommand]
     private void OpenSettings()
     {
         var win = new HighPop.Views.SettingsWindow(Settings, this);
@@ -1238,7 +1114,6 @@ public partial class MainViewModel : BaseViewModel
         {
             used.Add(vm.Server.ServerPort);
             if (vm.Server.QueryPort  > 0) used.Add(vm.Server.QueryPort);
-            if (vm.Server.SteamPort  > 0) used.Add(vm.Server.SteamPort);
             if (vm.Server.RconPort   > 0) used.Add(vm.Server.RconPort);
             if (vm.Server.GameSpecificSettings.TryGetValue("appPort", out var appPortText)
                 && int.TryParse(appPortText, out var appPort) && appPort > 0)
@@ -1248,12 +1123,11 @@ public partial class MainViewModel : BaseViewModel
     }
 
     /// <summary>
-    /// Given default ports from a plugin, increments each until it finds
+    /// Given Rust's default ports, increments them until it finds
     /// a combination where no port overlaps with existing servers.
-    /// Keeps the relative offsets between game/query/steam intact.
+    /// a free combination including WebRCON and Rust+.
     /// </summary>
-    private (int game, int query, int steam) AllocatePorts(
-        int defGame, int defQuery, int defSteam, bool reserveRustPorts = false)
+    private (int game, int query) AllocatePorts(int defGame, int defQuery)
     {
         var used  = UsedPorts();
         int offset = 0;
@@ -1261,19 +1135,18 @@ public partial class MainViewModel : BaseViewModel
         {
             int gp = defGame  + offset;
             int qp = defQuery > 0 ? defQuery + offset : 0;
-            int sp = defSteam > 0 ? defSteam + offset : 0;
-            int rp = reserveRustPorts ? gp + 1 : 0;
-            int ap = reserveRustPorts ? gp + 68 : 0;
+            int rp = gp + 1;
+            int ap = gp + 68;
 
-            var candidates = new[] { gp, qp, sp, rp, ap }.Where(p => p > 0).ToArray();
+            var candidates = new[] { gp, qp, rp, ap }.Where(p => p > 0).ToArray();
             bool clash = candidates.Any(p => p > 65535 || used.Contains(p))
                       || candidates.Distinct().Count() != candidates.Length;
             if (!clash)
-                return (gp, qp > 0 ? qp : defQuery, sp);
+                return (gp, qp > 0 ? qp : defQuery);
 
             offset++;
         }
         // Fallback: return defaults unchanged
-        return (defGame, defQuery, defSteam);
+        return (defGame, defQuery);
     }
 }

@@ -28,12 +28,6 @@ public static class FirewallService
         if (server.QueryPort > 0 && server.QueryPort != server.ServerPort)
             AddRule($"{name} (Query)", server.QueryPort, NET_FW_IP_PROTOCOL_UDP);
 
-        if (server.SteamPort > 0 && server.SteamPort != server.ServerPort && server.SteamPort != server.QueryPort)
-        {
-            AddRule($"{name} (Steam)", server.SteamPort, NET_FW_IP_PROTOCOL_UDP);
-            AddRule($"{name} (Steam)", server.SteamPort, NET_FW_IP_PROTOCOL_TCP);
-        }
-
         if (server.RconPort > 0)
             AddRule($"{name} (RCON)", server.RconPort, NET_FW_IP_PROTOCOL_TCP);
 
@@ -47,7 +41,6 @@ public static class FirewallService
         var name = RuleName(server.DisplayName);
         RemoveRule(name);
         RemoveRule($"{name} (Query)");
-        RemoveRule($"{name} (Steam)");
         RemoveRule($"{name} (RCON)");
         RemoveRule($"{name} (Rust+)");
     }

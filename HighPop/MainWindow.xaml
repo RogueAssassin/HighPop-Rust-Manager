@@ -102,8 +102,8 @@
                             <Button Content="{Binding Loc.AddServer}" Style="{StaticResource PrimaryButton}"
                                     HorizontalAlignment="Stretch" Margin="0,0,0,8"
                                     Command="{Binding OpenAddDialogCommand}"/>
-                            <!-- Icon row: 8 secondary actions -->
-                            <UniformGrid Rows="1" Columns="8">
+                            <!-- Rust operations shortcuts -->
+                            <UniformGrid Rows="1" Columns="5">
                                 <Button Style="{StaticResource GhostButton}" FontSize="15" Height="32" Padding="0"
                                         Command="{Binding OpenDashboardCommand}">
                                     <Button.ToolTip><ToolTip Content="Dashboard"/></Button.ToolTip>
@@ -123,21 +123,6 @@
                                         Command="{Binding OpenSettingsCommand}">
                                     <Button.ToolTip><ToolTip Content="{Binding Loc.SettingsBtn}"/></Button.ToolTip>
                                     <TextBlock Text="⚙️" FontSize="15"/>
-                                </Button>
-                                <Button Style="{StaticResource GhostButton}" FontSize="15" Height="32" Padding="0"
-                                        Command="{Binding OpenPluginCreatorCommand}">
-                                    <Button.ToolTip><ToolTip Content="Add game"/></Button.ToolTip>
-                                    <TextBlock Text="🎮" FontSize="15"/>
-                                </Button>
-                                <Button Style="{StaticResource GhostButton}" FontSize="15" Height="32" Padding="0"
-                                        Command="{Binding ImportCsPluginCommand}">
-                                    <Button.ToolTip><ToolTip Content="Import .cs plugin"/></Button.ToolTip>
-                                    <TextBlock Text="⬆" FontSize="15"/>
-                                </Button>
-                                <Button Style="{StaticResource GhostButton}" FontSize="15" Height="32" Padding="0"
-                                        Command="{Binding ExportCsPluginCommand}">
-                                    <Button.ToolTip><ToolTip Content="Export .cs plugin"/></Button.ToolTip>
-                                    <TextBlock Text="⬇" FontSize="15"/>
                                 </Button>
                                 <Button Style="{StaticResource GhostButton}" FontSize="15" Height="32" Padding="0"
                                         Command="{Binding OpenSupportCommand}">
@@ -167,7 +152,6 @@
                                           BorderThickness="0">
                                     <ComboBoxItem Content="A → Z"  Tag="name-asc"/>
                                     <ComboBoxItem Content="Z → A"  Tag="name-desc"/>
-                                    <ComboBoxItem Content="Game"   Tag="game-asc"/>
                                     <ComboBoxItem Content="Status" Tag="status"/>
                                 </ComboBox>
                                 <!-- Batch mode toggle -->
@@ -284,7 +268,6 @@
                                               BorderThickness="0">
                                         <ComboBoxItem Content="A → Z"  Tag="name-asc"/>
                                         <ComboBoxItem Content="Z → A"  Tag="name-desc"/>
-                                        <ComboBoxItem Content="Game"   Tag="game-asc"/>
                                         <ComboBoxItem Content="Status" Tag="status"/>
                                     </ComboBox>
                                 </Grid>
@@ -355,7 +338,8 @@
                     <!-- No server selected -->
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
                                 Visibility="{Binding SelectedServer, Converter={StaticResource NullToInvVis}}">
-                        <TextBlock Text="&#x1F3AE;" FontSize="48" HorizontalAlignment="Center"/>
+                        <Image Source="pack://application:,,,/HighPop;component/assets/brand/highpop-mark.png"
+                               Width="72" Height="72" Stretch="Uniform" HorizontalAlignment="Center"/>
                         <TextBlock Text="{Binding Loc.EmptyTitle}" FontSize="16"
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    HorizontalAlignment="Center" Margin="0,12,0,0"/>
@@ -385,22 +369,18 @@
                     <StackPanel>
                         <TextBlock Text="{Binding Loc.DialogTitle}" Style="{StaticResource SectionHeader}" FontSize="18"/>
 
-                        <TextBlock Text="{Binding Loc.DialogGame}" Style="{StaticResource FieldLabel}"/>
-                        <ComboBox ItemsSource="{Binding DataContext.AvailableGames, RelativeSource={RelativeSource AncestorType=Window}}"
-                                  SelectedItem="{Binding DataContext.NewServerGame, RelativeSource={RelativeSource AncestorType=Window}}"
-                                  Style="{StaticResource DarkComboBox}" Margin="0,0,0,16">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                                        <TextBlock Text="{Binding GameName}" FontWeight="SemiBold"
-                                                   Foreground="#E6EDF3" MinWidth="180"/>
-                                        <Border Background="#21262D" CornerRadius="3" Padding="6,2" Margin="8,0,0,0">
-                                            <TextBlock Text="{Binding Category}" Foreground="{StaticResource AccentBlueBrush}" FontSize="11"/>
-                                        </Border>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
+                        <TextBlock Text="Rust Dedicated Server" Style="{StaticResource FieldLabel}"/>
+                        <Border Style="{StaticResource Card}" Padding="12" Margin="0,0,0,16">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="pack://application:,,,/HighPop;component/assets/brand/highpop-mark.png"
+                                       Width="38" Height="38" Stretch="Uniform" Margin="0,0,12,0"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Rust" FontWeight="Bold" FontSize="15"/>
+                                    <TextBlock Text="High-population dedicated server" FontSize="11"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <TextBlock Text="{Binding DataContext.Loc.DialogName, RelativeSource={RelativeSource AncestorType=Window}}"
                                    Style="{StaticResource FieldLabel}"/>
@@ -420,8 +400,6 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="8"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="8"/>
-                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <!-- Game Port -->
                             <StackPanel Grid.Column="0">
@@ -434,13 +412,6 @@
                                 <TextBlock Text="Query Port" Style="{StaticResource FieldLabel}"/>
                                 <TextBox Style="{StaticResource DarkTextBox}"
                                          Text="{Binding DataContext.NewServerQueryPort, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"/>
-                            </StackPanel>
-                            <!-- Steam Port — only visible when game uses it -->
-                            <StackPanel Grid.Column="4"
-                                        Visibility="{Binding DataContext.NewServerHasSteamPort, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="Steam Port" Style="{StaticResource FieldLabel}"/>
-                                <TextBox Style="{StaticResource DarkTextBox}"
-                                         Text="{Binding DataContext.NewServerSteamPort, RelativeSource={RelativeSource AncestorType=Window}, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"/>
                             </StackPanel>
                         </Grid>
 

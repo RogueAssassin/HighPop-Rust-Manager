@@ -338,8 +338,7 @@ public class DiscordBotService : IDisposable
         {
             var online = s.Status == ServerStatus.Running;
             var ip     = string.IsNullOrEmpty(s.ServerIp) || s.ServerIp == "0.0.0.0" ? "127.0.0.1" : s.ServerIp;
-            var plugin = GameRegistry.All.FirstOrDefault(p => p.GameId == s.GameId);
-            var port   = (plugin?.UseGamePortForConnect == true || s.QueryPort == 0) ? s.ServerPort : s.QueryPort;
+            var port   = s.ServerPort;
             var line1  = online ? $"🟢 Online — {s.CurrentPlayers}/{s.MaxPlayers} players" : "⚫ Offline";
             var value  = $"{line1}\nConnect: `{ip}:{port}`";
             return new { name = s.DisplayName, value, inline = true };

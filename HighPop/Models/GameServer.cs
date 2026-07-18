@@ -11,7 +11,6 @@ public class GameServer
     public string ServerIp { get; set; } = "0.0.0.0";
     public int ServerPort { get; set; }
     public int QueryPort { get; set; }
-    public int SteamPort { get; set; }
     public int RconPort { get; set; }
     public string RconPassword { get; set; } = string.Empty;
     public string ServerPassword { get; set; } = string.Empty;
@@ -42,7 +41,6 @@ public class GameServer
     public bool DailyRestartEnabled    { get; set; } = false;
     public TimeSpan DailyRestartTime   { get; set; } = TimeSpan.FromHours(4); // 04:00 default
     public string CustomArgs { get; set; } = string.Empty;
-    public string Gslt       { get; set; } = string.Empty;
     public long   CpuAffinityMask  { get; set; } = 0; // 0 = all cores
     public string ProcessPriority  { get; set; } = "Normal";
     public long   MaxRamMb         { get; set; } = 0; // 0 = unlimited
@@ -56,8 +54,8 @@ public class GameServer
     public int  FullBackupEveryN   { get; set; } = 7;
     /// <summary>
     /// Relative path(s) within InstallPath to backup, separated by semicolons.
-    /// If empty, the game default (or full InstallPath) is used.
-    /// Example: "savegame" or "Saves;config"
+    /// If empty, HighPop backs up Rust's server directory.
+    /// Example: "server\highpop" or "server\highpop;oxide\data"
     /// </summary>
     public string BackupSavePath   { get; set; } = string.Empty;
     public bool FirewallAutoManage { get; set; } = true;

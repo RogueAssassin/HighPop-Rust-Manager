@@ -42,13 +42,9 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="assets\brand\highpop.ico" />
+    <Resource Include="assets\brand\highpop-mark.png" />
     <Resource Include="assets\brand\highpop.png" />
     <Resource Include="assets\brand\splash.png" />
-    <Resource Include="no_image.png" />
-    <Resource Include="minecraft_paper.png" />
-    <Resource Include="minecraft_spigot.png" />
-    <Resource Include="minecraft_forge.png" />
-    <Resource Include="minecraft_fabric.png" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="assets\README.txt" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
@@ -66,8 +62,6 @@
   </ItemGroup>
 
 </Project>
-
-
 
 
 

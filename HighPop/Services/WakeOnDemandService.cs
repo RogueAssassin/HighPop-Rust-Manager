@@ -95,8 +95,8 @@ public sealed class WakeOnDemandService : IDisposable
     private async Task ListenAsync(GameServer server, CancellationToken ct, TimeSpan delay = default)
     {
         // Race TCP and UDP on the same port number — OS allows both simultaneously since they are
-        // separate protocols. Most games use UDP (Valheim, Rust, ARK, Palworld, DayZ…) but some
-        // use TCP (Minecraft family, FiveM…). First signal from either protocol wins.
+        // Rust's game traffic is UDP. A TCP listener is also kept for launchers and probes;
+        // the first signal from either protocol wins.
         using var innerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var linked = innerCts.Token;
 

@@ -9,14 +9,13 @@ public class ServerTemplate
     public string Description { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
-    // Kategoria ja tagit
+    // Rust preset category and tags
     public string       Category { get; set; } = string.Empty;
     public List<string> Tags     { get; set; } = [];
 
-    // Palvelimen asetukset
+    // Rust server settings
     public int    DefaultPort      { get; set; }
     public int    DefaultQueryPort { get; set; }
-    public int    DefaultSteamPort { get; set; }
     public int    MaxPlayers       { get; set; }
     public bool   AutoRestart      { get; set; }
     public bool   AutoUpdate       { get; set; }

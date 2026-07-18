@@ -16,8 +16,8 @@ public class JunkItem
 
 /// <summary>
 /// Finds leftover junk in a server's install directory that's safe to delete while the
-/// server is stopped: old log files, Unreal Engine crash report folders, and stray SteamCMD
-/// temp files. Never runs against a running server's process — only scans the filesystem.
+/// Rust server is stopped: old log files, crash dumps, and stray SteamCMD temp files.
+/// Oxide and Carbon data is always excluded.
 /// </summary>
 public class ServerHygieneService
 {
@@ -34,12 +34,6 @@ public class ServerHygieneService
                 if (IsInModFolder(f)) continue;
                 var fi = new FileInfo(f);
                 items.Add(new JunkItem { Path = f, SizeBytes = fi.Length, Description = "Log file" });
-            }
-
-            // Unreal Engine crash report folders (UECC-Windows-...)
-            foreach (var d in Directory.EnumerateDirectories(server.InstallPath, "UECC-*", SearchOption.AllDirectories))
-            {
-                items.Add(new JunkItem { Path = d, IsDirectory = true, SizeBytes = DirSize(d), Description = "Crash report folder" });
             }
 
             // Stray crash dumps
@@ -63,10 +57,8 @@ public class ServerHygieneService
         return items;
     }
 
-    // Known mod-loader folder names whose own logs/temp files should never be flagged as junk —
-    // BepInEx (Valheim, Subnautica, etc.), Melon/MelonLoader, SML2 (Satisfactory) all write
-    // their own *.log files that would otherwise be wrongly caught by the patterns above.
-    private static readonly string[] ModFolderNames = ["BepInEx", "MelonLoader", "SML2"];
+    // Rust mod frameworks own these folders; their logs and data are not disposable junk.
+    private static readonly string[] ModFolderNames = ["oxide", "carbon"];
 
     private static bool IsInModFolder(string filePath)
     {

@@ -207,8 +207,6 @@ public async Task AddPortsForServerAsync(GameServer server)
         Add(server.ServerPort,  "TCP");
         if (server.QueryPort > 0 && server.QueryPort != server.ServerPort)
             Add(server.QueryPort, "UDP");
-        if (server.SteamPort > 0 && server.SteamPort != server.ServerPort)
-            Add(server.SteamPort, "UDP");
         if (server.GameSpecificSettings.TryGetValue("appPort", out var appPortText)
             && int.TryParse(appPortText, out var appPort) && appPort > 0)
             Add(appPort, "TCP");

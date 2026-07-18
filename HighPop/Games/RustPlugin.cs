@@ -9,7 +9,6 @@ public class RustPlugin : GamePluginBase, IWipePlugin
     public override string Description   => "Multiplayer survival with base building and PvP";
     public override string Category      => "Survival";
     public override int    SteamAppId    => 258550;
-    public override int    GameStoreAppId => 252490;
     public override string Executable    => "RustDedicated.exe";
     public override int    DefaultPort   => 28015;
     public override int    DefaultQueryPort => 28017;

@@ -6,7 +6,7 @@ namespace HighPop.Services;
 
 /// <summary>
 /// Steam A2S_PLAYER query — used by games that expose Steam Query protocol
-/// but have no RCON (e.g. ARMA Reforger with -a2sPort).
+/// and provides an independent Rust server status/player-count check.
 /// </summary>
 public static class A2SQueryService
 {

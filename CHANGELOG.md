@@ -3,6 +3,8 @@
 ## 0.1.0
 
 - Created the HighPop Rust-focused Windows manager and original brand system.
+- Removed inherited non-Rust game profiles and generic mod/workshop paths; HighPop now loads and operates Rust Dedicated Server only.
+- Replaced the application mark, executable icon, splash screen, and project banner with Rust-server-specific branding.
 - Added portable `assets/**` persistence and self-contained single-file publishing.
 - Added explicit Rust public-branch SteamCMD install/update/validate settings and conflict-safe game, query, WebRCON, and Rust+ ports.
 - Added Facepunch WebRCON transport, structured player parsing, moderation commands, Carbon and Oxide flows, custom-map URL support, and production presets.

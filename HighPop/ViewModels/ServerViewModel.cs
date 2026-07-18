@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Net.Http;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -20,12 +19,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private readonly PerformanceMonitorService _perfMonitor;
     private readonly ConfigService         _config;
     private readonly ModManagerService     _mods;
-    private readonly SourceModService      _sourceMod;
     private readonly ConfigEditorService   _configEditor;
     private readonly PlayerStatsService    _playerStats;
     private readonly PerfHistoryService    _perfHistory;
-    private readonly SteamWorkshopService  _workshop;
-    private readonly WorkshopDbService     _workshopDb;
     private readonly TemplateService        _templates;
     private readonly ScheduledTaskService   _scheduler;
     private readonly NetworkMonitorService  _network;
@@ -104,47 +100,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     partial void OnPerfRangeMinutesChanged(int _) => UpdatePerfChart();
     public IReadOnlyList<int> PerfRangeOptions { get; } = [5, 15, 30, 60];
 
-    // Workshop
-    [ObservableProperty] private List<Services.WorkshopItem>   _workshopItems = [];
-    [ObservableProperty] private List<Services.WorkshopMod>    _workshopDbMods = [];
-    [ObservableProperty] private List<Services.WorkshopItem>   _workshopSearchResults = [];
-    [ObservableProperty] private List<Services.WorkshopMod>    _outdatedMods = [];
-    [ObservableProperty] private string _workshopItemId      = string.Empty;
-    [ObservableProperty] private string _workshopSearchQuery = string.Empty;
-    [ObservableProperty] private bool   _workshopBusy;
-    [ObservableProperty] private string _workshopItemIdPreview = string.Empty;
-    private System.Timers.Timer? _workshopIdLookupTimer;
-    private ulong _workshopIdLookupPending; // written before timer Start, read inside handler
-
-    partial void OnWorkshopItemIdChanged(string value)
-    {
-        _workshopIdLookupTimer?.Stop();
-        WorkshopItemIdPreview = string.Empty;
-        if (!ulong.TryParse(value, out var id) || id == 0) return;
-
-        _workshopIdLookupPending = id;
-
-        if (_workshopIdLookupTimer == null)
-        {
-            _workshopIdLookupTimer = new System.Timers.Timer(500) { AutoReset = false };
-            // Handler registered once — reads _workshopIdLookupPending set before each Start()
-            _workshopIdLookupTimer.Elapsed += (_, _) => _ = LookupWorkshopItemNameAsync(_workshopIdLookupPending);
-        }
-        else
-        {
-            _workshopIdLookupTimer.Interval = 500;
-        }
-        _workshopIdLookupTimer.Start();
-    }
-
-    private async Task LookupWorkshopItemNameAsync(ulong id)
-    {
-        var title = await Services.SteamWorkshopService.TryGetItemTitleAsync(id);
-        if (ulong.TryParse(WorkshopItemId, out var current) && current != id) return; // stale lookup, ID changed since
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
-            WorkshopItemIdPreview = title ?? "(not found)");
-    }
-
     // Scheduled tasks
     [ObservableProperty] private List<Services.ScheduledTask> _scheduledTasks = [];
 
@@ -162,7 +117,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private int _fullBackupEveryN;
     partial void OnFullBackupEveryNChanged(int value) => Server.FullBackupEveryN = value;
 
-    public bool HasWorkshop => _workshop.SupportsWorkshop(Plugin);
     public bool HasPlayerCommands => Plugin?.GetPlayersCommand() != null
                                   || Plugin?.GetKickCommand("") != null;
 
@@ -201,56 +155,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     private System.Timers.Timer? _perfTimer;
 
-    public bool HasModSupport       => Plugin?.SupportsOxide == true
-                                    || !string.IsNullOrEmpty(Plugin?.MinecraftFlavor);
-    public bool HasMinecraftSupport => !string.IsNullOrEmpty(Plugin?.MinecraftFlavor);
+    public bool HasModSupport       => Plugin?.SupportsOxide == true;
     public bool IsRust              => Plugin?.GameId == "rust";
-
-    // ── SourceMod plugin manager ──────────────────────────────────────────────
-    public bool HasSourceModSupport => SourceModService.IsAvailable(Plugin, Server.InstallPath);
-
-    [ObservableProperty] private List<SourceModPlugin> _sourceModActive   = [];
-    [ObservableProperty] private List<SourceModPlugin> _sourceModDisabled = [];
-    [ObservableProperty] private bool   _sourceModBusy;
-    [ObservableProperty] private string _sourceModStatusText = string.Empty;
-
-    [RelayCommand]
-    private void RefreshSourceMod()
-    {
-        SourceModActive   = _sourceMod.GetActivePlugins(Server.InstallPath);
-        SourceModDisabled = _sourceMod.GetDisabledPlugins(Server.InstallPath);
-        SourceModStatusText = $"{SourceModActive.Count} active · {SourceModDisabled.Count} disabled";
-    }
-
-    [RelayCommand]
-    private void DisableSourceModPlugin(SourceModPlugin? plugin)
-    {
-        if (plugin == null) return;
-        try
-        {
-            _sourceMod.DisablePlugin(Server.InstallPath, plugin.FileName);
-            RefreshSourceMod();
-        }
-        catch (Exception ex)
-        {
-            SourceModStatusText = $"Error: {ex.Message}";
-        }
-    }
-
-    [RelayCommand]
-    private void EnableSourceModPlugin(SourceModPlugin? plugin)
-    {
-        if (plugin == null) return;
-        try
-        {
-            _sourceMod.EnablePlugin(Server.InstallPath, plugin.FileName);
-            RefreshSourceMod();
-        }
-        catch (Exception ex)
-        {
-            SourceModStatusText = $"Error: {ex.Message}";
-        }
-    }
 
     public List<CpuCoreItem> CpuCores { get; }
     public string[] PriorityOptions { get; } = ["Normal", "AboveNormal", "High", "BelowNormal", "RealTime"];
@@ -277,52 +183,18 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public bool IsStopped    => Server.Status is ServerStatus.Stopped or ServerStatus.NotInstalled;
     public bool CanStart     => Server.Status is ServerStatus.Stopped or ServerStatus.Error or ServerStatus.NotInstalled;
     public bool CanStop      => Server.Status is ServerStatus.Running or ServerStatus.Starting;
-    public bool HasRcon          => Plugin?.HasRcon == true;
-    public bool UseNativeConsole => Plugin?.UseNativeConsole == true;
+    public bool HasRcon => Plugin?.HasRcon == true;
 
-    /// <summary>Shows the version card for any game where we can determine an installed build —
-    /// FiveM/RedM's own tracking, or any Steam-installed game's SteamCMD app manifest.</summary>
-    public bool ShowVersionInfo => Plugin != null && (Plugin.SupportsVersionCheck || Plugin.SteamAppId > 0);
-
-    /// <summary>Only FiveM/RedM have an explicit "check for update" — for normal Steam games,
-    /// clicking Install/Update already re-checks and updates every time, no separate step needed.</summary>
-    public bool ShowUpdateCheckButton => Plugin?.SupportsVersionCheck == true;
+    public bool ShowVersionInfo => Plugin?.SteamAppId > 0;
 
     public string InstalledVersionText
     {
         get
         {
             if (Plugin == null) return "—";
-            if (Plugin.SupportsVersionCheck)
-                return Server.GameSpecificSettings.TryGetValue("installedBuild", out var b) && !string.IsNullOrEmpty(b)
-                    ? b : "Not installed yet";
             return Plugin.GetSteamInstalledBuildId(Server) ?? "Not installed yet";
         }
     }
-
-    [ObservableProperty] private string _updateCheckResult = string.Empty;
-
-    [RelayCommand]
-    private async Task CheckForGameUpdateAsync()
-    {
-        if (Plugin == null) return;
-        UpdateCheckResult = "Checking...";
-        var newer = await Plugin.CheckForUpdateAsync(Server);
-        UpdateCheckResult = newer != null
-            ? $"⬆️ Build {newer} available — click Update to install it"
-            : "✅ Up to date";
-    }
-
-    // Games with no Steam store page at all get a bundled local logo where we have one (the
-    // Minecraft family's own project logos — not Mojang's "MINECRAFT" trademark, which we
-    // deliberately avoid using) — otherwise the generic placeholder.
-    internal static readonly Dictionary<string, string> LocalGameImages = new()
-    {
-        ["minecraft"]        = "minecraft_paper.png",   // GameId "minecraft" actually runs PaperMC
-        ["minecraft_spigot"] = "minecraft_spigot.png",
-        ["minecraft_forge"]  = "minecraft_forge.png",
-        ["minecraft_fabric"] = "minecraft_fabric.png",
-    };
 
     private string CustomImagePath => Path.Combine(
         _config.AppDataPath, "server_images", Server.Id + ".png");
@@ -335,11 +207,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         {
             if (HasCustomImage)
                 return CustomImagePath;
-            if (Plugin?.GameStoreAppId > 0)
-                return $"https://cdn.akamai.steamstatic.com/steam/apps/{Plugin.GameStoreAppId}/capsule_sm_120.jpg";
-            if (Plugin != null && LocalGameImages.TryGetValue(Plugin.GameId, out var localImage))
-                return $"pack://application:,,,/{localImage}";
-            return "pack://application:,,,/no_image.png";
+            return "pack://application:,,,/HighPop;component/assets/brand/highpop.png";
         }
     }
 
@@ -428,9 +296,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public ServerViewModel(GameServer server, ServerManagerService manager, SteamCmdService steamCmd,
         BackupService backup, NotificationService notifications, PerformanceMonitorService perfMonitor,
         ConfigService config, ModManagerService mods,
-        SourceModService sourceMod,
         ConfigEditorService configEditor, PlayerStatsService playerStats,
-        PerfHistoryService perfHistory, SteamWorkshopService workshop, WorkshopDbService workshopDb,
+        PerfHistoryService perfHistory,
         TemplateService templates, ScheduledTaskService scheduler, NetworkMonitorService network,
         GroupBanListService groupBans, ServerHygieneService hygiene,
         ConfigPresetService presets)
@@ -444,12 +311,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _perfMonitor   = perfMonitor;
         _config        = config;
         _mods          = mods;
-        _sourceMod     = sourceMod;
         _configEditor  = configEditor;
         _playerStats   = playerStats;
         _perfHistory   = perfHistory;
-        _workshop      = workshop;
-        _workshopDb    = workshopDb;
         _templates     = templates;
         _scheduler     = scheduler;
         _network       = network;
@@ -539,16 +403,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 catch (Exception ex) { AppendLog($"[HighPop] Backup before start failed: {ex.Message}", ConsoleMessageType.Warning); }
             }
 
-            // Inject active Workshop mod IDs so plugins can build correct launch args
-            if (Plugin is Games.IWorkshopPlugin && HasWorkshop)
-            {
-                var ids = _workshopDb.GetModsForServer(Server.Id)
-                    .Where(m => m.IsEnabled)
-                    .Select(m => $"@{m.ModId}")
-                    .ToList();
-                Server.GameSpecificSettings["__wgsWorkshopMods"] = string.Join(";", ids);
-            }
-
             await _manager.StartAsync(Server);
             // StartPerfMonitoring() and StartUpdateTimer() are called from OnStatusChanged(Running)
         }
@@ -622,24 +476,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (Plugin == null) return;
 
-        if (Plugin.SteamAppId <= 0)
-        {
-            await InstallFromManualDownloadAsync();
-            return;
-        }
-
-        string? login = null, password = null;
-        if (Plugin.RequiresSteamLogin)
-        {
-            if (string.IsNullOrWhiteSpace(_config.SteamLogin) || string.IsNullOrWhiteSpace(_config.SteamPassword))
-            {
-                AppendLog("[HighPop] ⚠ This game requires Steam login. Enter Steam username and password in the Settings page.", ConsoleMessageType.Warning);
-                return;
-            }
-            login    = _config.SteamLogin;
-            password = _config.SteamPassword;
-        }
-
         var expectedExecutable = Path.Combine(Server.InstallPath, Plugin.Executable);
         var hadExistingInstall = File.Exists(expectedExecutable);
 
@@ -658,7 +494,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             var branch = Server.GameSpecificSettings.TryGetValue("steamBranch", out var b) && !string.IsNullOrWhiteSpace(b) ? b : Plugin.SteamBranch;
-            await _steamCmd.InstallOrUpdateAsync(Server.Id, Plugin.SteamAppId, Server.InstallPath, login, password, branch);
+            await _steamCmd.InstallOrUpdateAsync(Server.Id, Plugin.SteamAppId, Server.InstallPath, null, null, branch);
             if (!File.Exists(expectedExecutable))
                 throw new FileNotFoundException("SteamCMD completed but the Rust server executable was not installed.", expectedExecutable);
             Server.Status = ServerStatus.Stopped;
@@ -685,105 +521,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         finally { IsInstalling = false; RefreshStatus(); }
     }
 
-    private static readonly HttpClient _manualDownloadHttp = new();
-
-    /// <summary>For SteamAppId == 0 games — download a direct zip build (FiveM/RedM's FXServer)
-    /// instead of going through SteamCMD, or fall back to a manual-install message if the plugin
-    /// doesn't know how to fetch one itself.</summary>
-    private async Task InstallFromManualDownloadAsync()
-    {
-        if (Plugin == null) return;
-
-        IsInstalling  = true;
-        Server.Status = ServerStatus.Installing;
-        RefreshStatus();
-        try
-        {
-            Directory.CreateDirectory(Server.InstallPath);
-
-            if (Plugin.HasHeavyInstall && _manager.RunningCount > 0)
-                AppendLog("[HighPop] ⚠ Warning: other servers are running. This install compiles code locally and may cause lag — consider stopping them first.", ConsoleMessageType.Warning);
-
-            var handled = await Plugin.TryCustomInstallAsync(Server, msg => AppendLog(msg, ConsoleMessageType.System));
-            if (handled)
-            {
-                Server.Status = ServerStatus.Stopped;
-                WpfApplication.Current?.Dispatcher?.BeginInvoke(() => Log.Clear());
-                AppendLog($"[HighPop] ✅ {Loc.InstallDone}", ConsoleMessageType.System);
-                await _notifications.NotifyAsync($"✅ {Server.DisplayName} {Loc.InstallDone}", Plugin.GameName, "#3FB950");
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            AppendLog("[ERR] Install failed: " + ex.Message, ConsoleMessageType.Error);
-            Server.Status = ServerStatus.Error;
-            return;
-        }
-        finally { IsInstalling = false; RefreshStatus(); }
-
-        if (Plugin.SupportsVersionCheck)
-        {
-            var (recommended, latest) = await Plugin.GetAvailableBuildsAsync(Server);
-            var dlg = new Views.BuildChannelDialog(Plugin.GameName, recommended, latest, () => Plugin.GetAvailableBuildsAsync(Server))
-            { Owner = System.Windows.Application.Current?.MainWindow };
-            dlg.ShowDialog();
-            if (dlg.Result == Views.BuildChannelResult.Cancel) return;
-            Server.GameSpecificSettings["buildChannel"] = dlg.Result == Views.BuildChannelResult.Latest ? "latest" : "recommended";
-        }
-
-        var info = await Plugin.GetManualDownloadInfoAsync(Server);
-        if (info == null)
-        {
-            AppendLog($"[HighPop] ⚠ {Plugin.GameName} isn't distributed via Steam — install it manually, then point this server's Install Path at it. " +
-                      $"{Plugin.Description}", ConsoleMessageType.Warning);
-            return;
-        }
-        var (build, url) = info.Value;
-
-        IsInstalling  = true;
-        Server.Status = ServerStatus.Installing;
-        RefreshStatus();
-        AppendLog($"[HighPop] {Loc.InstallingText} {Plugin.GameName}...", ConsoleMessageType.System);
-
-        if (Server.BackupEnabled && Server.Status != ServerStatus.NotInstalled)
-        {
-            try { await _backup.CreateBackupAsync(Server); AppendLog("[Backup] Auto-backup created before update.", ConsoleMessageType.System); RefreshBackups(); }
-            catch (Exception ex) { AppendLog($"[Backup] Pre-update backup failed: {ex.Message}", ConsoleMessageType.Warning); }
-        }
-
-        try
-        {
-            Directory.CreateDirectory(Server.InstallPath);
-            var zipPath = Path.Combine(Server.InstallPath, "_highpop_download.zip");
-
-            AppendLog($"[HighPop] Downloading {url}...", ConsoleMessageType.System);
-            var bytes = await _manualDownloadHttp.GetByteArrayAsync(url);
-            await File.WriteAllBytesAsync(zipPath, bytes);
-
-            AppendLog("[HighPop] Extracting...", ConsoleMessageType.System);
-            // Extract relative to the Executable's own subfolder (e.g. RedM's "server\FXServer.exe")
-            // so plugins that nest the binary in a subfolder don't end up with it one level too deep.
-            var execDir   = Path.GetDirectoryName(Plugin.Executable);
-            var targetDir = string.IsNullOrEmpty(execDir) ? Server.InstallPath : Path.Combine(Server.InstallPath, execDir);
-            Directory.CreateDirectory(targetDir);
-            System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, targetDir, overwriteFiles: true);
-            File.Delete(zipPath);
-
-            Server.GameSpecificSettings["installedBuild"] = build;
-            OnPropertyChanged(nameof(InstalledVersionText));
-            UpdateCheckResult = string.Empty;
-            Server.Status = ServerStatus.Stopped;
-            AppendLog($"[HighPop] {Loc.InstallDone} (build {build})", ConsoleMessageType.System);
-            await _notifications.NotifyAsync($"✅ {Server.DisplayName} {Loc.InstallDone}", $"{Plugin.GameName} — build {build}", "#3FB950");
-        }
-        catch (Exception ex)
-        {
-            AppendLog("[ERR] Download/extract failed: " + ex.Message, ConsoleMessageType.Error);
-            Server.Status = ServerStatus.Error;
-        }
-        finally { IsInstalling = false; RefreshStatus(); }
-    }
 
     [RelayCommand]
     private async Task UpdateAsync()
@@ -907,25 +644,18 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task ConnectRconAsync()
     {
         // Swap in a fresh RconService under lock so SendConsoleCommandAsync never sees a half-constructed state
-        var isFxServer = Plugin?.EngineFamily == "fivem";
-        var isRustServer = Plugin?.EngineFamily == Games.RustRcon.Family;
-
         RconService newRcon;
         await _rconLock.WaitAsync();
         try
         {
             _rcon?.Dispose();
-            _rcon = new RconService(isFxServer
-                ? RconProtocol.LegacyUdp
-                : isRustServer ? RconProtocol.RustWebSocket : RconProtocol.SourceTcp);
+            _rcon = new RconService();
             newRcon = _rcon;
         }
         finally { _rconLock.Release(); }
 
         var ip = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp == "0.0.0.0" ? "127.0.0.1" : Server.ServerIp;
-        // FXServer's rcon rides on the same UDP port as the game itself — there is no separate
-        // rcon port like Source RCON has.
-        var port = isFxServer ? Server.ServerPort : (Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1);
+        var port = Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1;
         var ok   = await newRcon.ConnectAsync(ip, port, Server.RconPassword);
 
         RconConnected = ok;
@@ -1212,122 +942,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ModManagerService.OpenCarbonPluginFolder(Server.InstallPath);
 
     [RelayCommand]
-    private async Task InstallPaperAsync()
-    {
-        if (Plugin?.MinecraftFlavor != "paper") return;
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-
-            await _mods.InstallPaperAsync(Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Paper installed successfully.", ConsoleMessageType.System);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallSpigotAsync()
-    {
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            await _mods.InstallSpigotAsync(Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Spigot compiled and installed.", ConsoleMessageType.System);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallPurpurAsync()
-    {
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            await _mods.InstallPurpurAsync(Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Purpur installed successfully.", ConsoleMessageType.System);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallFabricAsync()
-    {
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            await _mods.InstallFabricAsync(Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Fabric installed successfully.", ConsoleMessageType.System);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallForgeAsync()
-    {
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            await _mods.InstallForgeAsync(Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Forge installed successfully.", ConsoleMessageType.System);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallVanillaAsync()
-    {
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            await _mods.InstallVanillaAsync(Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Vanilla server installed successfully.", ConsoleMessageType.System);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
     private void OpenPluginFolder()
     {
         if (Plugin == null) return;
@@ -1406,13 +1020,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _playerRefreshTimer.AutoReset = true;
         _playerRefreshTimer.Start();
 
-        // REST-based player plugins (e.g. Palworld) need a few seconds after the process
-        // starts before their HTTP API is actually listening — fetching immediately just
-        // logs a noisy "connection refused" warning that the regular 15s poll would avoid.
-        if (Plugin is Games.IRestPlayersPlugin)
-            _ = Task.Delay(10_000).ContinueWith(_ => FetchOnlinePlayersAsync().ContinueWith(t => AppendLog($"[Players] {t.Exception!.InnerException?.Message}", ConsoleMessageType.Warning), System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted));
-        else
-            _ = FetchOnlinePlayersAsync().ContinueWith(t => AppendLog($"[Players] {t.Exception!.InnerException?.Message}", ConsoleMessageType.Warning), System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
+        // Give Rust WebRCON a moment to finish binding after the process starts.
+        _ = Task.Delay(3_000).ContinueWith(_ => FetchOnlinePlayersAsync().ContinueWith(
+            t => AppendLog($"[Players] {t.Exception!.InnerException?.Message}", ConsoleMessageType.Warning),
+            System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted));
     }
 
     private void StopPlayerRefresh()
@@ -1438,37 +1049,17 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (Plugin == null) return;
 
-        List<Models.OnlinePlayer> parsed;
+        var cmd = Plugin.GetPlayersCommand();
+        if (cmd == null || !RconConnected || _rcon == null) return;
 
-        if (Plugin is Games.IRestPlayersPlugin restPlugin)
-        {
-            parsed = await restPlugin.GetPlayersAsync(Server);
-            if (restPlugin.LastRestApiError != null)
-                AppendLog($"[REST API] {restPlugin.LastRestApiError}", ConsoleMessageType.Warning);
-        }
-        else if (Plugin is Games.IA2SQueryPlugin a2sPlugin)
-        {
-            parsed = await Services.A2SQueryService.QueryPlayersAsync(
-                a2sPlugin.A2SHost, a2sPlugin.GetA2SPort(Server));
-        }
-        else
-        {
-            var cmd = Plugin.GetPlayersCommand();
-            if (cmd == null) return;
+        string response;
+        await _rconLock.WaitAsync();
+        try   { response = await _rcon.SendCommandAsync(cmd); }
+        catch { return; }
+        finally { _rconLock.Release(); }
 
-            string response;
-            if (RconConnected && _rcon != null)
-            {
-                await _rconLock.WaitAsync();
-                try   { response = await _rcon.SendCommandAsync(cmd); }
-                catch { return; }
-                finally { _rconLock.Release(); }
-            }
-            else return;
-
-            if (string.IsNullOrWhiteSpace(response)) return;
-            parsed = Services.PlayerParserService.Parse(Plugin.EngineFamily, response);
-        }
+        if (string.IsNullOrWhiteSpace(response)) return;
+        var parsed = Services.PlayerParserService.ParseRustPlayerList(response);
 
         // Keep the model in sync — used by Shut-down-when-empty and the web dashboard's
         // server list (the detail endpoint already gets a live count separately).
@@ -1578,150 +1169,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         return m;
     }
 
-    // ── Workshop ─────────────────────────────────────────────────────────────
-
-    [RelayCommand]
-    private async Task RefreshWorkshopAsync()
-    {
-        if (Plugin == null || !HasWorkshop) return;
-        WorkshopItems  = await _workshop.GetInstalledItemsAsync(Server, Plugin);
-        WorkshopDbMods = _workshopDb.GetModsForServer(Server.Id);
-    }
-
-    [RelayCommand]
-    private async Task SearchWorkshopAsync()
-    {
-        if (Plugin == null || !HasWorkshop || string.IsNullOrWhiteSpace(WorkshopSearchQuery)) return;
-        WorkshopBusy = true;
-        try
-        {
-            WorkshopSearchResults = await _workshop.SearchWorkshopAsync(Plugin, WorkshopSearchQuery);
-        }
-        catch (Exception ex) { AppendLog($"[Workshop] Search failed: {ex.Message}", ConsoleMessageType.Error); }
-        finally { WorkshopBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallWorkshopItemAsync()
-    {
-        if (!ulong.TryParse(WorkshopItemId, out var id)) { AppendLog("[Workshop] Invalid item ID.", ConsoleMessageType.Warning); return; }
-        if (Plugin == null || !HasWorkshop) return;
-        await InstallWorkshopByIdAsync(id);
-        WorkshopItemId = string.Empty;
-    }
-
-    [RelayCommand]
-    private async Task InstallWorkshopFromSearchAsync(WorkshopItem? item)
-    {
-        if (item == null || Plugin == null) return;
-        await InstallWorkshopByIdAsync(item.PublishedFileId);
-    }
-
-    private async Task InstallWorkshopByIdAsync(ulong id)
-    {
-        if (Plugin == null || !HasWorkshop) return;
-        WorkshopBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => AppendLog($"[Workshop] [{x.pct}%] {x.msg}", ConsoleMessageType.System)));
-            await _workshop.InstallItemAsync(Server, Plugin, id, progress);
-            AppendLog($"[Workshop] ✅ Item {id} installed.", ConsoleMessageType.System);
-            await RefreshWorkshopAsync();
-        }
-        catch (Exception ex) { AppendLog($"[Workshop] ❌ {ex.Message}", ConsoleMessageType.Error); }
-        finally { WorkshopBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task UninstallWorkshopItemAsync(WorkshopMod? mod)
-    {
-        if (mod == null || Plugin == null) return;
-        WorkshopBusy = true;
-        try
-        {
-            await _workshop.UninstallItemAsync(Server, Plugin, mod.ModId);
-            AppendLog($"[Workshop] Removed {mod.ModName}.", ConsoleMessageType.System);
-            await RefreshWorkshopAsync();
-        }
-        catch (Exception ex) { AppendLog($"[Workshop] ❌ {ex.Message}", ConsoleMessageType.Error); }
-        finally { WorkshopBusy = false; }
-    }
-
-    [RelayCommand]
-    private void ToggleModEnabled(WorkshopMod? mod)
-    {
-        if (mod == null) return;
-        // WorkshopMod doesn't implement INPC so the CheckBox two-way binding
-        // doesn't update mod.IsEnabled before this fires — toggle it manually.
-        mod.IsEnabled = !mod.IsEnabled;
-        _workshopDb.SetEnabled(Server.Id, mod.ModId, mod.IsEnabled);
-    }
-
-    [RelayCommand]
-    private async Task UpdateAllModsAsync()
-    {
-        if (Plugin == null || !HasWorkshop) return;
-        WorkshopBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => AppendLog($"[Workshop] [{x.pct}%] {x.msg}", ConsoleMessageType.System)));
-            await _workshop.UpdateAllModsAsync(Server, Plugin, progress);
-            AppendLog("[Workshop] ✅ All mods updated.", ConsoleMessageType.System);
-            await RefreshWorkshopAsync();
-        }
-        catch (Exception ex) { AppendLog($"[Workshop] ❌ {ex.Message}", ConsoleMessageType.Error); }
-        finally { WorkshopBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task CheckOutdatedModsAsync()
-    {
-        if (Plugin == null || !HasWorkshop) return;
-        WorkshopBusy = true;
-        try
-        {
-            OutdatedMods = await _workshop.CheckForOutdatedModsAsync(Server);
-            if (OutdatedMods.Count == 0)
-                AppendLog("[Workshop] All mods are up to date.", ConsoleMessageType.System);
-            else
-                AppendLog($"[Workshop] {OutdatedMods.Count} outdated mod(s) found.", ConsoleMessageType.Warning);
-        }
-        catch (Exception ex) { AppendLog($"[Workshop] ❌ {ex.Message}", ConsoleMessageType.Error); }
-        finally { WorkshopBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task UpdateOutdatedModsAsync()
-    {
-        if (Plugin == null || !HasWorkshop || OutdatedMods.Count == 0) return;
-        WorkshopBusy = true;
-        try
-        {
-            var toUpdate = OutdatedMods.ToList();
-            for (int i = 0; i < toUpdate.Count; i++)
-            {
-                var mod = toUpdate[i];
-                AppendLog($"[Workshop] Updating {mod.ModName} ({i + 1}/{toUpdate.Count})...", ConsoleMessageType.System);
-                await _workshop.InstallItemAsync(Server, Plugin, mod.ModId);
-            }
-            AppendLog($"[Workshop] ✅ {toUpdate.Count} mod(s) updated.", ConsoleMessageType.System);
-            OutdatedMods = [];
-            await RefreshWorkshopAsync();
-        }
-        catch (Exception ex) { AppendLog($"[Workshop] ❌ {ex.Message}", ConsoleMessageType.Error); }
-        finally { WorkshopBusy = false; }
-    }
-
     // ── Direct Connect ────────────────────────────────────────────────────────
 
     [RelayCommand]
     private void JoinServer()
     {
         var ip   = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp == "0.0.0.0" ? "127.0.0.1" : Server.ServerIp;
-        var port = (Plugin?.UseGamePortForConnect == true || Server.QueryPort == 0) ? Server.ServerPort : Server.QueryPort;
-        var uri  = $"steam://connect/{ip}:{port}";
+        var uri  = $"steam://connect/{ip}:{Server.ServerPort}";
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri) { UseShellExecute = true });
@@ -1733,8 +1187,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void CopyConnectionLink()
     {
         var ip   = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp == "0.0.0.0" ? "127.0.0.1" : Server.ServerIp;
-        var port = (Plugin?.UseGamePortForConnect == true || Server.QueryPort == 0) ? Server.ServerPort : Server.QueryPort;
-        var link = $"steam://connect/{ip}:{port}";
+        var link = $"steam://connect/{ip}:{Server.ServerPort}";
         try
         {
             System.Windows.Clipboard.SetText(link);
@@ -2275,10 +1728,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         StopUpdateTimer();
         StopPerfMonitoring();
         StopPlayerRefresh();
-        _workshopIdLookupTimer?.Stop();
-        _workshopIdLookupTimer?.Dispose();
-        _workshopIdLookupTimer = null;
-
         if (_rconLock.Wait(TimeSpan.FromSeconds(3)))
         {
             try { _rcon?.Dispose(); _rcon = null; }
