@@ -31,7 +31,7 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 | Monitoring | Per-server CPU/RAM graphs, system metrics, bandwidth, health checks, log watches, crash-risk warnings, server hygiene |
 | Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, Discord controls and webhooks, SMTP alerts |
 | Windows controls | System tray, startup registration, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
-| Customization | Portable presets, editable launch/config values, server templates, custom images, and a graphical custom-profile creator |
+| Customization | Portable Rust presets, editable launch/config values, server templates, custom images, and replaceable brand assets |
 
 HighPop deliberately does not copy proprietary hosted databases or subscription services. VAC/VPN intelligence, globally shared ban data, and hosted web accounts require external data providers; the local manager remains usable without an account or recurring fee. See [ROADMAP.md](ROADMAP.md) for planned provider interfaces and deeper Rust telemetry.
 
@@ -95,7 +95,7 @@ Or run `./Build-HighPop.ps1`. Release builds use single-file publishing with nat
 
 ## Architecture
 
-HighPop is a .NET 10 WPF/MVVM application. Game operations are separated into plugins, with Rust exposed as the built-in production profile. Services handle SteamCMD, process supervision, WebRCON, backups, schedules, notifications, metrics, remote API access, and persistence. The graphical profile creator can register additional local server types without recompiling the app.
+HighPop is a .NET 10 WPF/MVVM application purpose-built for Rust Dedicated Server. Rust is the only server type shipped, loaded, installed, queried, or controlled. Services handle SteamCMD, Rust process supervision, Facepunch WebRCON, Oxide/Carbon, wipes, backups, schedules, notifications, metrics, remote API access, and persistence.
 
 ## Project origins
 

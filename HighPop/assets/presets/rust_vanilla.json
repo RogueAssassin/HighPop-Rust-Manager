@@ -1,0 +1,14 @@
+{
+  "GameId": "rust",
+  "Name": "Vanilla community",
+  "Description": "A clean vanilla Rust baseline with secure networking and five-minute saves.",
+  "ConfigFile": "server\\{identity}\\cfg\\server.cfg",
+  "Values": {
+    "server.maxplayers": "150",
+    "server.saveinterval": "300",
+    "server.secure": "true",
+    "server.encryption": "1",
+    "server.pve": "false",
+    "server.radiation": "true"
+  }
+}
