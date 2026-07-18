@@ -1,0 +1,29 @@
+using System.Windows;
+
+namespace HighPop.Views;
+
+public partial class CloseDialog : Window
+{
+    public enum CloseResult { Minimize, Close, Cancel }
+    public CloseResult Result { get; private set; } = CloseResult.Cancel;
+
+    public CloseDialog() => InitializeComponent();
+
+    private void MinimizeClick(object sender, RoutedEventArgs e)
+    {
+        Result = CloseResult.Minimize;
+        Close();
+    }
+
+    private void CloseAppClick(object sender, RoutedEventArgs e)
+    {
+        Result = CloseResult.Close;
+        Close();
+    }
+
+    private void CancelClick(object sender, RoutedEventArgs e)
+    {
+        Result = CloseResult.Cancel;
+        Close();
+    }
+}

@@ -1,0 +1,46 @@
+# Build and IDE output
+bin/
+obj/
+publish/
+publish_out/
+artifacts/
+.vs/
+.idea/
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.nupkg
+packages/
+.nuget/
+
+# HighPop portable runtime state (source assets remain tracked)
+HighPop/assets/data/
+HighPop/assets/servers/
+HighPop/assets/backups/
+HighPop/assets/logs/
+HighPop/assets/plugins/
+HighPop/assets/cache/
+
+# Game/server and diagnostic output
+appcache/
+depotcache/
+*.log
+*.dmp
+*.tmp
+
+# Release artifacts
+*.zip
+*.pdf
+
+# OS/editor noise
+Thumbs.db
+.DS_Store
+desktop.ini
+*.swp
+*.swo
+
+# Signing secrets
+*.pfx
+*.p12
+*.snk

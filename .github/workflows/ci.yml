@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "agent/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore HighPop.sln
+
+      - name: Build
+        run: dotnet build HighPop.sln -c Release --no-restore
+
+      - name: Smoke tests
+        run: dotnet run --project HighPop.SmokeTests/HighPop.SmokeTests.csproj -c Release --no-build
+
+      - name: Verify single-file publish
+        run: dotnet publish HighPop/HighPop.csproj -c Release -r win-x64 --self-contained true -o publish_out
+
+      - name: Confirm portable output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path publish_out/HighPop.exe)) { throw "HighPop.exe was not produced" }
+          if (-not (Test-Path publish_out/assets/README.txt)) { throw "assets/README.txt was not produced" }
+          if (-not (Test-Path publish_out/assets/presets/rust_highpop.json)) { throw "Rust presets were not produced" }

@@ -1,0 +1,14 @@
+{
+  "GameId": "rust",
+  "Name": "High-population community",
+  "Description": "A conservative production baseline for a large community server. Hardware, map size, and plugin load still determine the practical player ceiling.",
+  "ConfigFile": "server\\{identity}\\cfg\\server.cfg",
+  "Values": {
+    "server.maxplayers": "500",
+    "server.saveinterval": "300",
+    "server.secure": "true",
+    "server.encryption": "1",
+    "server.pve": "false",
+    "server.radiation": "true"
+  }
+}

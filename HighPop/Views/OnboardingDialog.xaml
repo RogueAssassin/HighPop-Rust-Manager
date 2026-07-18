@@ -1,0 +1,45 @@
+<Window x:Class="HighPop.Views.OnboardingDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="" Width="480" Height="420"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent">
+    <Border Background="#1c2128" CornerRadius="10" BorderBrush="#30363d" BorderThickness="1">
+        <StackPanel Margin="28,24">
+            <TextBlock Text="👋 Welcome to HighPop" FontSize="18" FontWeight="Bold" Foreground="White" Margin="0,0,0,12"/>
+            <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="#c9d1d9" Margin="0,0,0,10">
+                HighPop Rust Manager controls your Rust servers from one panel. Quick start:
+            </TextBlock>
+            <Grid Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="22"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="1." FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="Click '+ Add Server' and give the Rust instance a descriptive name." TextWrapping="Wrap" FontSize="13" Foreground="#c9d1d9" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="2." FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="Click 'Install / Update' — HighPop downloads SteamCMD and the server automatically." TextWrapping="Wrap" FontSize="13" Foreground="#c9d1d9" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="3." FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="Use the Settings tab for ports/password, Console to send commands, and Schedule for automatic restarts/backups." TextWrapping="Wrap" FontSize="13" Foreground="#c9d1d9" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="4." FontWeight="Bold" FontSize="13" Foreground="{StaticResource AccentBlueBrush}"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="Choose Carbon or Oxide under Mods, then configure backups and safe wipe schedules before launch." TextWrapping="Wrap" FontSize="13" Foreground="#c9d1d9"/>
+            </Grid>
+            <CheckBox x:Name="DontShowAgainCheck" Content="Don't show this again" Foreground="#8b949e" FontSize="12" Margin="0,0,0,16"/>
+            <Button Content="Got it" HorizontalAlignment="Right" Width="100" Height="34"
+                    Background="#F05A28" Foreground="White" BorderThickness="0"
+                    Cursor="Hand" Click="GotItClick"/>
+        </StackPanel>
+    </Border>
+</Window>
