@@ -21,8 +21,13 @@ public class PlayerStats
     public string   SteamId      { get; set; } = string.Empty;
     public int      SessionCount { get; set; }
     public TimeSpan TotalTime    { get; set; }
+    public TimeSpan AverageSession { get; set; }
+    public TimeSpan LongestSession { get; set; }
+    public DateTime FirstSeen { get; set; }
     public DateTime LastSeen     { get; set; }
     public string   TotalTimeText => $"{(int)TotalTime.TotalHours}h {TotalTime.Minutes:D2}m";
+    public string   AverageSessionText => $"{(int)AverageSession.TotalHours:D2}:{AverageSession.Minutes:D2}";
+    public string   LongestSessionText => $"{(int)LongestSession.TotalHours:D2}:{LongestSession.Minutes:D2}";
 }
 
 public class PlayerStatsService
@@ -47,30 +52,10 @@ public class PlayerStatsService
 
     private void EnsureSchema()
     {
-        using var db  = OpenDb();
-        using var cmd = db.CreateCommand();
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS sessions (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id   TEXT NOT NULL,
-                player_name TEXT NOT NULL,
-                steam_id    TEXT NOT NULL DEFAULT '',
-                join_time   TEXT NOT NULL,
-                leave_time  TEXT
-            );
-            CREATE INDEX IF NOT EXISTS idx_sessions_server   ON sessions(server_id);
-            CREATE INDEX IF NOT EXISTS idx_sessions_steamid  ON sessions(steam_id);
-            CREATE INDEX IF NOT EXISTS idx_sessions_jointime ON sessions(join_time);
-
-            -- Migraatio: lisaa steam_id jos puuttuu vanhasta skeemasta
-            ALTER TABLE sessions ADD COLUMN steam_id TEXT NOT NULL DEFAULT '' ;
-            """;
-        // ALTER TABLE epäonnistuu jos sarake on jo olemassa — se on ok
-        try { cmd.ExecuteNonQuery(); }
-        catch
+        using var db = OpenDb();
+        using (var create = db.CreateCommand())
         {
-            // Aja ilman ALTER
-            cmd.CommandText = """
+            create.CommandText = """
                 CREATE TABLE IF NOT EXISTS sessions (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
                     server_id   TEXT NOT NULL,
@@ -79,12 +64,39 @@ public class PlayerStatsService
                     join_time   TEXT NOT NULL,
                     leave_time  TEXT
                 );
-                CREATE INDEX IF NOT EXISTS idx_sessions_server   ON sessions(server_id);
-                CREATE INDEX IF NOT EXISTS idx_sessions_steamid  ON sessions(steam_id);
-                CREATE INDEX IF NOT EXISTS idx_sessions_jointime ON sessions(join_time);
                 """;
-            cmd.ExecuteNonQuery();
+            create.ExecuteNonQuery();
         }
+
+        var hasSteamId = false;
+        using (var columns = db.CreateCommand())
+        {
+            columns.CommandText = "PRAGMA table_info(sessions)";
+            using var reader = columns.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), "steam_id", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasSteamId = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasSteamId)
+        {
+            using var migrate = db.CreateCommand();
+            migrate.CommandText = "ALTER TABLE sessions ADD COLUMN steam_id TEXT NOT NULL DEFAULT ''";
+            migrate.ExecuteNonQuery();
+        }
+
+        using var indexes = db.CreateCommand();
+        indexes.CommandText = """
+            CREATE INDEX IF NOT EXISTS idx_sessions_server   ON sessions(server_id);
+            CREATE INDEX IF NOT EXISTS idx_sessions_steamid  ON sessions(steam_id);
+            CREATE INDEX IF NOT EXISTS idx_sessions_jointime ON sessions(join_time);
+            """;
+        indexes.ExecuteNonQuery();
     }
 
     // ── Kirjaus ───────────────────────────────────────────────────────────────
@@ -95,6 +107,15 @@ public class PlayerStatsService
         try
         {
             using var db  = OpenDb();
+            using var exists = db.CreateCommand();
+            exists.CommandText = !string.IsNullOrEmpty(steamId)
+                ? "SELECT COUNT(*) FROM sessions WHERE server_id=$s AND steam_id=$id AND leave_time IS NULL"
+                : "SELECT COUNT(*) FROM sessions WHERE server_id=$s AND player_name=$p AND leave_time IS NULL";
+            exists.Parameters.AddWithValue("$s", serverId);
+            exists.Parameters.AddWithValue("$p", playerName);
+            exists.Parameters.AddWithValue("$id", steamId);
+            if (Convert.ToInt64(exists.ExecuteScalar()) > 0) return;
+
             using var cmd = db.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO sessions (server_id, player_name, steam_id, join_time)
@@ -104,6 +125,25 @@ public class PlayerStatsService
             cmd.Parameters.AddWithValue("$p",  playerName);
             cmd.Parameters.AddWithValue("$id", steamId);
             cmd.Parameters.AddWithValue("$t",  DateTime.UtcNow.ToString("o"));
+            cmd.ExecuteNonQuery();
+        }
+        catch { }
+    }
+
+    public void CloseOpenSessions(string serverId)
+    {
+        if (!_available) return;
+        try
+        {
+            using var db = OpenDb();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = """
+                UPDATE sessions
+                SET leave_time=$t
+                WHERE server_id=$s AND leave_time IS NULL
+                """;
+            cmd.Parameters.AddWithValue("$t", DateTime.UtcNow.ToString("o"));
+            cmd.Parameters.AddWithValue("$s", serverId);
             cmd.ExecuteNonQuery();
         }
         catch { }
@@ -180,16 +220,21 @@ public class PlayerStatsService
             using var cmd = db.CreateCommand();
             cmd.CommandText = """
                 SELECT
-                    player_name,
+                    MAX(player_name),
                     MAX(steam_id),
                     COUNT(*) AS sessions,
                     SUM(CAST(
                         (julianday(COALESCE(leave_time, datetime('now')))
                          - julianday(join_time)) * 86400 AS INTEGER)) AS total_secs,
-                    MAX(join_time) AS last_seen
+                    AVG((julianday(COALESCE(leave_time, datetime('now')))
+                         - julianday(join_time)) * 86400) AS avg_secs,
+                    MAX((julianday(COALESCE(leave_time, datetime('now')))
+                         - julianday(join_time)) * 86400) AS longest_secs,
+                    MIN(join_time) AS first_seen,
+                    MAX(COALESCE(leave_time, join_time)) AS last_seen
                 FROM sessions
                 WHERE server_id = $s
-                GROUP BY player_name
+                GROUP BY CASE WHEN steam_id <> '' THEN steam_id ELSE lower(player_name) END
                 ORDER BY total_secs DESC
                 LIMIT $l
                 """;
@@ -204,7 +249,10 @@ public class PlayerStatsService
                     SteamId      = r.IsDBNull(1) ? "" : r.GetString(1),
                     SessionCount = (int)r.GetInt64(2),
                     TotalTime    = TimeSpan.FromSeconds(r.IsDBNull(3) ? 0 : r.GetDouble(3)),
-                    LastSeen     = DateTime.Parse(r.GetString(4)),
+                    AverageSession = TimeSpan.FromSeconds(r.IsDBNull(4) ? 0 : r.GetDouble(4)),
+                    LongestSession = TimeSpan.FromSeconds(r.IsDBNull(5) ? 0 : r.GetDouble(5)),
+                    FirstSeen = DateTime.Parse(r.GetString(6)),
+                    LastSeen     = DateTime.Parse(r.GetString(7)),
                 });
             return result;
         }
@@ -248,16 +296,21 @@ public class PlayerStatsService
             using var cmd = db.CreateCommand();
             cmd.CommandText = """
                 SELECT
-                    player_name,
+                    MAX(player_name),
                     MAX(steam_id),
                     COUNT(*) AS sessions,
                     SUM(CAST(
                         (julianday(COALESCE(leave_time, datetime('now')))
                          - julianday(join_time)) * 86400 AS INTEGER)) AS total_secs,
-                    MAX(join_time) AS last_seen
+                    AVG((julianday(COALESCE(leave_time, datetime('now')))
+                         - julianday(join_time)) * 86400) AS avg_secs,
+                    MAX((julianday(COALESCE(leave_time, datetime('now')))
+                         - julianday(join_time)) * 86400) AS longest_secs,
+                    MIN(join_time) AS first_seen,
+                    MAX(COALESCE(leave_time, join_time)) AS last_seen
                 FROM sessions
                 WHERE server_id = $s AND join_time >= $since
-                GROUP BY player_name
+                GROUP BY CASE WHEN steam_id <> '' THEN steam_id ELSE lower(player_name) END
                 ORDER BY total_secs DESC
                 LIMIT $l
                 """;
@@ -273,7 +326,10 @@ public class PlayerStatsService
                     SteamId      = r.IsDBNull(1) ? "" : r.GetString(1),
                     SessionCount = (int)r.GetInt64(2),
                     TotalTime    = TimeSpan.FromSeconds(r.IsDBNull(3) ? 0 : r.GetDouble(3)),
-                    LastSeen     = DateTime.Parse(r.GetString(4)),
+                    AverageSession = TimeSpan.FromSeconds(r.IsDBNull(4) ? 0 : r.GetDouble(4)),
+                    LongestSession = TimeSpan.FromSeconds(r.IsDBNull(5) ? 0 : r.GetDouble(5)),
+                    FirstSeen = DateTime.Parse(r.GetString(6)),
+                    LastSeen     = DateTime.Parse(r.GetString(7)),
                 });
             return result;
         }
