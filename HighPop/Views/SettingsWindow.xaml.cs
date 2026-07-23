@@ -7,6 +7,7 @@ public partial class SettingsWindow : System.Windows.Window
     public SettingsWindow(SettingsViewModel vm, object mainViewModel)
     {
         InitializeComponent();
+        HighPop.Helpers.WindowWorkArea.Attach(this);
         DataContext = mainViewModel;
         SettingsViewControl.DataContext = vm;
         StateChanged += (_, _) =>

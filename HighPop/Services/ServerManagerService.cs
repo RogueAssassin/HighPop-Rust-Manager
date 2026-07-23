@@ -22,11 +22,24 @@ public class ServerInstance
     public CancellationTokenSource DailyRestartCts { get; } = new();
     public nint JobHandle { get; set; } = nint.Zero;
     public volatile bool IntentionalStop;
+    public string StopReason { get; set; } = string.Empty;
+    private int _ready;
+    public bool IsReady => Volatile.Read(ref _ready) == 1;
+    public DateTime? ReadyTime { get; private set; }
+    public string ReadySource { get; private set; } = string.Empty;
 
     /// <summary>Times of recent crashes (last 10 minutes). Used for crash-loop detection.</summary>
     public List<DateTime> CrashTimes { get; } = [];
 
     public ServerInstance(GameServer server) => Server = server;
+
+    public bool TryMarkReady(string source)
+    {
+        if (Interlocked.CompareExchange(ref _ready, 1, 0) != 0) return false;
+        ReadyTime = DateTime.Now;
+        ReadySource = source;
+        return true;
+    }
 
     public TimeSpan Uptime => StartTime.HasValue ? DateTime.Now - StartTime.Value : TimeSpan.Zero;
 
@@ -49,6 +62,7 @@ public class ServerManagerService
     private static readonly Regex AnsiEscapeRegex = new(@"\x1B\[[0-9;]*[a-zA-Z]|\x1B\][^\x07\x1B]*(\x07|\x1B\\)", RegexOptions.Compiled);
     private readonly NetworkMonitorService _network;
     private readonly ConfigService _config;
+    private readonly RustTelemetryService _telemetry;
     private readonly ConcurrentDictionary<string, ServerInstance> _running = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _lifecycleGates = new();
 
@@ -62,15 +76,42 @@ public class ServerManagerService
     /// <summary>Fired when a server's ports were automatically reassigned because they were in use.</summary>
     public event Action<GameServer>? PortsReassigned;
 
-    public ServerManagerService(ConfigService config, NetworkMonitorService network)
+    public ServerManagerService(
+        ConfigService config,
+        NetworkMonitorService network,
+        RustTelemetryService telemetry)
     {
         _config  = config;
         _network = network;
+        _telemetry = telemetry;
         AppDomain.CurrentDomain.ProcessExit += (_, _) => KillAll();
     }
 
     public ServerInstance? GetInstance(string serverId)
         => _running.TryGetValue(serverId, out var i) ? i : null;
+
+    /// <summary>
+    /// True after Rust reports startup completion, WebRCON connects, or the configured
+    /// slow-start grace window expires. Automated health/idle actions must not run earlier.
+    /// </summary>
+    public bool IsServerReady(string serverId)
+    {
+        if (!_running.TryGetValue(serverId, out var inst) || inst.Process?.HasExited != false)
+            return false;
+        if (inst.IsReady) return true;
+
+        var graceMinutes = Math.Clamp(inst.Server.StartupGraceMinutes, 1, 60);
+        if (inst.Uptime < TimeSpan.FromMinutes(graceMinutes)) return false;
+
+        MarkServerReady(inst.Server, inst, $"startup grace elapsed ({graceMinutes} min)");
+        return true;
+    }
+
+    public void ReportRconConnected(string serverId)
+    {
+        if (_running.TryGetValue(serverId, out var inst))
+            MarkServerReady(inst.Server, inst, "WebRCON connected");
+    }
 
     public int RunningCount => _running.Count;
 
@@ -114,12 +155,16 @@ public class ServerManagerService
             }
 
             var inst = new ServerInstance(server) { Process = p, StartTime = SafeStartTime(p) };
+            inst.TryMarkReady("reattached running process");
             try { p.EnableRaisingEvents = true; } catch { }
             p.Exited += (_, _) =>
             {
+                if (!IsCurrentInstance(server.Id, inst)) return;
+                _network.UnregisterServer(server.Id);
+                RecordProcessExit(server, inst, SafeExitCode(p), inst.IntentionalStop);
                 server.RunningPid = 0;
-                _running.TryRemove(server.Id, out _);
-                SetStatus(server, ServerStatus.Stopped);
+                RemoveInstanceIfCurrent(server.Id, inst);
+                SetStatus(server, inst.IntentionalStop ? ServerStatus.Stopped : ServerStatus.Error);
             };
             _running[server.Id] = inst;
             _network.RegisterServer(server.Id, p.Id);
@@ -329,6 +374,9 @@ public class ServerManagerService
             var msg = new ConsoleMessage { Text = text, Type = type };
             inst.AddToLog(msg);
             LogReceived?.Invoke(server.Id, msg);
+            if (server.GameId == "rust"
+                && text.Contains("Server startup complete", StringComparison.OrdinalIgnoreCase))
+                MarkServerReady(server, inst, "Rust startup log");
         }
 
         proc.OutputDataReceived += (_, e) =>
@@ -349,12 +397,31 @@ public class ServerManagerService
         {
             try
             {
-                SetStatus(server, ServerStatus.Stopped);
+                inst.DailyRestartCts.Cancel();
+                JobObjectService.ReleaseJob(inst.JobHandle);
+                inst.JobHandle = nint.Zero;
+
+                // An old Exited callback must never remove or change the state of a
+                // replacement process that has already started for this profile.
+                if (!IsCurrentInstance(server.Id, inst)) return;
+
+                _network.UnregisterServer(server.Id);
+                var exitCode = SafeExitCode(proc);
+                RecordProcessExit(server, inst, exitCode, inst.IntentionalStop);
                 server.RunningPid = 0;
 
-                if (inst.IntentionalStop || !server.AutoRestart || !_running.ContainsKey(server.Id))
+                if (inst.IntentionalStop)
                 {
-                    _running.TryRemove(server.Id, out _);
+                    RemoveInstanceIfCurrent(server.Id, inst);
+                    SetStatus(server, ServerStatus.Stopped);
+                    return;
+                }
+
+                SetStatus(server, ServerStatus.Error);
+
+                if (!server.AutoRestart)
+                {
+                    RemoveInstanceIfCurrent(server.Id, inst);
                     return;
                 }
 
@@ -377,7 +444,7 @@ public class ServerManagerService
                     LogReceived?.Invoke(server.Id, giveUp);
                     server.AutoRestart = false;
                     SetStatus(server, ServerStatus.Error);
-                    _running.TryRemove(server.Id, out _);
+                    RemoveInstanceIfCurrent(server.Id, inst);
                     CrashLimitReached?.Invoke(server.Id);
                     return;
                 }
@@ -395,9 +462,9 @@ public class ServerManagerService
                 await Task.Delay(delaySec * 1000);
 
                 // Re-check: user might have disabled auto-restart during the delay
-                if (!server.AutoRestart || !_running.ContainsKey(server.Id))
+                if (!server.AutoRestart || !IsCurrentInstance(server.Id, inst))
                 {
-                    _running.TryRemove(server.Id, out _);
+                    RemoveInstanceIfCurrent(server.Id, inst);
                     return;
                 }
 
@@ -437,6 +504,12 @@ public class ServerManagerService
             throw;
         }
 
+        // Publish process identity before output handlers can observe a fast startup line.
+        inst.Process   = proc;
+        inst.StartTime = DateTime.Now;
+        server.LastStarted = DateTime.Now;
+        server.RunningPid  = proc.Id;
+
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
 
@@ -465,14 +538,16 @@ public class ServerManagerService
         }
         catch { }
 
-        inst.Process   = proc;
-        inst.StartTime = DateTime.Now;
-        server.LastStarted = DateTime.Now;
-        server.RunningPid  = proc.Id;
-
         // Apply RAM limit via Windows Job Object
         if (server.MaxRamMb > 0)
+        {
             inst.JobHandle = JobObjectService.ApplyRamLimit(proc, server.MaxRamMb);
+            AddLog(
+                inst.JobHandle != nint.Zero
+                    ? $"[HighPop] Hard RAM cap active at {server.MaxRamMb:N0} MB. Windows can terminate Rust if this limit is exceeded."
+                    : $"[HighPop] Could not apply the configured {server.MaxRamMb:N0} MB RAM cap.",
+                inst.JobHandle != nint.Zero ? ConsoleMessageType.Warning : ConsoleMessageType.Error);
+        }
 
         // Schedule daily restart if enabled
         if (server.DailyRestartEnabled)
@@ -486,6 +561,16 @@ public class ServerManagerService
             FirewallService.AddRules(server);
 
         SetStatus(server, ServerStatus.Running);
+        _ = _telemetry.AppendAsync(
+            server,
+            "server.process_started",
+            "manager",
+            new Dictionary<string, string>
+            {
+                ["pid"] = proc.Id.ToString(),
+                ["port"] = server.ServerPort.ToString(),
+                ["rconPort"] = server.RconPort.ToString(),
+            });
         }
         catch
         {
@@ -496,15 +581,15 @@ public class ServerManagerService
         }
     }
 
-    public async Task StopAsync(GameServer server)
+    public async Task StopAsync(GameServer server, string reason = "Requested from HighPop")
     {
         var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
-        try { await StopCoreAsync(server); }
+        try { await StopCoreAsync(server, reason); }
         finally { gate.Release(); }
     }
 
-    private async Task StopCoreAsync(GameServer server)
+    private async Task StopCoreAsync(GameServer server, string reason)
     {
         if (!_running.TryGetValue(server.Id, out var inst))
         {
@@ -514,8 +599,10 @@ public class ServerManagerService
             return;
         }
         inst.IntentionalStop = true;
+        inst.StopReason = reason;
         inst.DailyRestartCts.Cancel();
         SetStatus(server, ServerStatus.Stopping);
+        InjectLogLine(server.Id, $"[HighPop] Stop requested: {reason}", ConsoleMessageType.Warning);
 
         var plugin = GameRegistry.Get(server.GameId);
         var stopCmd = plugin?.GetStopCommand(server);
@@ -524,10 +611,20 @@ public class ServerManagerService
         {
             try { await inst.Process.StandardInput.WriteLineAsync(stopCmd); }
             catch { }
-            await Task.Delay(5000);
+            try
+            {
+                using var gracefulStopCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await inst.Process.WaitForExitAsync(gracefulStopCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                InjectLogLine(server.Id,
+                    "[HighPop] Rust did not exit within 30 seconds; forcing the process to close.",
+                    ConsoleMessageType.Warning);
+            }
         }
 
-        _running.TryRemove(server.Id, out _);
+        RemoveInstanceIfCurrent(server.Id, inst);
         _network.UnregisterServer(server.Id);
         if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
 
@@ -589,6 +686,7 @@ public class ServerManagerService
         inst.IntentionalStop = true;
         inst.DailyRestartCts.Cancel();
         JobObjectService.ReleaseJob(inst.JobHandle);
+        inst.JobHandle = nint.Zero;
         _running.TryRemove(server.Id, out _);
         _network.UnregisterServer(server.Id);
         if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
@@ -722,7 +820,7 @@ public class ServerManagerService
             {
                 await SendCommandAsync(server.Id, "server.save");
                 await Task.Delay(1000);
-                await StopAsync(server);
+                await StopAsync(server, "Scheduled daily restart");
                 await Task.Delay(3000);
                 await StartAsync(server);
             }
@@ -758,6 +856,79 @@ public class ServerManagerService
             }
         }
     }
+
+    private void MarkServerReady(GameServer server, ServerInstance inst, string source)
+    {
+        if (!IsCurrentInstance(server.Id, inst) || !inst.TryMarkReady(source)) return;
+        var elapsed = inst.Uptime;
+        var msg = new ConsoleMessage
+        {
+            Text = $"[HighPop] Rust is ready after {FormatDuration(elapsed)} ({source}). Automated health and idle checks are now active.",
+            Type = ConsoleMessageType.System,
+        };
+        inst.AddToLog(msg);
+        LogReceived?.Invoke(server.Id, msg);
+        _ = _telemetry.AppendAsync(
+            server,
+            "server.ready",
+            source,
+            new Dictionary<string, string>
+            {
+                ["startupSeconds"] = Math.Max(0, (int)elapsed.TotalSeconds).ToString(),
+            });
+    }
+
+    private void RecordProcessExit(GameServer server, ServerInstance inst, int? exitCode, bool intentional)
+    {
+        var reason = intentional
+            ? (string.IsNullOrWhiteSpace(inst.StopReason) ? "Intentional stop" : inst.StopReason)
+            : $"RustDedicated exited unexpectedly with code {(exitCode?.ToString() ?? "unknown")}";
+        server.LastExitAt = DateTime.Now;
+        server.LastExitCode = exitCode;
+        server.LastExitReason = reason;
+
+        var capHint = !intentional && server.MaxRamMb > 0
+            ? $" A hard RAM cap of {server.MaxRamMb:N0} MB is configured; check whether Rust exceeded it."
+            : string.Empty;
+        var msg = new ConsoleMessage
+        {
+            Text = $"[HighPop] {reason} after {FormatDuration(inst.Uptime)}.{capHint}",
+            Type = intentional ? ConsoleMessageType.System : ConsoleMessageType.Error,
+        };
+        inst.AddToLog(msg);
+        LogReceived?.Invoke(server.Id, msg);
+        _ = _telemetry.AppendAsync(
+            server,
+            intentional ? "server.stopped" : "server.exited",
+            "manager",
+            new Dictionary<string, string>
+            {
+                ["intentional"] = intentional.ToString(),
+                ["exitCode"] = exitCode?.ToString() ?? "unknown",
+                ["reason"] = reason,
+                ["uptimeSeconds"] = Math.Max(0, (int)inst.Uptime.TotalSeconds).ToString(),
+            });
+    }
+
+    private bool IsCurrentInstance(string serverId, ServerInstance instance)
+        => _running.TryGetValue(serverId, out var current) && ReferenceEquals(current, instance);
+
+    private bool RemoveInstanceIfCurrent(string serverId, ServerInstance instance)
+        => ((ICollection<KeyValuePair<string, ServerInstance>>)_running)
+            .Remove(new KeyValuePair<string, ServerInstance>(serverId, instance));
+
+    private static int? SafeExitCode(Process process)
+    {
+        try { return process.ExitCode; }
+        catch { return null; }
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+        => duration.TotalHours >= 1
+            ? $"{(int)duration.TotalHours}h {duration.Minutes}m {duration.Seconds}s"
+            : duration.TotalMinutes >= 1
+                ? $"{duration.Minutes}m {duration.Seconds}s"
+                : $"{Math.Max(0, (int)duration.TotalSeconds)}s";
 
     private static string? TryFindExecutable(string installPath, string hintExe)
     {

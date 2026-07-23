@@ -92,6 +92,13 @@ public class ServerHealthService : IDisposable
         foreach (var (server, plugin) in snapshot)
         {
             if (server.Status != ServerStatus.Running) continue;
+            // Rust can legitimately take several minutes to build navmesh/entities and bind
+            // WebRCON. Do not classify that normal startup window as a freeze.
+            if (!_manager.IsServerReady(server.Id))
+            {
+                _failures[server.Id] = 0;
+                continue;
+            }
             bool alive = await IsRespondingAsync(server, plugin);
 
             if (alive)
@@ -141,7 +148,7 @@ public class ServerHealthService : IDisposable
         {
             msg += " Restarting automatically.";
             await _notifications.NotifyAsync($"🔄 Health Check — {server.DisplayName}", msg, "#D29922");
-            await _manager.StopAsync(server);
+            await _manager.StopAsync(server, "Health check detected an unresponsive WebRCON listener");
             await Task.Delay(3000);
             await _manager.StartAsync(server);
         }

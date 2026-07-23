@@ -160,7 +160,7 @@ public partial class App : System.Windows.Application
                 try
                 {
                     var t = Task.Run(async () => {
-                        try { await manager.StopAsync(serverVm.Server); } catch { }
+                        try { await manager.StopAsync(serverVm.Server, "HighPop is closing"); } catch { }
                     });
                     t.Wait(5000);
                 }
@@ -177,6 +177,7 @@ public partial class App : System.Windows.Application
     {
         s.AddSingleton<ConfigService>();
         s.AddSingleton<SteamCmdService>();
+        s.AddSingleton<RustTelemetryService>();
         s.AddSingleton<ServerManagerService>();
         s.AddSingleton<BackupService>();
         s.AddSingleton<NotificationService>();

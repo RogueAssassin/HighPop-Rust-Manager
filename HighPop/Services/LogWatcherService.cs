@@ -53,7 +53,7 @@ public class LogWatcherService
             case LogWatchAction.Restart:
                 await _notifications.NotifyAsync($"⚠ Log Watch — {server.DisplayName}",
                     $"Restarting server. Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#D29922");
-                await _manager.StopAsync(server);
+                await _manager.StopAsync(server, $"Log watcher restart triggered by \"{rule.Keyword}\"");
                 await Task.Delay(3000);
                 await _manager.StartAsync(server);
                 break;
@@ -61,7 +61,7 @@ public class LogWatcherService
             case LogWatchAction.Stop:
                 await _notifications.NotifyAsync($"⚠ Log Watch — {server.DisplayName}",
                     $"Stopping server. Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#DA3633");
-                await _manager.StopAsync(server);
+                await _manager.StopAsync(server, $"Log watcher stop triggered by \"{rule.Keyword}\"");
                 break;
 
             case LogWatchAction.SendRcon:

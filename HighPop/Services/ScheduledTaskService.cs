@@ -215,7 +215,7 @@ public class ScheduledTaskService : IDisposable
                         await Task.Delay(60_000);
                         await _manager.SendCommandAsync(server.Id, "server.save");
                         await Task.Delay(1000);
-                        await _manager.StopAsync(server);
+                        await _manager.StopAsync(server, $"Scheduled task \"{task.ActionText}\"");
                         if (server.BackupOnShutdown) await _backup.CreateBackupAsync(server);
                         await Task.Delay(3000);
                     }
@@ -228,7 +228,7 @@ public class ScheduledTaskService : IDisposable
                         PublishTaskExecuted(task, task.LastResult);
                         return;
                     }
-                    await _manager.StopAsync(server);
+                    await _manager.StopAsync(server, $"Scheduled task \"{task.ActionText}\"");
                     if (server.BackupOnShutdown) await _backup.CreateBackupAsync(server);
                     break;
                 case ScheduledActionType.Start:
@@ -337,7 +337,7 @@ public class ScheduledTaskService : IDisposable
         {
             await _manager.WarnPlayersAsync(server, "Server wiping in 2 minutes — all world data will be reset");
             await Task.Delay(120_000);
-            await _manager.StopAsync(server);
+            await _manager.StopAsync(server, fullWipe ? "Scheduled full wipe" : "Scheduled map wipe");
             await Task.Delay(3000);
         }
 

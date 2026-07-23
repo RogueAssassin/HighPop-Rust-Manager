@@ -196,7 +196,7 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="28"/>
                     </Grid.ColumnDefinitions>
-                    <ContentPresenter Grid.Column="0"
+                    <ContentPresenter x:Name="selectionPresenter" Grid.Column="0"
                                       Content="{TemplateBinding SelectionBoxItem}"
                                       ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                       ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
@@ -205,6 +205,12 @@
                                       HorizontalAlignment="Left"
                                       IsHitTestVisible="False"
                                       SnapsToDevicePixels="True"/>
+                    <TextBox x:Name="PART_EditableTextBox" Grid.Column="0"
+                             Text="{TemplateBinding Text}"
+                             Background="Transparent" Foreground="{TemplateBinding Foreground}"
+                             BorderThickness="0" Padding="{TemplateBinding Padding}"
+                             VerticalContentAlignment="Center"
+                             Visibility="Hidden" Focusable="True"/>
                     <Path Grid.Column="1" Data="M 0 0 L 4 4 L 8 0 Z"
                           Fill="{StaticResource TextSecondaryBrush}"
                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
@@ -218,8 +224,8 @@
                    AllowsTransparency="True" Focusable="False"
                    PopupAnimation="Slide"
                    Placement="Bottom">
-                <Border Background="#21262D"
-                        BorderBrush="#30363D" BorderThickness="1"
+                <Border Background="{StaticResource BgSurface2Brush}"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                         CornerRadius="6" Margin="0,2,0,0"
                         MinWidth="{TemplateBinding ActualWidth}"
                         MaxHeight="{TemplateBinding MaxDropDownHeight}">
@@ -233,12 +239,19 @@
             <Trigger Property="IsDropDownOpen" Value="True">
                 <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
             </Trigger>
+            <Trigger Property="IsEditable" Value="True">
+                <Setter TargetName="selectionPresenter" Property="Visibility" Value="Hidden"/>
+                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="bd" Property="Opacity" Value="0.45"/>
+            </Trigger>
         </ControlTemplate.Triggers>
     </ControlTemplate>
 
     <Style x:Key="DarkComboBoxItem" TargetType="ComboBoxItem">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="#E6EDF3"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="Padding" Value="10,7"/>
         <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="FontSize" Value="13"/>
@@ -247,15 +260,29 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBoxItem">
                     <Border x:Name="bd" Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent" BorderThickness="1"
+                            CornerRadius="4" Margin="2"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsHighlighted" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="#2D333B"/>
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource BgSurface3Brush}"/>
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="#388bfd22"/>
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource SelectionActiveBrush}"/>
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource AccentOrangeBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsSelected" Value="True"/>
+                                <Condition Property="IsKeyboardFocusWithin" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource SelectionInactiveBrush}"/>
+                        </MultiTrigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -264,9 +291,9 @@
     </Style>
 
     <Style x:Key="DarkComboBox" TargetType="ComboBox">
-        <Setter Property="Background" Value="#21262D"/>
-        <Setter Property="Foreground" Value="#E6EDF3"/>
-        <Setter Property="BorderBrush" Value="#30363D"/>
+        <Setter Property="Background" Value="{StaticResource BgSurface2Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="10,7"/>
         <Setter Property="FontFamily" Value="Segoe UI"/>
@@ -275,6 +302,10 @@
         <Setter Property="Template" Value="{StaticResource DarkComboBoxTemplate}"/>
         <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboBoxItem}"/>
     </Style>
+
+    <!-- Keep every manager dropdown aligned with the Files-page selection palette. -->
+    <Style TargetType="ComboBox" BasedOn="{StaticResource DarkComboBox}"/>
+    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource DarkComboBoxItem}"/>
 
     <!-- ProgressBar -->
     <Style x:Key="DarkProgressBar" TargetType="ProgressBar">

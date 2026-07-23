@@ -3,7 +3,7 @@ HighPop runtime assets
 
 HighPop.exe is self-contained. This folder is the only external location HighPop uses:
 
-- data/       encrypted settings, databases, schedules, and update staging
+- data/       encrypted settings, databases, schedules, update staging, and opt-in telemetry
 - servers/    Rust dedicated server installations
 - backups/    automatic and manual server backups
 - logs/       HighPop diagnostics

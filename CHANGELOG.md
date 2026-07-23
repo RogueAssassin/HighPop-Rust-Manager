@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0
+
+- Prevented slow Rust startup from being treated as a WebRCON freeze or an empty server by adding readiness detection, configurable startup grace, and fresh-player-sample requirements.
+- Extended automatic WebRCON startup handling from a fixed one-minute loop to configurable first-attempt and retry windows (60 seconds and 15 minutes by default).
+- Made periodic Rust update checks non-destructive: HighPop now compares installed and current Steam branch build IDs before stopping a live server.
+- Added process exit codes, uptime, requested stop reasons, hard RAM-cap warnings, and protection against stale exit callbacks removing a replacement process.
+- Extended graceful Rust shutdown from 5 to 30 seconds before HighPop force-closes the process.
+- Corrected custom-window maximize sizing to use the Windows monitor work area so the manager and settings window no longer extend behind the taskbar.
+- Applied the Files-page orange/brown selection palette to dropdowns throughout the manager.
+- Began roadmap Stage 5 with an opt-in, versioned local Rust telemetry stream and per-server age/storage retention controls.
+
 ## 0.4.0
 
 - Made the identity's `cfg/server.cfg` authoritative for Rust custom variables and added explicit reload, save, and open-file controls.
