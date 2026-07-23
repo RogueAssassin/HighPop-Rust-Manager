@@ -27,7 +27,12 @@ public class GameServer
     public string ServerPassword { get; set; } = string.Empty;
     public string ServerName { get; set; } = string.Empty;
     public int MaxPlayers { get; set; }
-    public bool AutoRestart            { get; set; } = false;
+    /// <summary>
+    /// Keeps this server online until an operator explicitly stops it. Empty-player shutdown
+    /// is suppressed and unexpected exits are retried indefinitely with bounded backoff.
+    /// </summary>
+    public bool KeepOnline             { get; set; } = true;
+    public bool AutoRestart            { get; set; } = true;
     public int  AutoRestartMaxRetries  { get; set; } = 5;    // per 10-min window
     public int  AutoRestartDelaySec    { get; set; } = 10;   // seconds before restart
     public bool AutoUpdate             { get; set; } = false;

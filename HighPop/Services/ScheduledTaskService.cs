@@ -23,6 +23,8 @@ public class ScheduledTask
     public DateTime? LastRun  { get; set; }
     public DateTime? NextRun  { get; set; }
     public string LastResult { get; set; } = "Never run";
+    public int ConsecutiveFailures { get; set; }
+    public long LastDurationMilliseconds { get; set; }
     [JsonIgnore] public bool IsRunning { get; set; }
 
     public string ActionText => Action switch
@@ -67,6 +69,8 @@ public class ScheduledTaskService : IDisposable
     private readonly ConcurrentDictionary<string, byte> _activeTasks = new();
 
     public event Action<ScheduledTask, string>? TaskExecuted;
+    public DateTime? LastCheckAt { get; private set; }
+    public string LastCheckResult { get; private set; } = "Waiting for first scheduler check";
 
     /// <summary>Wired by MainViewModel to return live in-memory server objects.</summary>
     public Func<IEnumerable<Models.GameServer>>? GetServers { get; set; }
@@ -147,7 +151,18 @@ public class ScheduledTaskService : IDisposable
     private async Task CheckTasksAsync()
     {
         if (Interlocked.CompareExchange(ref _checkRunning, 1, 0) != 0) return;
-        try { await CheckTasksCoreAsync(); }
+        try
+        {
+            await CheckTasksCoreAsync();
+            LastCheckAt = DateTime.Now;
+            LastCheckResult = "Scheduler healthy";
+        }
+        catch (Exception ex)
+        {
+            LastCheckAt = DateTime.Now;
+            LastCheckResult = $"Scheduler check failed: {ex.Message}";
+            throw;
+        }
         finally { Interlocked.Exchange(ref _checkRunning, 0); }
     }
 
@@ -191,21 +206,20 @@ public class ScheduledTaskService : IDisposable
             return;
         }
 
-        var server = GetServer(task.ServerId);
-        if (server == null)
-        {
-            task.LastResult = "Failed — server profile not found";
-            PublishTaskExecuted(task, task.LastResult);
-            _activeTasks.TryRemove(task.Id, out _);
-            return;
-        }
-
-        var gate = _serverGates.GetOrAdd(task.ServerId, _ => new SemaphoreSlim(1, 1));
+        var startedAt = System.Diagnostics.Stopwatch.StartNew();
+        Models.GameServer? server = null;
+        SemaphoreSlim? gate = null;
+        var gateEntered = false;
         task.IsRunning = true;
-        await gate.WaitAsync();
 
         try
         {
+            server = GetServer(task.ServerId)
+                ?? throw new InvalidOperationException("server profile not found");
+            gate = _serverGates.GetOrAdd(task.ServerId, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync();
+            gateEntered = true;
+
             switch (task.Action)
             {
                 case ScheduledActionType.Restart:
@@ -251,7 +265,9 @@ public class ScheduledTaskService : IDisposable
                     await _backup.CreateBackupAsync(server);
                     break;
                 case ScheduledActionType.Update:
-                    if (UpdateServer != null) await UpdateServer(task.ServerId);
+                    if (UpdateServer == null)
+                        throw new InvalidOperationException("update handler is not available");
+                    await UpdateServer(task.ServerId);
                     break;
                 case ScheduledActionType.QuickCommand:
                     if (!_manager.IsRunning(server.Id))
@@ -295,17 +311,31 @@ public class ScheduledTaskService : IDisposable
                     break;
             }
             task.LastResult = $"OK — {DateTime.Now:g}";
+            task.ConsecutiveFailures = 0;
             PublishTaskExecuted(task, task.LastResult);
         }
         catch (Exception ex)
         {
             task.LastResult = $"Failed — {ex.Message}";
+            task.ConsecutiveFailures++;
             PublishTaskExecuted(task, task.LastResult);
+            if (server?.KeepOnline == true
+                && (task.Action is ScheduledActionType.Start
+                    or ScheduledActionType.Restart
+                    or ScheduledActionType.Update
+                    or ScheduledActionType.Wipe
+                    or ScheduledActionType.WipeMap)
+                && !_manager.IsRunning(server.Id))
+            {
+                _manager.QueueAlwaysOnRecovery(server, $"scheduled {task.Action} failure");
+            }
         }
         finally
         {
+            startedAt.Stop();
+            task.LastDurationMilliseconds = startedAt.ElapsedMilliseconds;
             task.IsRunning = false;
-            gate.Release();
+            if (gateEntered) gate?.Release();
             _activeTasks.TryRemove(task.Id, out _);
         }
     }
@@ -409,9 +439,9 @@ public class ScheduledTaskService : IDisposable
         => GetServers?.Invoke().FirstOrDefault(s => s.Id == id)
            ?? _config.LoadServers().FirstOrDefault(s => s.Id == id);
 
-    private static DateTime ComputeNextRun(ScheduledTask task)
+    public static DateTime ComputeNextRun(ScheduledTask task, DateTime? from = null)
     {
-        var now   = DateTime.Now;
+        var now   = from ?? DateTime.Now;
         var today = now.Date + task.TimeOfDay;
 
         return task.Frequency switch
@@ -422,7 +452,8 @@ public class ScheduledTaskService : IDisposable
                     .Select(d => today.AddDays(d))
                     .First(d => d.DayOfWeek == task.DayOfWeek && d > now),
             ScheduleFrequency.Interval => (task.LastRun ?? now).AddMinutes(Math.Max(1, task.IntervalMinutes)),
-            _ => task.NextRun ?? now.AddMinutes(1),
+            ScheduleFrequency.Once     => today > now ? today : today.AddDays(1),
+            _ => now.AddMinutes(1),
         };
     }
 
@@ -439,8 +470,37 @@ public class ScheduledTaskService : IDisposable
     private void Load()
     {
         if (!System.IO.File.Exists(_file)) return;
-        try { _tasks = JsonConvert.DeserializeObject<List<ScheduledTask>>(System.IO.File.ReadAllText(_file)) ?? []; }
-        catch { }
+        try
+        {
+            _tasks = JsonConvert.DeserializeObject<List<ScheduledTask>>(System.IO.File.ReadAllText(_file)) ?? [];
+            var changed = false;
+            foreach (var task in _tasks.Where(t => t.IsEnabled))
+            {
+                if (task.Frequency == ScheduleFrequency.Once && task.NextRun == null)
+                {
+                    task.IsEnabled = false;
+                    task.LastResult = "Disabled — one-time task had no run time";
+                    changed = true;
+                }
+                else if (task.Frequency != ScheduleFrequency.Once && task.NextRun == null)
+                {
+                    task.NextRun = ComputeNextRun(task);
+                    changed = true;
+                }
+            }
+            if (changed) SaveSnapshot([.. _tasks]);
+        }
+        catch (Exception ex)
+        {
+            LastCheckResult = $"Schedule file could not be loaded: {ex.Message}";
+            try
+            {
+                var quarantine = _file + $".corrupt-{DateTime.Now:yyyyMMdd-HHmmss}";
+                System.IO.File.Copy(_file, quarantine, overwrite: false);
+            }
+            catch { }
+            _tasks = [];
+        }
     }
 
     public void Dispose()

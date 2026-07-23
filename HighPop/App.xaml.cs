@@ -141,7 +141,8 @@ public partial class App : System.Windows.Application
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
-        // Graceful shutdown: stop all running servers on exit
+        // Graceful shutdown: non-production profiles stop with HighPop. Always-on Rust
+        // processes remain alive and are reattached when the manager opens again.
         Exit += OnApplicationExit;
     }
 
@@ -157,6 +158,7 @@ public partial class App : System.Windows.Application
             foreach (var serverVm in mainVm.Servers)
             {
                 if (!serverVm.IsRunning) continue;
+                if (serverVm.Server.KeepOnline) continue;
                 try
                 {
                     var t = Task.Run(async () => {

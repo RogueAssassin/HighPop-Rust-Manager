@@ -531,7 +531,9 @@ public partial class MainViewModel : BaseViewModel
             var vm = MakeVm(srv);
             vm.ServerNumber = num++;
             Servers.Add(vm);
-            if (srv.AutoStart && !reattached)
+            // Always-on profiles resume whenever HighPop launches, even if an older profile
+            // was saved before AutoStart was enabled.
+            if ((srv.AutoStart || srv.KeepOnline) && !reattached)
                 _ = WpfApplication.Current?.Dispatcher?.InvokeAsync(() => vm.StartCommand.ExecuteAsync(null))
                         .Task.ContinueWith(t => Console.WriteLine($"[HighPop] AutoStart failed for {srv.DisplayName}: {t.Exception?.InnerException?.Message}"),
                             TaskContinuationOptions.OnlyOnFaulted);
@@ -901,6 +903,7 @@ public partial class MainViewModel : BaseViewModel
             StartupGraceMinutes  = src.StartupGraceMinutes,
             MaxPlayers           = src.MaxPlayers,
             AutoRestart          = src.AutoRestart,
+            KeepOnline           = src.KeepOnline,
             AutoUpdate           = src.AutoUpdate,
             DailyRestartEnabled  = src.DailyRestartEnabled,
             DailyRestartTime     = src.DailyRestartTime,

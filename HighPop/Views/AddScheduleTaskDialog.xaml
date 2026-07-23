@@ -59,6 +59,7 @@
                   SelectionChanged="CbFreq_SelectionChanged">
             <ComboBoxItem Content="Daily" IsSelected="True"/>
             <ComboBoxItem Content="Weekly"/>
+            <ComboBoxItem Content="Once (next occurrence)"/>
             <ComboBoxItem Content="Every X minutes/hours"/>
         </ComboBox>
 

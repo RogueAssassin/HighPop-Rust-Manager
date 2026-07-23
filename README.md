@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.5.0-F05A28">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.6.0-F05A28">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -17,7 +17,7 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
-## Included in v0.5
+## Included in v0.6
 
 | Area | Capabilities |
 |---|---|
@@ -27,9 +27,9 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 | Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
 | Mods and maps | Carbon and Oxide installation/detection, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
-| Reliability | Slow-start readiness grace, bounded WebRCON retries, reasoned process-exit diagnostics, and update checks that do not stop a current server |
+| Reliability | Always-on uptime policy, bounded crash-loop backoff, slow-start readiness grace, WebRCON retries, reasoned process-exit diagnostics, and non-destructive update checks |
 | Local telemetry | Opt-in versioned lifecycle/action/player-count JSONL events with per-server age and storage retention |
-| Automation | Once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands |
+| Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, serialized per server with visible results |
 | Monitoring | Persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |
 | Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, a local Discord bot with live boards and staff controls, webhooks, and SMTP alerts |
 | Windows controls | System tray, startup registration, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |

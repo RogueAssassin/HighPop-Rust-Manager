@@ -35,6 +35,40 @@ Check(server.RconAutoConnectDelaySeconds == 60
       && server.RconAutoConnectTimeoutMinutes == 15
       && server.StartupGraceMinutes == 15,
     "slow Rust startup and WebRCON timing defaults");
+Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
+    "production profiles default to always-on recovery without empty-player shutdown");
+
+var scheduleReference = new DateTime(2026, 7, 24, 15, 30, 0);
+var onceSchedule = new ScheduledTask
+{
+    Frequency = ScheduleFrequency.Once,
+    TimeOfDay = new TimeSpan(16, 0, 0),
+};
+var dailySchedule = new ScheduledTask
+{
+    Frequency = ScheduleFrequency.Daily,
+    TimeOfDay = new TimeSpan(4, 0, 0),
+};
+var weeklySchedule = new ScheduledTask
+{
+    Frequency = ScheduleFrequency.Weekly,
+    DayOfWeek = DayOfWeek.Monday,
+    TimeOfDay = new TimeSpan(4, 0, 0),
+};
+var intervalSchedule = new ScheduledTask
+{
+    Frequency = ScheduleFrequency.Interval,
+    IntervalMinutes = 30,
+};
+Check(ScheduledTaskService.ComputeNextRun(onceSchedule, scheduleReference)
+          == new DateTime(2026, 7, 24, 16, 0, 0)
+      && ScheduledTaskService.ComputeNextRun(dailySchedule, scheduleReference)
+          == new DateTime(2026, 7, 25, 4, 0, 0)
+      && ScheduledTaskService.ComputeNextRun(weeklySchedule, scheduleReference)
+          == new DateTime(2026, 7, 27, 4, 0, 0)
+      && ScheduledTaskService.ComputeNextRun(intervalSchedule, scheduleReference)
+          == new DateTime(2026, 7, 24, 16, 0, 0),
+    "once, daily, weekly, and interval scheduler next-run calculations");
 
 var argsLine = rust.BuildStartArguments(server);
 Check(argsLine.Contains("+server.port 28015"), "start args include game port");

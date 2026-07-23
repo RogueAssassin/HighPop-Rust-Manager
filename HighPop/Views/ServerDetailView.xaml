@@ -903,6 +903,12 @@
                                 <CheckBox IsChecked="{Binding Server.AutoStart}" Style="{StaticResource DarkCheckBox}"
                                           Content="Auto-start when HighPop launches" Margin="0,0,0,8"
                                           ToolTip="Starts this Rust instance after the manager launches."/>
+                                <CheckBox IsChecked="{Binding Server.KeepOnline}" Style="{StaticResource DarkCheckBox}"
+                                          Content="Always-on: keep this server online" Margin="0,0,0,5"
+                                          ToolTip="Recommended for production. Empty-player shutdown is ignored and unexpected exits are retried indefinitely with a capped backoff."/>
+                                <TextBlock Text="Always-on never stops Rust because it has zero players. Manual and scheduled maintenance actions still work normally."
+                                           Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                           TextWrapping="Wrap" Margin="20,0,0,8"/>
                                 <CheckBox IsChecked="{Binding Server.WakeOnDemand}" Style="{StaticResource DarkCheckBox}"
                                           Content="Wake on demand" Margin="0,0,0,5"
                                           ToolTip="Lets the Discord bot or local status page start a stopped server."/>
@@ -911,7 +917,9 @@
                                           IsEnabled="{Binding Server.WakeOnDemand}"
                                           ToolTip="Port scans can also trigger this option; leave it off if Discord-only wake is preferred."/>
                                 <CheckBox IsChecked="{Binding Server.ShutDownWhenEmpty}" Style="{StaticResource DarkCheckBox}"
-                                          Content="Stop after the server remains empty" Margin="0,0,0,5"/>
+                                          Content="Stop after the server remains empty" Margin="0,0,0,5"
+                                          IsEnabled="{Binding Server.KeepOnline, Converter={StaticResource InvBool}}"
+                                          ToolTip="Available only when Always-on is disabled."/>
                                 <StackPanel Orientation="Horizontal" Margin="20,0,0,8"
                                             Visibility="{Binding Server.ShutDownWhenEmpty, Converter={StaticResource BoolToVis}}">
                                     <TextBlock Text="Empty for" VerticalAlignment="Center"
@@ -1651,6 +1659,12 @@
                                                     </TextBlock>
                                                     <TextBlock Text="{Binding LastResult}" FontSize="11" Margin="0,3,0,0"
                                                                Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                                                    <TextBlock FontSize="10" Foreground="{StaticResource TextMutedBrush}">
+                                                        <Run Text="Duration: "/>
+                                                        <Run Text="{Binding LastDurationMilliseconds, Mode=OneWay}"/>
+                                                        <Run Text=" ms  Consecutive failures: "/>
+                                                        <Run Text="{Binding ConsecutiveFailures, Mode=OneWay}"/>
+                                                    </TextBlock>
                                                 </StackPanel>
                                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                     <Button Content="▶ Run now" Style="{StaticResource GhostButton}" Margin="0,0,8,0"

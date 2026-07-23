@@ -33,8 +33,8 @@ public partial class AddScheduleTaskDialog : Window
     {
         if (DayPanel == null || IntervalPanel == null || TimePanel == null) return;
         DayPanel.Visibility      = CbFreq.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
-        IntervalPanel.Visibility = CbFreq.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
-        TimePanel.Visibility     = CbFreq.SelectedIndex == 2 ? Visibility.Collapsed : Visibility.Visible;
+        IntervalPanel.Visibility = CbFreq.SelectedIndex == 3 ? Visibility.Visible : Visibility.Collapsed;
+        TimePanel.Visibility     = CbFreq.SelectedIndex == 3 ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void Add_Click(object sender, RoutedEventArgs e)
@@ -62,7 +62,8 @@ public partial class AddScheduleTaskDialog : Window
         var freq = CbFreq.SelectedIndex switch
         {
             1 => ScheduleFrequency.Weekly,
-            2 => ScheduleFrequency.Interval,
+            2 => ScheduleFrequency.Once,
+            3 => ScheduleFrequency.Interval,
             _ => ScheduleFrequency.Daily,
         };
 
