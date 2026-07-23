@@ -29,11 +29,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private readonly RustModerationService  _moderation;
     private readonly ServerHygieneService   _hygiene;
     private readonly ConfigPresetService    _presets;
+    private readonly RustTelemetryService   _telemetry;
     private RconService? _rcon;
     private readonly SemaphoreSlim _rconLock  = new(1, 1);
     private CancellationTokenSource? _rconAutoConnectCts;
+    private int _lastTelemetryPlayerCount = -1;
     private readonly object        _perfLock  = new();
     private System.Timers.Timer?   _updateTimer;
+    private readonly SemaphoreSlim _periodicUpdateGate = new(1, 1);
 
     public GameServer Server { get; }
     public IGamePlugin? Plugin { get; }
@@ -125,6 +128,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         : Server.LogDirectory;
     public string ServerConfigPath => IsRust
         ? RustPlugin.GetServerConfigPath(Server)
+        : string.Empty;
+    public string TelemetryDirectory => IsRust
+        ? _telemetry.GetServerDirectory(Server)
         : string.Empty;
     [ObservableProperty] private string _rustVariableStatus = "server.cfg has not been read yet.";
     private bool _syncingRustTags;
@@ -274,6 +280,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public string UptimeText => _manager.GetInstance(Server.Id)?.Uptime is TimeSpan t && t > TimeSpan.Zero
         ? $"{(int)t.TotalHours:D2}:{t.Minutes:D2}:{t.Seconds:D2}"
         : "--:--:--";
+    public string LastExitSummary => string.IsNullOrWhiteSpace(Server.LastExitReason)
+        ? "No recorded process exit yet."
+        : $"{Server.LastExitAt:g} — {Server.LastExitReason}";
 
     public bool AutoConnectRcon
     {
@@ -390,7 +399,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         PerfHistoryService perfHistory,
         TemplateService templates, ScheduledTaskService scheduler, NetworkMonitorService network,
         GroupBanListService groupBans, RustModerationService moderation, ServerHygieneService hygiene,
-        ConfigPresetService presets)
+        ConfigPresetService presets, RustTelemetryService telemetry)
     {
         Server         = server;
         Plugin         = GameRegistry.Get(server.GameId);
@@ -411,6 +420,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _moderation    = moderation;
         _hygiene       = hygiene;
         _presets       = presets;
+        _telemetry     = telemetry;
         Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
         if (IsRust)
         {
@@ -623,7 +633,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             StopUpdateTimer();
-            await _manager.StopAsync(Server);
+            await _manager.StopAsync(Server, "Requested from the manager UI");
             // StopPerfMonitoring() called from OnStatusChanged(Stopped)
 
             if (Server.BackupOnShutdown)
@@ -851,6 +861,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             });
             if (ok)
             {
+                _manager.ReportRconConnected(Server.Id);
                 if (!automatic) _rconAutoConnectCts?.Cancel();
                 AppendLog("[RCON] " + (automatic ? "Auto-connected." : Loc.RconConnectedMsg),
                     ConsoleMessageType.System);
@@ -882,8 +893,18 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         {
             try
             {
-                await Task.Delay(3000, token);
-                for (var attempt = 1; attempt <= 12 && IsRunning && !token.IsCancellationRequested; attempt++)
+                var timeout = TimeSpan.FromMinutes(
+                    Math.Clamp(Server.RconAutoConnectTimeoutMinutes, 1, 60));
+                var requestedDelay = TimeSpan.FromSeconds(
+                    Math.Clamp(Server.RconAutoConnectDelaySeconds, 5, 600));
+                var initialDelay = requestedDelay < timeout ? requestedDelay : timeout;
+                var deadline = DateTime.UtcNow + timeout;
+
+                WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    RconStatusText = $"Waiting {initialDelay.TotalSeconds:0}s before WebRCON...");
+                await Task.Delay(initialDelay, token);
+
+                while (DateTime.UtcNow < deadline && IsRunning && !token.IsCancellationRequested)
                 {
                     if (RconConnected) return;
                     if (await ConnectRconCoreAsync(automatic: true))
@@ -891,13 +912,15 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                         await FetchOnlinePlayersAsync();
                         return;
                     }
-                    await Task.Delay(5000, token);
+                    await Task.Delay(10_000, token);
                 }
                 if (!token.IsCancellationRequested)
                 {
                     WpfApplication.Current?.Dispatcher?.Invoke(() =>
                         RconStatusText = "Auto-connect timed out — use Connect to retry");
-                    AppendLog("[RCON] Auto-connect timed out after 60 seconds.", ConsoleMessageType.Warning);
+                    AppendLog(
+                        $"[RCON] Auto-connect timed out after {timeout.TotalMinutes:0} minute(s).",
+                        ConsoleMessageType.Warning);
                 }
             }
             catch (OperationCanceledException) { }
@@ -1062,6 +1085,26 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
+    private void OpenTelemetryDirectory()
+    {
+        try
+        {
+            var directory = _telemetry.GetServerDirectory(Server);
+            Directory.CreateDirectory(directory);
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("explorer.exe", directory)
+                {
+                    UseShellExecute = true,
+                });
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Telemetry] Could not open event directory: {ex.Message}",
+                ConsoleMessageType.Error);
+        }
+    }
+
+    [RelayCommand]
     private void OpenServerConfig()
     {
         var path = ServerConfigPath;
@@ -1215,39 +1258,90 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     private async Task RunPeriodicUpdateAsync()
     {
-        if (!IsRunning) return; // server was stopped manually
-        AppendLog("[AutoUpdate] Checking for updates...", ConsoleMessageType.System);
-
-        bool wasAutoRestart = Server.AutoRestart;
+        if (!await _periodicUpdateGate.WaitAsync(0)) return;
         try
         {
-            // Temporarily disable AutoRestart so we don't get an auto-restart
-            // during the stop → update → start cycle
-            Server.AutoRestart = false;
-            await _manager.WarnPlayersAsync(Server, "Server restarting for an update in 1 minute");
-            await Task.Delay(60_000);
-            await _manager.StopAsync(Server);
-            // StopPerfMonitoring called by OnStatusChanged
+            if (!IsRunning) return; // server was stopped manually
+            AppendLog("[AutoUpdate] Checking for updates...", ConsoleMessageType.System);
 
-            await InstallAsync(); // runs SteamCMD update
+            bool wasAutoRestart = Server.AutoRestart;
+            try
+            {
+                var branch = Server.GameSpecificSettings.TryGetValue("steamBranch", out var configuredBranch)
+                    && !string.IsNullOrWhiteSpace(configuredBranch)
+                        ? configuredBranch
+                        : Plugin?.SteamBranch;
+                var installedBuild = Plugin?.GetSteamInstalledBuildId(Server);
+                var latestBuild = await _steamCmd.GetLatestBuildIdAsync(
+                    Server.Id,
+                    Plugin?.SteamAppId ?? 0,
+                    branch);
 
-            if (!Server.AutoUpdate)
+                if (string.IsNullOrWhiteSpace(installedBuild) || string.IsNullOrWhiteSpace(latestBuild))
+                {
+                    AppendLog(
+                        "[AutoUpdate] Could not verify both installed and current Rust build IDs. The running server was left untouched.",
+                        ConsoleMessageType.Warning);
+                    return;
+                }
+                if (string.Equals(installedBuild, latestBuild, StringComparison.Ordinal))
+                {
+                    AppendLog($"[AutoUpdate] Rust build {installedBuild} is current; no restart needed.",
+                        ConsoleMessageType.System);
+                    return;
+                }
+
+                AppendLog($"[AutoUpdate] Rust update found: {installedBuild} → {latestBuild}.",
+                    ConsoleMessageType.Warning);
+                await _manager.WarnPlayersAsync(Server, "Server restarting for an update in 1 minute");
+                await Task.Delay(60_000);
+                if (!Server.AutoUpdate || !IsRunning)
+                {
+                    Server.AutoRestart = wasAutoRestart;
+                    AppendLog("[AutoUpdate] Automatic update restart cancelled.",
+                        ConsoleMessageType.System);
+                    return;
+                }
+                // Temporarily disable AutoRestart only for the actual stop → update → start
+                // cycle, not during the one-minute player warning.
+                Server.AutoRestart = false;
+                await _manager.StopAsync(Server, "Automatic SteamCMD update cycle");
+                // StopPerfMonitoring called by OnStatusChanged
+
+                await InstallAsync(); // runs SteamCMD update
+                var installedAfterUpdate = Plugin?.GetSteamInstalledBuildId(Server);
+                var updateConfirmed = string.Equals(
+                    installedAfterUpdate,
+                    latestBuild,
+                    StringComparison.Ordinal);
+                Server.AutoRestart = wasAutoRestart;
+
+                // Even if SteamCMD failed, restart the existing installation so a failed
+                // maintenance attempt does not leave a previously live server offline.
+                await _manager.StartAsync(Server);
+                // StartPerfMonitoring + StartUpdateTimer called by OnStatusChanged(Running)
+                if (updateConfirmed)
+                {
+                    AppendLog("[AutoUpdate] ✅ Updated and restarted.", ConsoleMessageType.System);
+                    await _notifications.NotifyAsync(
+                        $"🔄 {Server.DisplayName} updated & restarted",
+                        Plugin?.GameName ?? "",
+                        "#F05A28");
+                }
+                else
+                {
+                    AppendLog(
+                        "[AutoUpdate] The target build was not confirmed. The previous Rust installation was restarted.",
+                        ConsoleMessageType.Warning);
+                }
+            }
+            catch (Exception ex)
             {
                 Server.AutoRestart = wasAutoRestart;
-                return;
+                AppendLog($"[AutoUpdate] ❌ {ex.Message}", ConsoleMessageType.Error);
             }
-            Server.AutoRestart = wasAutoRestart;
-
-            await _manager.StartAsync(Server);
-            // StartPerfMonitoring + StartUpdateTimer called by OnStatusChanged(Running)
-            AppendLog("[AutoUpdate] ✅ Updated and restarted.", ConsoleMessageType.System);
-            await _notifications.NotifyAsync($"🔄 {Server.DisplayName} updated & restarted", Plugin?.GameName ?? "", "#F05A28");
         }
-        catch (Exception ex)
-        {
-            Server.AutoRestart = wasAutoRestart;
-            AppendLog($"[AutoUpdate] ❌ {ex.Message}", ConsoleMessageType.Error);
-        }
+        finally { _periodicUpdateGate.Release(); }
     }
 
     // ── Mod manager ──────────────────────────────────────────────────────────
@@ -1489,6 +1583,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         // Keep the model in sync — used by Shut-down-when-empty and the web dashboard's
         // server list (the detail endpoint already gets a live count separately).
         Server.CurrentPlayers = parsed.Count;
+        Server.LastPlayerSampleAt = DateTime.Now;
+        if (_lastTelemetryPlayerCount != parsed.Count)
+        {
+            _lastTelemetryPlayerCount = parsed.Count;
+            _ = _telemetry.AppendAsync(
+                Server,
+                "players.count_changed",
+                "webrcon",
+                new Dictionary<string, string>
+                {
+                    ["players"] = parsed.Count.ToString(),
+                    ["capacity"] = Server.MaxPlayers.ToString(),
+                });
+        }
 
         // Compare against the previous list → session logging
         var prev = OnlinePlayers.ToList();
@@ -2384,6 +2492,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (serverId != Server.Id) return;
         WpfApplication.Current?.Dispatcher?.Invoke(RefreshStatus);
+        WpfApplication.Current?.Dispatcher?.Invoke(() => OnPropertyChanged(nameof(LastExitSummary)));
         _ = _notifications.NotifyServerStatusAsync(Server, status);
 
         var actionText = status switch
@@ -2422,6 +2531,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 StopPlayerRefresh();
                 OnlinePlayers = [];
                 Server.CurrentPlayers = 0;
+                Server.LastPlayerSampleAt = null;
                 if (!Server.AutoRestart)
                     StopUpdateTimer();
             });
@@ -2510,6 +2620,11 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             ActionLog.Insert(0, entry);
             if (ActionLog.Count > 100) ActionLog.RemoveAt(ActionLog.Count - 1);
         });
+        _ = _telemetry.AppendAsync(
+            Server,
+            "operator.action",
+            "manager",
+            new Dictionary<string, string> { ["summary"] = action });
     }
 
     private static string SummarizeCommand(string command)

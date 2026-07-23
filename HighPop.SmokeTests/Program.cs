@@ -31,6 +31,10 @@ var server = new GameServer
 };
 Check(server.GameSpecificSettings["steamBranch"] == "public",
     "normal Rust profiles default to the public SteamCMD branch");
+Check(server.RconAutoConnectDelaySeconds == 60
+      && server.RconAutoConnectTimeoutMinutes == 15
+      && server.StartupGraceMinutes == 15,
+    "slow Rust startup and WebRCON timing defaults");
 
 var argsLine = rust.BuildStartArguments(server);
 Check(argsLine.Contains("+server.port 28015"), "start args include game port");
@@ -39,6 +43,25 @@ Check(argsLine.Contains("+server.queryport 28017"), "start args include query po
 Check(argsLine.Contains("+app.port 28083"), "start args include Rust+ port");
 Check(argsLine.Contains("+rcon.web 1"), "WebRCON enabled");
 Check(rust.ValidateBeforeStart(server) == null, "valid Rust profile accepted");
+
+const string steamAppInfo =
+    "\"branches\"\n" +
+    "{\n" +
+    "  \"public\"\n" +
+    "  {\n" +
+    "    \"buildid\" \"20481122\"\n" +
+    "    \"timeupdated\" \"1780000000\"\n" +
+    "  }\n" +
+    "  \"staging\"\n" +
+    "  {\n" +
+    "    \"buildid\" \"20490001\"\n" +
+    "  }\n" +
+    "}\n";
+Check(SteamCmdService.TryParseBranchBuildId(steamAppInfo, "public", out var publicBuild)
+      && publicBuild == "20481122"
+      && SteamCmdService.TryParseBranchBuildId(steamAppInfo, "staging", out var stagingBuild)
+      && stagingBuild == "20490001",
+    "SteamCMD branch build IDs are parsed before auto-update restart");
 
 server.RconPassword = "short";
 Check(rust.ValidateBeforeStart(server)?.Contains("12 characters") == true,
@@ -143,6 +166,31 @@ try
           && customLogArgs.Contains(Path.Combine(customLogs, "RustDedicated.log")),
         "custom Rust log directory is created and passed to RustDedicated");
     server.LogDirectory = string.Empty;
+
+    var telemetryRoot = Path.Combine(testRoot, "telemetry");
+    var telemetry = new RustTelemetryService(telemetryRoot);
+    server.RustTelemetryEnabled = true;
+    server.RustTelemetryRetentionDays = 14;
+    server.RustTelemetryMaxMegabytes = 16;
+    await telemetry.AppendAsync(
+        server,
+        "server.ready",
+        "smoke",
+        new Dictionary<string, string> { ["startupSeconds"] = "90" });
+    var telemetryDirectory = telemetry.GetServerDirectory(server);
+    var telemetryFile = Directory.GetFiles(telemetryDirectory, "*.jsonl").Single();
+    var telemetryLine = await File.ReadAllTextAsync(telemetryFile);
+    Check(telemetryLine.Contains("\"SchemaVersion\":\"highpop.rust.event/v1\"")
+          && telemetryLine.Contains("\"Name\":\"server.ready\""),
+        "versioned local Rust telemetry event schema");
+
+    var expiredTelemetryFile = Path.Combine(telemetryDirectory, "2000-01-01.jsonl");
+    await File.WriteAllTextAsync(expiredTelemetryFile, "{}");
+    File.SetLastWriteTimeUtc(expiredTelemetryFile, DateTime.UtcNow.AddDays(-30));
+    telemetry.Prune(server);
+    Check(!File.Exists(expiredTelemetryFile),
+        "local Rust telemetry retention removes expired event files");
+    server.RustTelemetryEnabled = false;
 
     var oxidePlugins = Path.Combine(server.InstallPath, "oxide", "plugins");
     var carbonPlugins = Path.Combine(server.InstallPath, "carbon", "plugins");

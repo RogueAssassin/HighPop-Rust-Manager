@@ -41,5 +41,8 @@
     <SolidColorBrush x:Key="BorderBrush"        Color="{StaticResource BorderColor}"/>
     <SolidColorBrush x:Key="BorderActiveBrush"  Color="{StaticResource BorderActiveColor}"/>
     <SolidColorBrush x:Key="TransparentBrush"   Color="Transparent"/>
+    <!-- Shared Files-page selection palette, used across lists and dropdowns. -->
+    <SolidColorBrush x:Key="SelectionActiveBrush" Color="#4A2A1E"/>
+    <SolidColorBrush x:Key="SelectionInactiveBrush" Color="#30231F"/>
 
 </ResourceDictionary>

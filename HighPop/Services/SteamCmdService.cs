@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace HighPop.Services;
 
@@ -79,7 +80,60 @@ public class SteamCmdService
         await RunAsync(serverId, args, throwOnSteamError: true);
     }
 
-    public async Task RunAsync(string serverId, string arguments, bool throwOnSteamError = false)
+    /// <summary>
+    /// Reads Steam's current branch build ID without modifying the installed server.
+    /// A null result is deliberately non-destructive: callers must defer the update.
+    /// </summary>
+    public async Task<string?> GetLatestBuildIdAsync(string serverId, int appId, string? branch)
+    {
+        if (!IsInstalled) await DownloadSteamCmdAsync(serverId);
+
+        var output = new List<string>();
+        var outputLock = new object();
+        void Capture(string line)
+        {
+            lock (outputLock) output.Add(line);
+        }
+
+        await RunAsync(
+            serverId,
+            $"+login anonymous +app_info_update 1 +app_info_print {appId} +quit",
+            captureOutput: Capture,
+            suppressOutput: true);
+
+        string text;
+        lock (outputLock) text = string.Join(Environment.NewLine, output);
+        return TryParseBranchBuildId(text, branch, out var buildId) ? buildId : null;
+    }
+
+    public static bool TryParseBranchBuildId(string appInfo, string? branch, out string buildId)
+    {
+        buildId = string.Empty;
+        if (string.IsNullOrWhiteSpace(appInfo)) return false;
+
+        var safeBranch = string.IsNullOrWhiteSpace(branch) ? "public" : branch.Trim();
+        var branchMatch = Regex.Match(
+            appInfo,
+            $"\"{Regex.Escape(safeBranch)}\"\\s*\\{{(?<body>.*?)\\}}",
+            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        if (!branchMatch.Success) return false;
+
+        var buildMatch = Regex.Match(
+            branchMatch.Groups["body"].Value,
+            "\"buildid\"\\s*\"(?<id>\\d+)\"",
+            RegexOptions.IgnoreCase);
+        if (!buildMatch.Success) return false;
+
+        buildId = buildMatch.Groups["id"].Value;
+        return true;
+    }
+
+    public async Task RunAsync(
+        string serverId,
+        string arguments,
+        bool throwOnSteamError = false,
+        Action<string>? captureOutput = null,
+        bool suppressOutput = false)
     {
         await _runGate.WaitAsync();
         try
@@ -102,12 +156,18 @@ public class SteamCmdService
         _currentProcess.OutputDataReceived += (_, e) =>
         {
             if (e.Data == null) return;
-            ParseAndForward(serverId, e.Data);
+            captureOutput?.Invoke(e.Data);
+            if (!suppressOutput) ParseAndForward(serverId, e.Data);
 
             if (throwOnSteamError && e.Data.StartsWith("ERROR!", StringComparison.OrdinalIgnoreCase))
                 steamError = e.Data;
         };
-        _currentProcess.ErrorDataReceived += (_, e) => { if (e.Data != null) OutputReceived?.Invoke(serverId, "[ERR] " + e.Data); };
+        _currentProcess.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data == null) return;
+            captureOutput?.Invoke(e.Data);
+            if (!suppressOutput) OutputReceived?.Invoke(serverId, "[ERR] " + e.Data);
+        };
 
         try
         {
@@ -124,18 +184,20 @@ public class SteamCmdService
 
         // Heartbeat — print a dot every 15 s so the user knows SteamCMD is still alive
         using var cts = new CancellationTokenSource();
-        var heartbeat = Task.Run(async () =>
-        {
-            try
+        var heartbeat = suppressOutput
+            ? Task.CompletedTask
+            : Task.Run(async () =>
             {
-                while (!cts.Token.IsCancellationRequested)
+                try
                 {
-                    await Task.Delay(15_000, cts.Token);
-                    OutputReceived?.Invoke(serverId, "[HighPop] ... still working ...");
+                    while (!cts.Token.IsCancellationRequested)
+                    {
+                        await Task.Delay(15_000, cts.Token);
+                        OutputReceived?.Invoke(serverId, "[HighPop] ... still working ...");
+                    }
                 }
-            }
-            catch (TaskCanceledException) { }
-        }, cts.Token);
+                catch (TaskCanceledException) { }
+            }, cts.Token);
 
         await _currentProcess.WaitForExitAsync();
         cts.Cancel();

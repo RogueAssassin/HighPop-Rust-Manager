@@ -10,12 +10,13 @@ HighPop releases are staged around stability and self-hostability. A stage is me
 - Per-file SHA-256 checksums and a source-linked JSON release manifest
 - Optional Authenticode signing hook for repositories with a configured certificate
 
-## Stage 5 — v0.5 telemetry and maps
+## In progress — Stage 5 / v0.5 telemetry and maps
 
-- Optional Carbon/uMod HighPop bridge for structured combat logs, chat, events, and richer player telemetry
-- Versioned local event schema with strict authentication and rate limits
-- Live map adapter with explicit opt-in and documented server-plugin requirements
-- Local retention controls so high-volume telemetry cannot grow without bounds
+- ✅ Versioned, opt-in local event stream for lifecycle, readiness, operator actions, and player-count changes
+- ✅ Per-server age and storage retention controls so local telemetry cannot grow without bounds
+- ⏳ Optional Carbon/uMod HighPop bridge for structured combat logs, chat, events, and richer player telemetry
+- ⏳ Authenticated, rate-limited bridge ingestion for the versioned local event schema
+- ⏳ Live map adapter with explicit opt-in and documented server-plugin requirements
 
 ## Stage 6 — v0.6 remote portability
 

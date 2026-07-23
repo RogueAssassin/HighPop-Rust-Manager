@@ -15,6 +15,15 @@ public class GameServer
     public string RconPassword { get; set; } = string.Empty;
     /// <summary>Connect HighPop's WebRCON client automatically after Rust starts.</summary>
     public bool AutoConnectRcon { get; set; } = true;
+    /// <summary>Seconds to wait after RustDedicated launches before the first automatic WebRCON attempt.</summary>
+    public int RconAutoConnectDelaySeconds { get; set; } = 60;
+    /// <summary>Maximum number of minutes automatic WebRCON connection attempts may continue.</summary>
+    public int RconAutoConnectTimeoutMinutes { get; set; } = 15;
+    /// <summary>
+    /// During this startup window, missing WebRCON/player data is treated as normal boot activity
+    /// rather than a frozen or empty server.
+    /// </summary>
+    public int StartupGraceMinutes { get; set; } = 15;
     public string ServerPassword { get; set; } = string.Empty;
     public string ServerName { get; set; } = string.Empty;
     public int MaxPlayers { get; set; }
@@ -71,10 +80,17 @@ public class GameServer
     /// it documents whether this installation is community vanilla, modded, or development.
     /// </summary>
     public string RustServerProfile { get; set; } = "Community (Vanilla)";
+    /// <summary>Record HighPop's versioned local Rust event stream for this server.</summary>
+    public bool RustTelemetryEnabled { get; set; } = false;
+    public int RustTelemetryRetentionDays { get; set; } = 14;
+    public int RustTelemetryMaxMegabytes { get; set; } = 256;
     public List<RustServerVariable> RustServerVariables { get; set; } = RustServerVariable.CreateDefaults();
     public Dictionary<string, string> GameSpecificSettings { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? LastStarted { get; set; }
+    public DateTime? LastExitAt { get; set; }
+    public int? LastExitCode { get; set; }
+    public string LastExitReason { get; set; } = string.Empty;
     public string GroupId { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
     /// <summary>Saved console command shortcuts shown as one-click buttons in the Console tab.</summary>
@@ -93,6 +109,9 @@ public class GameServer
 
     [JsonIgnore]
     public int CurrentPlayers { get; set; }
+
+    [JsonIgnore]
+    public DateTime? LastPlayerSampleAt { get; set; }
 
     [JsonIgnore]
     public TimeSpan Uptime { get; set; }

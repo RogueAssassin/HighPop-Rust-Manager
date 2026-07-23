@@ -193,6 +193,18 @@ public sealed class WakeOnDemandService : IDisposable
                 var inst = _manager.GetInstance(server.Id);
                 if (inst == null) break; // server removed
 
+                // Never stop a server on a guessed zero. During a slow boot (or whenever
+                // WebRCON telemetry is unavailable) HighPop has no trustworthy player count.
+                var now = DateTime.UtcNow;
+                var sampleAt = server.LastPlayerSampleAt?.ToUniversalTime();
+                if (!_manager.IsServerReady(server.Id)
+                    || sampleAt == null
+                    || now - sampleAt.Value > TimeSpan.FromMinutes(5))
+                {
+                    idleStart = now;
+                    continue;
+                }
+
                 var players = inst.Server.CurrentPlayers;
                 if (players > 0)
                 {
@@ -205,7 +217,7 @@ public sealed class WakeOnDemandService : IDisposable
                         _idleWatchers.Remove(server.Id);
                         _idleShutdownTimes[server.Id] = DateTime.UtcNow;
                     }
-                    try { await _manager.StopAsync(server); } catch { }
+                    try { await _manager.StopAsync(server, "Empty-server idle timeout elapsed"); } catch { }
                     if (server.BackupOnShutdown)
                     {
                         try { await _backup.CreateBackupAsync(server); ServerBackedUp?.Invoke(server.Id); } catch { }

@@ -202,7 +202,7 @@
                             <CheckBox Content="Auto-connect WebRCON when Rust starts"
                                       IsChecked="{Binding AutoConnectRcon}"
                                       Style="{StaticResource DarkCheckBox}"
-                                      ToolTip="Retries WebRCON for up to one minute after the Rust process starts, and reconnects after a dropped connection."/>
+                                      ToolTip="Waits for the configured slow-start delay, then retries WebRCON for the configured connection window."/>
                             <TextBlock Grid.Column="1" Text="{Binding RconStatusText}" HorizontalAlignment="Right"
                                        VerticalAlignment="Center" FontSize="11"
                                        Foreground="{StaticResource TextMutedBrush}"/>
@@ -707,8 +707,9 @@
 
                                 <!-- RAM limit -->
                                 <TextBlock Text="RAM limit (MB)" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
-                                <TextBlock Text="Maximum RAM this server process may use. 0 = unlimited."
-                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6"/>
+                                <TextBlock Text="Hard Windows process limit. If Rust exceeds it, Windows can terminate the server. Use 0 for unlimited."
+                                           FontSize="11" Foreground="{StaticResource AccentOrangeBrush}"
+                                           TextWrapping="Wrap" Margin="0,0,0,6"/>
                                 <TextBox Text="{Binding MaxRamMb, UpdateSourceTrigger=PropertyChanged}"
                                          Style="{StaticResource DarkTextBox}" Margin="0,0,0,4"/>
                             </StackPanel>
@@ -920,6 +921,43 @@
                                     <TextBlock Text="minutes" VerticalAlignment="Center"
                                                Foreground="{StaticResource TextMutedBrush}" Margin="6,0,0,0"/>
                                 </StackPanel>
+                                <TextBlock Text="Slow-start protection" Style="{StaticResource FieldLabel}"
+                                           Margin="0,8,0,5"/>
+                                <TextBlock Text="Freeze detection and empty-server shutdown remain paused until Rust reports ready, WebRCON connects, or this grace period expires."
+                                           Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                           TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <UniformGrid Columns="3">
+                                    <StackPanel Margin="0,0,12,0">
+                                        <TextBlock Text="Startup grace" Style="{StaticResource FieldLabel}"/>
+                                        <DockPanel>
+                                            <TextBlock Text="minutes" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextMutedBrush}" Margin="6,0,0,0"/>
+                                            <TextBox Text="{Binding Server.StartupGraceMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,0,12,0">
+                                        <TextBlock Text="First WebRCON attempt" Style="{StaticResource FieldLabel}"/>
+                                        <DockPanel>
+                                            <TextBlock Text="seconds" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextMutedBrush}" Margin="6,0,0,0"/>
+                                            <TextBox Text="{Binding Server.RconAutoConnectDelaySeconds, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                    <StackPanel>
+                                        <TextBlock Text="WebRCON retry window" Style="{StaticResource FieldLabel}"/>
+                                        <DockPanel>
+                                            <TextBlock Text="minutes" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextMutedBrush}" Margin="6,0,0,0"/>
+                                            <TextBox Text="{Binding Server.RconAutoConnectTimeoutMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </UniformGrid>
+                                <TextBlock Text="{Binding LastExitSummary, StringFormat='Last process exit: {0}'}"
+                                           Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                           TextWrapping="Wrap" Margin="0,10,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -1161,6 +1199,43 @@
                                 <Button Content="📂 Open log directory" Style="{StaticResource GhostButton}"
                                         Command="{Binding OpenLogDirectoryCommand}" HorizontalAlignment="Left"
                                         Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Stage 5 local telemetry" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Opt in to HighPop's versioned local JSONL event stream. This foundation records lifecycle, operator-action, and player-count events; the later Carbon/uMod bridge and live-map adapter will use the same schema."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,10"/>
+                                <CheckBox IsChecked="{Binding Server.RustTelemetryEnabled}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Content="Record local Rust telemetry for this server"
+                                          Margin="0,0,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Retention (days)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Text="{Binding Server.RustTelemetryRetentionDays, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Maximum storage (MB)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Text="{Binding Server.RustTelemetryMaxMegabytes, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="{Binding TelemetryDirectory}" FontFamily="Consolas" FontSize="10"
+                                           Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                                           Margin="0,10,0,0"/>
+                                <Button Content="📂 Open telemetry directory" Style="{StaticResource GhostButton}"
+                                        Command="{Binding OpenTelemetryDirectoryCommand}"
+                                        HorizontalAlignment="Left" Margin="0,10,0,0"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

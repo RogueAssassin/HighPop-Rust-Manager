@@ -11,6 +11,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Helpers.WindowWorkArea.Attach(this);
         DataContext = App.Services.GetRequiredService<MainViewModel>();
         try
         {

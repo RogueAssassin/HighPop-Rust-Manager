@@ -31,6 +31,7 @@ public partial class MainViewModel : BaseViewModel
     private readonly RustModerationService     _moderation;
     private readonly ServerHygieneService      _hygiene;
     private readonly ConfigPresetService       _presets;
+    private readonly RustTelemetryService      _telemetry;
     private readonly WebApiService             _webApi;
     private readonly ScheduledTaskService      _scheduler;
     private readonly RemoteMachineService      _remoteMachines;
@@ -159,12 +160,13 @@ public partial class MainViewModel : BaseViewModel
         UPnPService upnp, WakeOnDemandService wakeOnDemand, GroupBanListService groupBans,
         RustModerationService moderation, ServerHygieneService hygiene,
         ConfigPresetService presets, LogWatcherService logWatcher,
-        ServerHealthService healthCheck)
+        ServerHealthService healthCheck, RustTelemetryService telemetry)
     {
         _groupBans = groupBans;
         _moderation = moderation;
         _hygiene   = hygiene;
         _presets   = presets;
+        _telemetry = telemetry;
         _config          = config;
         _sortMode        = config.SortMode; // restore last-used sort order without triggering a save
         _manager         = manager;
@@ -735,7 +737,7 @@ public partial class MainViewModel : BaseViewModel
     {
         var vm = new ServerViewModel(srv, _manager, _steamCmd, _backup, _notifications, _perfMonitor, _config, _mods,
                _configEditor, _playerStats, _perfHistory, _templates, _scheduler,
-               _network, _groupBans, _moderation, _hygiene, _presets);
+               _network, _groupBans, _moderation, _hygiene, _presets, _telemetry);
         vm.BatchSelectionChanged = () => OnPropertyChanged(nameof(BatchSelectedCount));
         return vm;
     }
@@ -894,6 +896,9 @@ public partial class MainViewModel : BaseViewModel
             RconPort             = gp + 1,
             RconPassword         = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
             AutoConnectRcon      = src.AutoConnectRcon,
+            RconAutoConnectDelaySeconds = src.RconAutoConnectDelaySeconds,
+            RconAutoConnectTimeoutMinutes = src.RconAutoConnectTimeoutMinutes,
+            StartupGraceMinutes  = src.StartupGraceMinutes,
             MaxPlayers           = src.MaxPlayers,
             AutoRestart          = src.AutoRestart,
             AutoUpdate           = src.AutoUpdate,
@@ -905,6 +910,9 @@ public partial class MainViewModel : BaseViewModel
             CpuAffinityMask      = src.CpuAffinityMask,
             ProcessPriority      = src.ProcessPriority,
             RustServerProfile    = src.RustServerProfile,
+            RustTelemetryEnabled = src.RustTelemetryEnabled,
+            RustTelemetryRetentionDays = src.RustTelemetryRetentionDays,
+            RustTelemetryMaxMegabytes = src.RustTelemetryMaxMegabytes,
             RustServerVariables  = src.RustServerVariables
                 .Select(variable => new RustServerVariable
                 {
