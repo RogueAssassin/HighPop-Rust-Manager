@@ -36,7 +36,32 @@ Copy-Item -Path @(
 ) -Destination $packageRoot
 
 $version = (Select-String -Path (Join-Path $root "HighPop\HighPop.csproj") -Pattern '<Version>([^<]+)</Version>').Matches.Groups[1].Value
+$exe = Join-Path $artifacts "HighPop-v$version-$Runtime.exe"
 $zip = Join-Path $artifacts "HighPop-v$version-$Runtime.zip"
+Copy-Item (Join-Path $publish "HighPop.exe") $exe
 Compress-Archive -Path $packageRoot -DestinationPath $zip -CompressionLevel Optimal
 
+$releaseFiles = @($exe, $zip)
+foreach ($file in $releaseFiles) {
+    $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$hash  $(Split-Path $file -Leaf)" |
+        Set-Content "$file.sha256" -Encoding ascii
+}
+
+$manifest = [ordered]@{
+    product = "HighPop Rust Manager"
+    version = $version
+    runtime = $Runtime
+    files = @($releaseFiles | ForEach-Object {
+        [ordered]@{
+            name = Split-Path $_ -Leaf
+            sha256 = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+            bytes = (Get-Item $_).Length
+        }
+    })
+}
+$manifest | ConvertTo-Json -Depth 4 |
+    Set-Content (Join-Path $artifacts "HighPop-v$version-$Runtime.manifest.json") -Encoding utf8
+
+Write-Host "Created $exe"
 Write-Host "Created $zip"
