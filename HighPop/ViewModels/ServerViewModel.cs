@@ -123,9 +123,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public string EffectiveLogDirectory => IsRust
         ? RustPlugin.GetEffectiveLogDirectory(Server)
         : Server.LogDirectory;
-    public string ServerAutoConfigPath => IsRust
-        ? RustPlugin.GetServerAutoPath(Server)
+    public string ServerConfigPath => IsRust
+        ? RustPlugin.GetServerConfigPath(Server)
         : string.Empty;
+    [ObservableProperty] private string _rustVariableStatus = "server.cfg has not been read yet.";
     private bool _syncingRustTags;
 
     // Scheduled tasks
@@ -411,6 +412,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _hygiene       = hygiene;
         _presets       = presets;
         Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+        if (IsRust)
+        {
+            try
+            {
+                var count = RustPlugin.LoadServerConfigVariables(Server);
+                RustVariableStatus = File.Exists(RustPlugin.GetServerConfigPath(Server))
+                    ? $"Loaded {count} active variable(s) from server.cfg."
+                    : "server.cfg does not exist yet. Save to create it.";
+            }
+            catch (Exception ex)
+            {
+                RustVariableStatus = $"Could not read server.cfg: {ex.Message}";
+            }
+        }
         AvailablePresets = _presets.GetPresetsForGame(server.GameId);
         SelectedPreset   = AvailablePresets.FirstOrDefault();
         InitializeRustBrowserTags();
@@ -461,7 +476,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             {
                 if (f.Key != "identity") return;
                 OnPropertyChanged(nameof(EffectiveLogDirectory));
-                OnPropertyChanged(nameof(ServerAutoConfigPath));
+                OnPropertyChanged(nameof(ServerConfigPath));
+                RustVariableStatus = "Identity changed. Reload server.cfg from the new identity path.";
             }))
             .ToList() ?? [];
 
@@ -1046,9 +1062,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private void OpenServerAutoConfig()
+    private void OpenServerConfig()
     {
-        var path = ServerAutoConfigPath;
+        var path = ServerConfigPath;
         if (string.IsNullOrWhiteSpace(path)) return;
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         if (!File.Exists(path)) File.WriteAllText(path, string.Empty);
@@ -1057,25 +1073,88 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
+    private void ReloadServerConfigVariables()
+    {
+        try
+        {
+            var count = RustPlugin.LoadServerConfigVariables(Server);
+            OnPropertyChanged(nameof(Server));
+            RustVariableStatus = File.Exists(ServerConfigPath)
+                ? $"Reloaded {count} active variable(s) from server.cfg."
+                : "server.cfg does not exist yet. Save to create it.";
+            AddActionLog($"Reloaded {count} Rust variable(s) from server.cfg");
+        }
+        catch (Exception ex)
+        {
+            RustVariableStatus = $"Could not read server.cfg: {ex.Message}";
+            AppendLog($"[Rust config] {RustVariableStatus}", ConsoleMessageType.Error);
+        }
+    }
+
+    [RelayCommand]
+    private void SaveServerConfigVariables()
+    {
+        var validation = RustPlugin.ValidateServerVariables(Server);
+        if (validation != null)
+        {
+            RustVariableStatus = validation;
+            WpfMsgBox.Show(validation, "Invalid server.cfg variable",
+                WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            var migrated = RustPlugin.WriteManagedServerConfig(Server);
+            OnPropertyChanged(nameof(Server));
+            RustVariableStatus = migrated > 0
+                ? $"Saved server.cfg and migrated {migrated} legacy variable(s) from serverauto.cfg."
+                : "Saved active variables to server.cfg. Changes apply on the next Rust start.";
+            AddActionLog(migrated > 0
+                ? $"Saved server.cfg and migrated {migrated} legacy serverauto.cfg variable(s)"
+                : "Saved Rust custom variables to server.cfg");
+        }
+        catch (Exception ex)
+        {
+            RustVariableStatus = $"Could not save server.cfg: {ex.Message}";
+            WpfMsgBox.Show(RustVariableStatus, "server.cfg save failed",
+                WpfMsgBoxButton.OK, WpfMsgBoxImage.Error);
+        }
+    }
+
+    [RelayCommand]
     private void AddRustServerVariable()
     {
         Server.RustServerVariables.Add(new RustServerVariable
         {
-            Name = "server.pve",
-            Value = "false",
+            Enabled = false,
+            Name = string.Empty,
+            Value = string.Empty,
             Description = "Custom Rust console variable",
         });
         OnPropertyChanged(nameof(Server));
-        AddActionLog("Added a serverauto.cfg variable row");
+        RustVariableStatus = "Unsaved variable row added.";
+        AddActionLog("Added a server.cfg variable row");
     }
 
     [RelayCommand]
     private void RemoveRustServerVariable(RustServerVariable? variable)
     {
         if (variable == null) return;
+        if (variable.LoadedFromServerConfig)
+        {
+            variable.Enabled = false;
+            try { RustPlugin.WriteManagedServerConfig(Server); }
+            catch (Exception ex)
+            {
+                RustVariableStatus = $"Could not remove {variable.Name} from server.cfg: {ex.Message}";
+                return;
+            }
+        }
         Server.RustServerVariables.Remove(variable);
         OnPropertyChanged(nameof(Server));
-        AddActionLog($"Removed serverauto.cfg variable: {variable.Name}");
+        RustVariableStatus = $"Removed {variable.Name}.";
+        AddActionLog($"Removed server.cfg variable: {variable.Name}");
     }
 
     // ── Config Presets ───────────────────────────────────────────────────────

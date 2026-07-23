@@ -74,15 +74,56 @@ try
             Description = "Disabled smoke test",
         },
     ];
-    var serverAutoPath = RustPlugin.GetServerAutoPath(server);
-    Directory.CreateDirectory(Path.GetDirectoryName(serverAutoPath)!);
-    await File.WriteAllTextAsync(serverAutoPath, "server.hostname \"Preserved\"\n");
+    var serverConfigPath = RustPlugin.GetServerConfigPath(server);
+    var serverAutoPath = RustPlugin.GetLegacyServerAutoPath(server);
+    Directory.CreateDirectory(Path.GetDirectoryName(serverConfigPath)!);
+    await File.WriteAllTextAsync(serverConfigPath,
+        "# Owner comment is preserved\n" +
+        "server.hostname \"Preserved\"\n" +
+        "bear.population \"3\"\n" +
+        "boar.population \"7\"\n");
+    await File.WriteAllTextAsync(serverAutoPath,
+        "server.writecfg \"true\"\n\n" +
+        "// HighPop managed variables — begin\n" +
+        "bear.population \"9\"\n" +
+        "wolf.population \"4\"\n" +
+        "// HighPop managed variables — end\n");
+
+    var loadedVariables = RustPlugin.LoadServerConfigVariables(server);
+    var loadedBear = server.RustServerVariables.First(v => v.Name == "bear.population");
+    var loadedBoar = server.RustServerVariables.First(v => v.Name == "boar.population");
+    Check(loadedVariables == 3
+          && loadedBear is { Enabled: true, Value: "3" }
+          && loadedBoar is { Enabled: true, Value: "7" },
+        "server.cfg variables are loaded into the Rust workspace");
+
+    loadedBear.Value = "2";
     await rust.PreStartAsync(server);
+    var serverConfig = await File.ReadAllTextAsync(serverConfigPath);
     var serverAuto = await File.ReadAllTextAsync(serverAutoPath);
-    Check(serverAuto.Contains("server.hostname \"Preserved\"")
-          && serverAuto.Contains("bear.population \"2\"")
+    Check(serverConfig.Contains("# Owner comment is preserved")
+          && serverConfig.Contains("server.hostname \"Preserved\"")
+          && serverConfig.Contains("bear.population \"2\"")
+          && serverConfig.Contains("boar.population \"7\"")
+          && serverConfig.Contains("wolf.population \"4\""),
+        "server.cfg preserves owner content, updates changed rows, and migrates legacy variables");
+    Check(serverAuto.Contains("server.writecfg \"true\"")
+          && !serverAuto.Contains("HighPop managed variables")
           && !serverAuto.Contains("wolf.population"),
-        "managed serverauto.cfg preserves owner settings and writes enabled variables");
+        "legacy HighPop block is removed without replacing owner serverauto.cfg content");
+
+    var firstWrite = serverConfig;
+    RustPlugin.WriteManagedServerConfig(server);
+    Check(await File.ReadAllTextAsync(serverConfigPath) == firstWrite,
+        "server.cfg synchronization is idempotent");
+
+    loadedBoar = server.RustServerVariables.First(v => v.Name == "boar.population");
+    loadedBoar.Enabled = false;
+    RustPlugin.WriteManagedServerConfig(server);
+    var disabledLines = await File.ReadAllLinesAsync(serverConfigPath);
+    Check(!disabledLines.Any(line =>
+            line.TrimStart().StartsWith("boar.population ", StringComparison.OrdinalIgnoreCase)),
+        "disabling a server.cfg variable removes its active assignment");
 
     server.RustServerVariables.Add(new RustServerVariable
     {
@@ -91,7 +132,7 @@ try
         Value = "1",
     });
     Check(rust.ValidateBeforeStart(server)?.Contains("variable names") == true,
-        "unsafe serverauto.cfg variable names are rejected");
+        "unsafe server.cfg variable names are rejected");
     server.RustServerVariables.RemoveAt(server.RustServerVariables.Count - 1);
 
     var customLogs = Path.Combine(testRoot, "custom-logs");

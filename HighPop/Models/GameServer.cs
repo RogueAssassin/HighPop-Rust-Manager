@@ -105,6 +105,12 @@ public class RustServerVariable
     public string Value { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
 
+    [JsonIgnore]
+    public bool LoadedFromServerConfig { get; set; }
+
+    [JsonIgnore]
+    public string LoadedConfigValue { get; set; } = string.Empty;
+
     public static List<RustServerVariable> CreateDefaults() =>
     [
         new() { Name = "bear.population", Value = "2", Description = "Target bear population multiplier." },

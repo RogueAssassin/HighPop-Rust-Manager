@@ -33,24 +33,89 @@ jobs:
       - name: Publish self-contained single file
         run: dotnet publish HighPop/HighPop.csproj -c Release -r win-x64 --self-contained true -o publish_out
 
+      - name: Verify release version and executable
+        shell: pwsh
+        run: |
+          $exe = Get-Item publish_out/HighPop.exe
+          if ($exe.Length -lt 1MB) { throw "HighPop.exe is unexpectedly small" }
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $expected = "${{ github.ref_name }}".TrimStart("v")
+            $actual = $exe.VersionInfo.FileVersion
+            if ($actual -ne "$expected.0") {
+              throw "Tag ${{ github.ref_name }} does not match executable version $actual"
+            }
+          }
+
+      - name: Sign executable when a certificate is configured
+        shell: pwsh
+        env:
+          HIGHPOP_SIGNING_CERT_BASE64: ${{ secrets.HIGHPOP_SIGNING_CERT_BASE64 }}
+          HIGHPOP_SIGNING_CERT_PASSWORD: ${{ secrets.HIGHPOP_SIGNING_CERT_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:HIGHPOP_SIGNING_CERT_BASE64)) {
+            Write-Host "No signing certificate configured; publishing an unsigned community build."
+            exit 0
+          }
+
+          $pfx = Join-Path $env:RUNNER_TEMP "highpop-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:HIGHPOP_SIGNING_CERT_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found" }
+
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com `
+            /f $pfx /p $env:HIGHPOP_SIGNING_CERT_PASSWORD publish_out/HighPop.exe
+          if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
+          if ((Get-AuthenticodeSignature publish_out/HighPop.exe).Status -ne "Valid") {
+            throw "The signed HighPop.exe failed Authenticode verification"
+          }
+          Remove-Item $pfx -Force
+
       - name: Assemble portable package
         shell: pwsh
         run: |
+          $baseName = "HighPop-${{ github.ref_name }}-win-x64"
           New-Item package/HighPop/assets/presets -ItemType Directory -Force | Out-Null
           Copy-Item publish_out/HighPop.exe package/HighPop/
           Copy-Item HighPop/assets/README.txt package/HighPop/assets/
           Copy-Item HighPop/assets/presets/*.json package/HighPop/assets/presets/
           Copy-Item -Path LICENSE,NOTICE.md,README.md,CHANGELOG.md -Destination package/HighPop/
-          Compress-Archive -Path package/HighPop -DestinationPath "HighPop-${{ github.ref_name }}-win-x64.zip" -CompressionLevel Optimal
-          Get-FileHash "HighPop-${{ github.ref_name }}-win-x64.zip" -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  HighPop-${{ github.ref_name }}-win-x64.zip" } | Set-Content "HighPop-${{ github.ref_name }}-win-x64.zip.sha256"
+          Copy-Item publish_out/HighPop.exe "$baseName.exe"
+          Compress-Archive -Path package/HighPop -DestinationPath "$baseName.zip" -CompressionLevel Optimal
+
+          $releaseFiles = @("$baseName.exe", "$baseName.zip")
+          foreach ($file in $releaseFiles) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $file" | Set-Content "$file.sha256" -Encoding ascii
+          }
+
+          $manifest = [ordered]@{
+            product = "HighPop Rust Manager"
+            version = "${{ github.ref_name }}".TrimStart("v")
+            runtime = "win-x64"
+            commit = "${{ github.sha }}"
+            files = @($releaseFiles | ForEach-Object {
+              [ordered]@{
+                name = $_
+                sha256 = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+                bytes = (Get-Item $_).Length
+              }
+            })
+          }
+          $manifest | ConvertTo-Json -Depth 4 |
+            Set-Content "$baseName.manifest.json" -Encoding utf8
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: HighPop-${{ github.ref_name }}-win-x64
           path: |
+            HighPop-${{ github.ref_name }}-win-x64.exe
+            HighPop-${{ github.ref_name }}-win-x64.exe.sha256
             HighPop-${{ github.ref_name }}-win-x64.zip
             HighPop-${{ github.ref_name }}-win-x64.zip.sha256
+            HighPop-${{ github.ref_name }}-win-x64.manifest.json
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
@@ -60,5 +125,8 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
+            HighPop-${{ github.ref_name }}-win-x64.exe
+            HighPop-${{ github.ref_name }}-win-x64.exe.sha256
             HighPop-${{ github.ref_name }}-win-x64.zip
             HighPop-${{ github.ref_name }}-win-x64.zip.sha256
+            HighPop-${{ github.ref_name }}-win-x64.manifest.json

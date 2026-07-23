@@ -1067,13 +1067,16 @@
 
                         <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                             <StackPanel>
-                                <TextBlock Text="serverauto.cfg variables" FontSize="14" FontWeight="SemiBold"
+                                <TextBlock Text="Server custom variables" FontSize="14" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextSecondaryBrush}"/>
-                                <TextBlock Text="Enabled rows are written to a managed block in serverauto.cfg before Rust starts. Existing settings outside that block are preserved."
+                                <TextBlock Text="HighPop reads active variables from the identity's cfg\server.cfg. Save updates changed rows and adds new enabled rows without replacing your comments or unrelated settings. Rust applies server.cfg at startup and it overrides matching command-line defaults."
                                            FontSize="11" Foreground="{StaticResource TextMutedBrush}"
                                            TextWrapping="Wrap" Margin="0,4,0,5"/>
-                                <TextBlock Text="{Binding ServerAutoConfigPath}" FontSize="10" FontFamily="Consolas"
+                                <TextBlock Text="{Binding ServerConfigPath}" FontSize="10" FontFamily="Consolas"
                                            Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                                           Margin="0,0,0,4"/>
+                                <TextBlock Text="{Binding RustVariableStatus}" FontSize="10"
+                                           Foreground="{StaticResource AccentOrangeBrush}" TextWrapping="Wrap"
                                            Margin="0,0,0,10"/>
                                 <Grid Margin="10,0,40,4">
                                     <Grid.ColumnDefinitions>
@@ -1121,8 +1124,12 @@
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <Button Content="+ Add variable" Style="{StaticResource GhostButton}"
                                             Command="{Binding AddRustServerVariableCommand}" Margin="0,0,8,0"/>
-                                    <Button Content="📝 Open serverauto.cfg" Style="{StaticResource GhostButton}"
-                                            Command="{Binding OpenServerAutoConfigCommand}"/>
+                                    <Button Content="💾 Save to server.cfg" Style="{StaticResource PrimaryButton}"
+                                            Command="{Binding SaveServerConfigVariablesCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="↻ Reload from file" Style="{StaticResource GhostButton}"
+                                            Command="{Binding ReloadServerConfigVariablesCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenServerConfigCommand}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -1356,7 +1363,7 @@
                                             <TextBlock Text="Managed Rust paths" Style="{StaticResource FieldLabel}"/>
                                             <TextBlock Text="{Binding EffectiveLogDirectory}" FontFamily="Consolas"
                                                        FontSize="10" TextWrapping="Wrap"/>
-                                            <TextBlock Text="{Binding ServerAutoConfigPath}" FontFamily="Consolas"
+                                            <TextBlock Text="{Binding ServerConfigPath}" FontFamily="Consolas"
                                                        FontSize="10" Foreground="{StaticResource TextMutedBrush}"
                                                        TextWrapping="Wrap"/>
                                         </StackPanel>
@@ -1366,8 +1373,8 @@
                                                 Command="{Binding RefreshInstalledPluginsCommand}" Margin="0,0,8,0"/>
                                         <Button Content="📂 Open Rust logs" Style="{StaticResource GhostButton}"
                                                 Command="{Binding OpenLogDirectoryCommand}" Margin="0,0,8,0"/>
-                                        <Button Content="📝 Open serverauto.cfg" Style="{StaticResource GhostButton}"
-                                                Command="{Binding OpenServerAutoConfigCommand}"/>
+                                        <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
+                                                Command="{Binding OpenServerConfigCommand}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
