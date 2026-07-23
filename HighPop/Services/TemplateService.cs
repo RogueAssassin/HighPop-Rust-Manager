@@ -56,6 +56,7 @@ public class TemplateService
             DefaultQueryPort     = server.QueryPort,
             MaxPlayers           = server.MaxPlayers,
             AutoRestart          = server.AutoRestart,
+            KeepOnline           = server.KeepOnline,
             AutoUpdate           = server.AutoUpdate,
             BackupEnabled        = server.BackupEnabled,
             BackupRetention      = server.BackupRetention,
@@ -74,6 +75,7 @@ public class TemplateService
     {
         server.MaxPlayers      = template.MaxPlayers;
         server.AutoRestart     = template.AutoRestart;
+        server.KeepOnline      = template.KeepOnline;
         server.AutoUpdate      = template.AutoUpdate;
         server.BackupEnabled   = template.BackupEnabled;
         server.BackupRetention = template.BackupRetention;
@@ -104,6 +106,7 @@ public class TemplateService
                 DefaultQueryPort     = src.DefaultQueryPort,
                 MaxPlayers           = src.MaxPlayers,
                 AutoRestart          = src.AutoRestart,
+                KeepOnline           = src.KeepOnline,
                 AutoUpdate           = src.AutoUpdate,
                 BackupEnabled        = src.BackupEnabled,
                 BackupRetention      = src.BackupRetention,

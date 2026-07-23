@@ -57,7 +57,9 @@ public sealed class WakeOnDemandService : IDisposable
     /// <summary>Start idle-shutdown watcher for a running server.</summary>
     public void ArmIdleShutdown(GameServer server)
     {
-        if (!server.ShutDownWhenEmpty) return;
+        // Always-on is authoritative. A stale ShutDownWhenEmpty value from an older profile
+        // must never take a production server offline simply because its player count is zero.
+        if (server.KeepOnline || !server.ShutDownWhenEmpty) return;
 
         lock (_lock)
         {
@@ -212,6 +214,13 @@ public sealed class WakeOnDemandService : IDisposable
                 }
                 else if (DateTime.UtcNow - idleStart >= timeout)
                 {
+                    // Re-check the live setting immediately before the destructive action.
+                    // Operators can enable always-on while this watcher is sleeping.
+                    if (server.KeepOnline)
+                    {
+                        idleStart = DateTime.UtcNow;
+                        continue;
+                    }
                     lock (_lock)
                     {
                         _idleWatchers.Remove(server.Id);

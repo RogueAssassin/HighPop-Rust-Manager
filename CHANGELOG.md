@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+- Added an always-on production policy, enabled by default, that resumes Rust with HighPop and never shuts it down merely because the player count is zero.
+- Kept always-on Rust processes running when the desktop manager closes or updates, then reattached to their persisted process IDs on the next launch.
+- Made unexpected-exit recovery persistent across failed starts, with server-level crash history and exponential backoff capped at five minutes to avoid resource-heavy crash loops.
+- Kept planned manual and scheduled stops authoritative while handing failed restart, update, and wipe starts back to always-on recovery.
+- Hardened scheduled task execution so pre-action lookup/gate failures cannot leave tasks stuck as running or leak per-server locks.
+- Added scheduler health timestamps, failure counts, execution duration, corrupt-file quarantine, and repair of missing recurring next-run values.
+- Added usable one-time schedules for the next occurrence of a selected time.
+- Updated templates, cloned server profiles, smoke coverage, roadmap, and release metadata for HighPop v0.6.0.
+
 ## 0.5.0
 
 - Prevented slow Rust startup from being treated as a WebRCON freeze or an empty server by adding readiness detection, configurable startup grace, and fresh-player-sample requirements.

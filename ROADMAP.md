@@ -10,29 +10,35 @@ HighPop releases are staged around stability and self-hostability. A stage is me
 - Per-file SHA-256 checksums and a source-linked JSON release manifest
 - Optional Authenticode signing hook for repositories with a configured certificate
 
-## In progress — Stage 5 / v0.5 telemetry and maps
+## Completed — Stage 5 / v0.5 telemetry foundation
 
-- ✅ Versioned, opt-in local event stream for lifecycle, readiness, operator actions, and player-count changes
-- ✅ Per-server age and storage retention controls so local telemetry cannot grow without bounds
-- ⏳ Optional Carbon/uMod HighPop bridge for structured combat logs, chat, events, and richer player telemetry
-- ⏳ Authenticated, rate-limited bridge ingestion for the versioned local event schema
-- ⏳ Live map adapter with explicit opt-in and documented server-plugin requirements
+- Versioned, opt-in local event stream for lifecycle, readiness, operator actions, and player-count changes
+- Per-server age and storage retention controls so local telemetry cannot grow without bounds
 
-## Stage 6 — v0.6 remote portability
+## Completed — Stage 6 / v0.6 always-on operations
+
+- Production always-on policy that overrides empty-player shutdown and resumes with HighPop
+- Persistent recovery after unexpected exits and failed relaunches
+- Shared crash history with capped exponential backoff to prevent hot restart loops
+- Durable, serialized scheduler execution with visible results, failure counts, and timings
+- Daily, weekly, interval, and one-time scheduling with persisted next-run repair
+- Corrupt scheduler-state quarantine instead of manager instability
+
+## Stage 7 — v0.7 remote portability
 
 - SFTP/FTPS file-transfer profiles for remote hosts
 - Import/export bundles with secrets excluded by default
 - Dry-run import validation, conflict reporting, and rollback snapshots
 - Scheduled off-machine backup replication without requiring a hosted HighPop account
 
-## Stage 7 — v0.7 provider interfaces
+## Stage 8 — v0.8 provider interfaces
 
 - Pluggable VPN/proxy and geolocation lookups with caching and clear privacy controls
 - Optional VAC/profile-risk sources that comply with provider terms
 - Federated ban-list adapter with signatures, audit history, and per-list trust controls
 - Prometheus/OpenTelemetry export and documented webhook event schemas
 
-## Stage 8 — v0.8 service and experience
+## Stage 9 — v0.9 service and experience
 
 - More languages and accessible high-contrast themes
 - First-run diagnostics for NAT, firewall, SteamCMD, WebRCON, and Rust+ ports

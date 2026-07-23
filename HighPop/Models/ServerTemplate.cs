@@ -18,6 +18,7 @@ public class ServerTemplate
     public int    DefaultQueryPort { get; set; }
     public int    MaxPlayers       { get; set; }
     public bool   AutoRestart      { get; set; }
+    public bool   KeepOnline       { get; set; } = true;
     public bool   AutoUpdate       { get; set; }
     public bool   BackupEnabled    { get; set; }
     public int    BackupRetention  { get; set; } = 5;

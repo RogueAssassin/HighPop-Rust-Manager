@@ -65,6 +65,8 @@ public class ServerManagerService
     private readonly RustTelemetryService _telemetry;
     private readonly ConcurrentDictionary<string, ServerInstance> _running = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _lifecycleGates = new();
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<DateTime>> _crashHistory = new();
+    private readonly ConcurrentDictionary<string, long> _recoveryGenerations = new();
 
     [DllImport("psapi.dll", SetLastError = true)]
     private static extern bool EmptyWorkingSet(IntPtr hProcess);
@@ -419,25 +421,28 @@ public class ServerManagerService
 
                 SetStatus(server, ServerStatus.Error);
 
-                if (!server.AutoRestart)
+                if (!server.KeepOnline && !server.AutoRestart)
                 {
                     RemoveInstanceIfCurrent(server.Id, inst);
                     return;
                 }
 
-                // Crash-loop detection
+                // Crash history belongs to the server profile, not one short-lived process
+                // instance. Otherwise every successful relaunch resets the protection.
                 var now = DateTime.Now;
-                inst.CrashTimes.Add(now);
-                // Forget crashes older than 10 minutes
-                inst.CrashTimes.RemoveAll(t => (now - t).TotalMinutes > 10);
+                var crashes = _crashHistory.GetOrAdd(server.Id, _ => new ConcurrentQueue<DateTime>());
+                crashes.Enqueue(now);
+                while (crashes.TryPeek(out var oldest) && now - oldest > TimeSpan.FromMinutes(10))
+                    crashes.TryDequeue(out _);
+                var crashCount = crashes.Count;
 
                 int maxRetries = server.AutoRestartMaxRetries > 0 ? server.AutoRestartMaxRetries : 5;
 
-                if (inst.CrashTimes.Count > maxRetries)
+                if (!server.KeepOnline && crashCount > maxRetries)
                 {
                     var giveUp = new ConsoleMessage
                     {
-                        Text = $"[HighPop] Server crashed {inst.CrashTimes.Count}× in 10 min (limit {maxRetries}). Auto-restart disabled.",
+                        Text = $"[HighPop] Server crashed {crashCount}× in 10 min (limit {maxRetries}). Auto-restart disabled.",
                         Type = ConsoleMessageType.Error
                     };
                     inst.AddToLog(giveUp);
@@ -449,26 +454,27 @@ public class ServerManagerService
                     return;
                 }
 
-                int delaySec = server.AutoRestartDelaySec > 0 ? server.AutoRestartDelaySec : 10;
+                int baseDelaySec = Math.Clamp(
+                    server.AutoRestartDelaySec > 0 ? server.AutoRestartDelaySec : 10,
+                    1,
+                    300);
+                int delaySec = server.KeepOnline
+                    ? Math.Min(300, baseDelaySec * (1 << Math.Min(Math.Max(0, crashCount - 1), 5)))
+                    : baseDelaySec;
                 inst.RestartCount++;
                 var delayMsg = new ConsoleMessage
                 {
-                    Text = $"[HighPop] Server stopped unexpectedly (crash #{inst.CrashTimes.Count}/{maxRetries}). Restarting in {delaySec}s...",
+                    Text = server.KeepOnline
+                        ? $"[HighPop] Server stopped unexpectedly (crash #{crashCount}). Always-on recovery starts in {delaySec}s..."
+                        : $"[HighPop] Server stopped unexpectedly (crash #{crashCount}/{maxRetries}). Restarting in {delaySec}s...",
                     Type = ConsoleMessageType.Warning
                 };
                 inst.AddToLog(delayMsg);
                 LogReceived?.Invoke(server.Id, delayMsg);
 
-                await Task.Delay(delaySec * 1000);
-
-                // Re-check: user might have disabled auto-restart during the delay
-                if (!server.AutoRestart || !IsCurrentInstance(server.Id, inst))
-                {
-                    RemoveInstanceIfCurrent(server.Id, inst);
-                    return;
-                }
-
-                await StartAsync(server);
+                RemoveInstanceIfCurrent(server.Id, inst);
+                var generation = _recoveryGenerations.AddOrUpdate(server.Id, 1, (_, current) => current + 1);
+                await RecoverUnexpectedExitAsync(server, generation, delaySec);
             }
             catch (Exception ex)
             {
@@ -583,6 +589,7 @@ public class ServerManagerService
 
     public async Task StopAsync(GameServer server, string reason = "Requested from HighPop")
     {
+        CancelRecovery(server.Id);
         var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
         try { await StopCoreAsync(server, reason); }
@@ -681,6 +688,7 @@ public class ServerManagerService
 
     public Task KillAsync(GameServer server)
     {
+        CancelRecovery(server.Id);
         if (!_running.TryGetValue(server.Id, out var inst)) return KillOrphanedPidAsync(server);
         SetStatus(server, ServerStatus.Stopping);
         inst.IntentionalStop = true;
@@ -699,16 +707,72 @@ public class ServerManagerService
 
     public void KillAll()
     {
+        foreach (var id in _recoveryGenerations.Keys)
+            CancelRecovery(id);
         foreach (var id in _running.Keys.ToList())
         {
             try
             {
-                _running[id].IntentionalStop = true;
-                _running[id].Process?.Kill(entireProcessTree: true);
+                var instance = _running[id];
+                instance.IntentionalStop = true;
+                instance.DailyRestartCts.Cancel();
+                JobObjectService.ReleaseJob(instance.JobHandle);
+                instance.JobHandle = nint.Zero;
+
+                // An always-on Rust process is deliberately detached from HighPop so closing
+                // or updating the manager does not create game-server downtime. RunningPid is
+                // retained and TryReattach restores management on the next launch.
+                if (instance.Server.KeepOnline && instance.Process?.HasExited == false)
+                    continue;
+
+                instance.Process?.Kill(entireProcessTree: true);
+                instance.Server.RunningPid = 0;
             }
             catch { }
         }
         _running.Clear();
+    }
+
+    private void CancelRecovery(string serverId)
+        => _recoveryGenerations.AddOrUpdate(serverId, 1, (_, current) => current + 1);
+
+    public void QueueAlwaysOnRecovery(GameServer server, string reason, int initialDelaySeconds = 10)
+    {
+        if (!server.KeepOnline || IsRunning(server.Id)) return;
+        var generation = _recoveryGenerations.AddOrUpdate(server.Id, 1, (_, current) => current + 1);
+        InjectLogLine(
+            server.Id,
+            $"[HighPop] Always-on recovery queued after {reason}.",
+            ConsoleMessageType.Warning);
+        _ = RecoverUnexpectedExitAsync(server, generation, initialDelaySeconds);
+    }
+
+    private async Task RecoverUnexpectedExitAsync(GameServer server, long generation, int initialDelaySeconds)
+    {
+        var delay = TimeSpan.FromSeconds(Math.Clamp(initialDelaySeconds, 1, 300));
+        while (_recoveryGenerations.TryGetValue(server.Id, out var current)
+               && current == generation
+               && (server.KeepOnline || server.AutoRestart))
+        {
+            await Task.Delay(delay);
+            if (!_recoveryGenerations.TryGetValue(server.Id, out current) || current != generation)
+                return;
+
+            try
+            {
+                await StartAsync(server);
+                return;
+            }
+            catch (Exception ex)
+            {
+                SetStatus(server, ServerStatus.Error);
+                InjectLogLine(
+                    server.Id,
+                    $"[HighPop] Recovery start failed: {ex.Message}. Retrying in {Math.Min(300, delay.TotalSeconds * 2):0}s.",
+                    ConsoleMessageType.Error);
+                delay = TimeSpan.FromSeconds(Math.Min(300, delay.TotalSeconds * 2));
+            }
+        }
     }
 
 
