@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Added native Rust timed bans with strict Steam64 ID and duration validation.
+- Added confirmation-gated bulk kick and ban actions for selected online players.
+- Added persistent per-server player notes and a local moderation record workspace under `assets/data`.
+- Added Carbon/Oxide whitelist permission management with clear Whitelist plugin requirements.
+- Added group-ban expiry handling so timed bans are not replayed after expiration.
+- Expanded smoke coverage for moderation command safety and portable record persistence.
+
 ## 0.1.0
 
 - Created the HighPop Rust-focused Windows manager and original brand system.

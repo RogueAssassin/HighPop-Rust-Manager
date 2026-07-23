@@ -28,6 +28,7 @@ public partial class MainViewModel : BaseViewModel
     private readonly UserService               _users;
     private readonly ServerGroupService        _groups;
     private readonly GroupBanListService       _groupBans;
+    private readonly RustModerationService     _moderation;
     private readonly ServerHygieneService      _hygiene;
     private readonly ConfigPresetService       _presets;
     private readonly WebApiService             _webApi;
@@ -156,10 +157,12 @@ public partial class MainViewModel : BaseViewModel
         ServerGroupService groups, WebApiService webApi, ScheduledTaskService scheduler,
         RemoteMachineService remoteMachines, CrashPredictionService crashPrediction,
         UPnPService upnp, WakeOnDemandService wakeOnDemand, GroupBanListService groupBans,
-        ServerHygieneService hygiene, ConfigPresetService presets, LogWatcherService logWatcher,
+        RustModerationService moderation, ServerHygieneService hygiene,
+        ConfigPresetService presets, LogWatcherService logWatcher,
         ServerHealthService healthCheck)
     {
         _groupBans = groupBans;
+        _moderation = moderation;
         _hygiene   = hygiene;
         _presets   = presets;
         _config          = config;
@@ -704,7 +707,7 @@ public partial class MainViewModel : BaseViewModel
     {
         var vm = new ServerViewModel(srv, _manager, _steamCmd, _backup, _notifications, _perfMonitor, _config, _mods,
                _configEditor, _playerStats, _perfHistory, _templates, _scheduler,
-               _network, _groupBans, _hygiene, _presets);
+               _network, _groupBans, _moderation, _hygiene, _presets);
         vm.BatchSelectionChanged = () => OnPropertyChanged(nameof(BatchSelectedCount));
         return vm;
     }

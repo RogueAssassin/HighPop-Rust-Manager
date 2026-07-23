@@ -25,7 +25,7 @@ var server = new GameServer
     ServerPort = 28015,
     RconPort = 28016,
     QueryPort = 28017,
-    RconPassword = "0123456789ABCDEF0123456789ABCDEF",
+    RconPassword = "highpop-test-only-rcon-password",
     MaxPlayers = 500,
     GameSpecificSettings = rust.GetDefaultSettings(),
 };
@@ -41,7 +41,7 @@ Check(rust.ValidateBeforeStart(server) == null, "valid Rust profile accepted");
 server.RconPassword = "short";
 Check(rust.ValidateBeforeStart(server)?.Contains("12 characters") == true,
     "weak RCON password rejected");
-server.RconPassword = "0123456789ABCDEF0123456789ABCDEF";
+server.RconPassword = "highpop-test-only-rcon-password";
 
 var players = PlayerParserService.ParseRustPlayerList(
     "[{\"DisplayName\":\"Ferris\",\"SteamID\":76561198000000000,\"Ping\":42,\"ConnectedSeconds\":120}]");
@@ -54,6 +54,39 @@ try
     Directory.CreateDirectory(testRoot);
     server.InstallPath = Path.Combine(testRoot, "server");
     Directory.CreateDirectory(server.InstallPath);
+
+    var banStart = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    var banBuilt = RustModerationCommands.TryBuildBan(
+        "76561198000000000", "Ferris", "Cheating; quit", "1M7d5m", banStart,
+        out var banCommand, out var banDuration, out var banExpiry, out _);
+    Check(banBuilt
+          && banCommand == "banid 76561198000000000 \"Ferris\" \"Cheating, quit\" 1M7d5m"
+          && banDuration == "1M7d5m"
+          && banExpiry == new DateTime(2026, 2, 8, 0, 5, 0, DateTimeKind.Utc),
+        "validated native Rust timed-ban command");
+
+    var invalidBan = RustModerationCommands.TryBuildBan(
+        "not-a-steamid", "Ferris", "reason", "7d", banStart,
+        out _, out _, out _, out _);
+    Check(!invalidBan, "invalid SteamID rejected for timed ban");
+    Check(RustModerationCommands.GrantWhitelist("76561198000000000")
+              == "o.grant user 76561198000000000 whitelist.allow",
+        "uMod whitelist grant command");
+
+    var moderationDir = Path.Combine(testRoot, "moderation");
+    var moderation = new RustModerationService(moderationDir);
+    moderation.SetNote(server.Id, "76561198000000000", "Ferris", "Watch for ban evasion");
+    moderation.SetWhitelisted(server.Id, "76561198000000000", "Ferris", allowed: true);
+    moderation.RecordBan(server.Id, "76561198000000000", "Ferris", "Cheating",
+        banDuration, banExpiry);
+    var reloadedModeration = new RustModerationService(moderationDir)
+        .GetRecord(server.Id, "76561198000000000");
+    Check(reloadedModeration is
+          {
+              Notes: "Watch for ban evasion",
+              Whitelisted: true,
+              LastBanDuration: "1M7d5m",
+          }, "portable moderation records persist");
 
     var presetService = new ConfigPresetService();
     var preset = new ConfigPreset

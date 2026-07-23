@@ -6,10 +6,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>HighPop</RootNamespace>
     <AssemblyName>HighPop</AssemblyName>
-    <Version>0.1.0</Version>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
-    <FileVersion>0.1.0.0</FileVersion>
-    <InformationalVersion>0.1.0</InformationalVersion>
+    <Version>0.2.0</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
+    <InformationalVersion>0.2.0</InformationalVersion>
     <AssemblyTitle>HighPop Rust Manager</AssemblyTitle>
     <Product>HighPop Rust Manager</Product>
     <Description>Local-first Windows management and administration for high-population Rust servers.</Description>
@@ -62,7 +62,6 @@
   </ItemGroup>
 
 </Project>
-
 
 
 

@@ -1241,36 +1241,70 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Toolbar: manual Kick/Ban with reasons -->
+                    <!-- Rust moderation workspace -->
                     <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}"
                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <Button Content="↻ Refresh" Style="{StaticResource GhostButton}"
                                         Command="{Binding RefreshPlayersCommand}"/>
+                                <Button Content="Select all online" Style="{StaticResource GhostButton}" Margin="6,0,0,0"
+                                        Command="{Binding SelectAllPlayersCommand}"/>
+                                <Button Content="Clear selection" Style="{StaticResource GhostButton}" Margin="6,0,0,0"
+                                        Command="{Binding ClearPlayerSelectionCommand}"/>
+                                <Button Content="Bulk kick" Style="{StaticResource GhostButton}" Margin="12,0,0,0"
+                                        Command="{Binding BulkKickPlayersCommand}" IsEnabled="{Binding IsRunning}"/>
+                                <Button Content="Bulk ban" Style="{StaticResource DangerButton}" Margin="6,0,0,0"
+                                        Command="{Binding BulkBanPlayersCommand}" IsEnabled="{Binding IsRunning}"/>
                             </StackPanel>
-                            <!-- Manual kick/ban (fallback when RCON doesn't support a player list) -->
-                            <StackPanel Orientation="Horizontal" Visibility="{Binding HasPlayerCommands, Converter={StaticResource BoolToVis}}">
+                            <WrapPanel Visibility="{Binding HasPlayerCommands, Converter={StaticResource BoolToVis}}">
                                 <StackPanel Margin="0,0,6,0">
                                     <TextBlock Text="Name or SteamID" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,4"/>
-                                    <TextBox Style="{StaticResource DarkTextBox}" Width="160"
+                                    <TextBox Style="{StaticResource DarkTextBox}" Width="180"
                                              Text="{Binding PlayerInput, UpdateSourceTrigger=PropertyChanged}"/>
                                 </StackPanel>
                                 <StackPanel Margin="0,0,6,0">
                                     <TextBlock Text="Kick reason (optional)" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,4"/>
-                                    <TextBox Style="{StaticResource DarkTextBox}" Width="180"
+                                    <TextBox Style="{StaticResource DarkTextBox}" Width="170"
                                              Text="{Binding KickReason, UpdateSourceTrigger=PropertyChanged}"/>
                                 </StackPanel>
                                 <Button Content="👢 Kick" Style="{StaticResource GhostButton}" Margin="0,0,4,0" VerticalAlignment="Bottom"
                                         Command="{Binding KickPlayerCommand}" IsEnabled="{Binding IsRunning}"/>
-                                <StackPanel Margin="8,0,6,0">
+                                <StackPanel Margin="10,0,6,0">
                                     <TextBlock Text="Ban reason (optional)" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,4"/>
-                                    <TextBox Style="{StaticResource DarkTextBox}" Width="180"
+                                    <TextBox Style="{StaticResource DarkTextBox}" Width="170"
                                              Text="{Binding BanReason, UpdateSourceTrigger=PropertyChanged}"/>
                                 </StackPanel>
-                                <Button Content="🚫 Ban" Style="{StaticResource DangerButton}" VerticalAlignment="Bottom"
+                                <StackPanel Margin="0,0,6,0">
+                                    <TextBlock Text="Duration (blank = permanent)" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,4"/>
+                                    <TextBox Style="{StaticResource DarkTextBox}" Width="145"
+                                             ToolTip="Examples: 30m, 12h, 7d, 1M7d"
+                                             Text="{Binding BanDuration, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                                <Button Content="🚫 Ban / timed ban" Style="{StaticResource DangerButton}" VerticalAlignment="Bottom"
                                         Command="{Binding BanPlayerCommand}" IsEnabled="{Binding IsRunning}"/>
-                            </StackPanel>
+                                <Button Content="Unban" Style="{StaticResource GhostButton}" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                                        Command="{Binding UnbanPlayerCommand}" IsEnabled="{Binding IsRunning}"/>
+                            </WrapPanel>
+                            <WrapPanel Margin="0,10,0,0">
+                                <StackPanel Margin="0,0,6,0">
+                                    <TextBlock Text="Persistent staff note" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,4"/>
+                                    <TextBox Style="{StaticResource DarkTextBox}" Width="420"
+                                             Text="{Binding PlayerNote, UpdateSourceTrigger=PropertyChanged}"/>
+                                </StackPanel>
+                                <Button Content="Save note" Style="{StaticResource PrimaryButton}" VerticalAlignment="Bottom"
+                                        Command="{Binding SavePlayerNoteCommand}"/>
+                                <Button Content="Allow whitelist" Style="{StaticResource GhostButton}" Margin="10,0,0,0" VerticalAlignment="Bottom"
+                                        ToolTip="Requires Carbon or Oxide and the Whitelist plugin"
+                                        Command="{Binding GrantWhitelistCommand}" IsEnabled="{Binding IsRunning}"/>
+                                <Button Content="Remove whitelist" Style="{StaticResource GhostButton}" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                                        ToolTip="Requires Carbon or Oxide and the Whitelist plugin"
+                                        Command="{Binding RevokeWhitelistCommand}" IsEnabled="{Binding IsRunning}"/>
+                            </WrapPanel>
+                            <TextBlock Text="Whitelist controls require Carbon/Oxide plus the Whitelist plugin. Timed bans use Rust's native banid duration format."
+                                       FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding ModerationStatus}" FontSize="11"
+                                       Foreground="{StaticResource AccentBlueBrush}" Margin="0,5,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
 
@@ -1309,14 +1343,18 @@
                                                             CornerRadius="6" Padding="12,8" Margin="0,0,0,4">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="34"/>
                                                                 <ColumnDefinition Width="*"/>
                                                                 <ColumnDefinition Width="80"/>
                                                                 <ColumnDefinition Width="80"/>
-                                                                <ColumnDefinition Width="100"/>
+                                                                <ColumnDefinition Width="170"/>
                                                                 <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
-                                                            <!-- Nimi + SteamID -->
-                                                            <StackPanel VerticalAlignment="Center">
+                                                            <CheckBox Grid.Column="0" Style="{StaticResource DarkCheckBox}"
+                                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                                      VerticalAlignment="Center" ToolTip="Select for a bulk action"/>
+                                                            <!-- Name + SteamID -->
+                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                                 <TextBlock Text="{Binding Name}"
                                                                            FontWeight="SemiBold" FontSize="13"
                                                                            Foreground="{StaticResource TextPrimaryBrush}"/>
@@ -1327,31 +1365,36 @@
                                                                                Converter={StaticResource ZeroToVis}}"/>
                                                             </StackPanel>
                                                             <!-- Ping -->
-                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                                                 <TextBlock Text="Ping" FontSize="10"
                                                                            Foreground="{StaticResource TextMutedBrush}"/>
                                                                 <TextBlock Text="{Binding PingText}"
                                                                            FontSize="13" FontFamily="Consolas"/>
                                                             </StackPanel>
                                                             <!-- Play time -->
-                                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                            <StackPanel Grid.Column="3" VerticalAlignment="Center">
                                                                 <TextBlock Text="Play time" FontSize="10"
                                                                            Foreground="{StaticResource TextMutedBrush}"/>
                                                                 <TextBlock Text="{Binding ConnectedText}"
                                                                            FontSize="13" FontFamily="Consolas"
                                                                            Foreground="{StaticResource AccentGreenBrush}"/>
                                                             </StackPanel>
-                                                            <!-- Kick/Ban reason field -->
-                                                            <TextBox Grid.Column="3" Style="{StaticResource DarkTextBox}"
-                                                                     Margin="4,0"
-                                                                     Text="{Binding DataContext.KickReason,
-                                                                         RelativeSource={RelativeSource AncestorType=UserControl},
-                                                                         UpdateSourceTrigger=PropertyChanged}"
-                                                                     ToolTip="Reason for kick or ban (optional)"
-                                                                     VerticalAlignment="Center"/>
+                                                            <StackPanel Grid.Column="4" Margin="4,0" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding StaffNotesPreview}" FontSize="10"
+                                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding StaffNotes}"/>
+                                                                <TextBlock Text="{Binding AccessText}" FontSize="10"
+                                                                           Foreground="{StaticResource AccentGreenBrush}"/>
+                                                            </StackPanel>
                                                             <!-- Action buttons -->
-                                                            <StackPanel Grid.Column="4" Orientation="Horizontal"
+                                                            <StackPanel Grid.Column="5" Orientation="Horizontal"
                                                                         VerticalAlignment="Center">
+                                                                <Button Content="✎" Style="{StaticResource GhostButton}"
+                                                                        Width="34" Padding="0" Margin="0,0,3,0"
+                                                                        ToolTip="Load into moderation workspace"
+                                                                        Command="{Binding DataContext.UsePlayerForModerationCommand,
+                                                                            RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                        CommandParameter="{Binding}"/>
                                                                 <Button Content="👢" Style="{StaticResource GhostButton}"
                                                                         Width="34" Padding="0" Margin="0,0,3,0"
                                                                         ToolTip="Kick"
@@ -1373,6 +1416,54 @@
                                     </StackPanel>
                                 </ScrollViewer>
                             </Grid>
+                        </TabItem>
+
+                        <!-- ── Moderation records ── -->
+                        <TabItem Header="🛡 Moderation">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,8">
+                                <StackPanel>
+                                    <TextBlock Text="Local Rust moderation records" Style="{StaticResource SectionHeader}"/>
+                                    <TextBlock Text="Staff notes, whitelist state, and bans issued through HighPop are stored locally under assets/data. Rust remains the authority for live bans and permissions."
+                                               FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                               TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <TextBlock Text="No moderation records yet." FontSize="12"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Visibility="{Binding ModerationProfiles.Count, Converter={StaticResource ZeroToVis}}"/>
+                                    <ItemsControl ItemsSource="{Binding ModerationProfiles}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BgSurface2Brush}"
+                                                        CornerRadius="6" Padding="12,8" Margin="0,0,0,4">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="150"/>
+                                                            <ColumnDefinition Width="190"/>
+                                                            <ColumnDefinition Width="2*"/>
+                                                            <ColumnDefinition Width="130"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding LastKnownName}" FontWeight="SemiBold" FontSize="12"/>
+                                                            <TextBlock Text="{Binding SteamId}" FontFamily="Consolas" FontSize="10"
+                                                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="1" Text="{Binding WhitelistText}" FontSize="11"
+                                                                   Foreground="{StaticResource AccentGreenBrush}" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding BanStatusText}" FontSize="11"
+                                                                   TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding NotesPreview}" FontSize="11"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="8,0"/>
+                                                        <TextBlock Grid.Column="4" Text="{Binding UpdatedAtUtc, StringFormat='{}{0:g} UTC'}"
+                                                                   FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                                                   VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
                         </TabItem>
 
                         <!-- ── Sessiohistoria ── -->

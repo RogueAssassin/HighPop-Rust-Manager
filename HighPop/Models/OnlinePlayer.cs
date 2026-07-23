@@ -6,6 +6,9 @@ public class OnlinePlayer
     public string SteamId          { get; set; } = string.Empty;   // Steam64 tai UUID
     public int    Ping             { get; set; }
     public int    ConnectedSeconds { get; set; }
+    public bool   IsSelected       { get; set; }
+    public string StaffNotes       { get; set; } = string.Empty;
+    public bool   IsWhitelisted    { get; set; }
 
     public string ConnectedText => ConnectedSeconds switch
     {
@@ -18,4 +21,8 @@ public class OnlinePlayer
     public string SteamIdShort => SteamId.Length > 10
         ? "…" + SteamId[^8..]
         : SteamId;
+    public string StaffNotesPreview => string.IsNullOrWhiteSpace(StaffNotes)
+        ? "No staff notes"
+        : StaffNotes;
+    public string AccessText => IsWhitelisted ? "Whitelist allowed" : string.Empty;
 }

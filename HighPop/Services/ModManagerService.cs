@@ -38,7 +38,7 @@ public sealed class ModManagerService
         Report(progress, 0, "Resolving the latest stable Carbon release...");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, CarbonLatestReleaseApi);
-        request.Headers.UserAgent.ParseAdd("HighPop-Rust-Manager/0.1");
+        request.Headers.UserAgent.ParseAdd("HighPop-Rust-Manager/0.2");
         using var response = await Http.SendAsync(request);
         response.EnsureSuccessStatusCode();
 

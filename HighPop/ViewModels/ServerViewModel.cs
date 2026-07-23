@@ -26,6 +26,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private readonly ScheduledTaskService   _scheduler;
     private readonly NetworkMonitorService  _network;
     private readonly GroupBanListService    _groupBans;
+    private readonly RustModerationService  _moderation;
     private readonly ServerHygieneService   _hygiene;
     private readonly ConfigPresetService    _presets;
     private RconService? _rcon;
@@ -67,6 +68,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private List<Services.PlayerSession> _playerHistory  = [];
     [ObservableProperty] private List<Services.PlayerStats>   _playerStatsList = [];
     [ObservableProperty] private List<Services.PlayerStats>   _mostActivePlayers = [];
+    [ObservableProperty] private List<Services.RustPlayerModerationRecord> _moderationProfiles = [];
     [ObservableProperty] private List<HourBar> _hourlyActivity = [];
 
     public class HourBar
@@ -88,6 +90,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
     [ObservableProperty] private string _kickReason  = string.Empty;
     [ObservableProperty] private string _banReason   = string.Empty;
+    [ObservableProperty] private string _banDuration = string.Empty;
+    [ObservableProperty] private string _playerNote  = string.Empty;
+    [ObservableProperty] private string _moderationStatus = string.Empty;
 
     private System.Timers.Timer? _playerRefreshTimer;
 
@@ -299,7 +304,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ConfigEditorService configEditor, PlayerStatsService playerStats,
         PerfHistoryService perfHistory,
         TemplateService templates, ScheduledTaskService scheduler, NetworkMonitorService network,
-        GroupBanListService groupBans, ServerHygieneService hygiene,
+        GroupBanListService groupBans, RustModerationService moderation, ServerHygieneService hygiene,
         ConfigPresetService presets)
     {
         Server         = server;
@@ -318,6 +323,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _scheduler     = scheduler;
         _network       = network;
         _groupBans     = groupBans;
+        _moderation    = moderation;
         _hygiene       = hygiene;
         _presets       = presets;
         AvailablePresets = _presets.GetPresetsForGame(server.GameId);
@@ -369,6 +375,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
         RefreshStatus();
         RefreshBackups();
+        RefreshModerationProfiles();
 
         // If the server was already running when this ViewModel was created (e.g. reattached
         // to a process that survived a HighPop restart), the StatusChanged(Running) event already
@@ -1060,6 +1067,17 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
         if (string.IsNullOrWhiteSpace(response)) return;
         var parsed = Services.PlayerParserService.ParseRustPlayerList(response);
+        var selectedSteamIds = OnlinePlayers
+            .Where(p => p.IsSelected && RustModerationCommands.IsSteamId(p.SteamId))
+            .Select(p => p.SteamId)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var player in parsed.Where(p => RustModerationCommands.IsSteamId(p.SteamId)))
+        {
+            var profile = _moderation.GetRecord(Server.Id, player.SteamId);
+            player.IsSelected    = selectedSteamIds.Contains(player.SteamId);
+            player.StaffNotes    = profile?.Notes ?? string.Empty;
+            player.IsWhitelisted = profile?.Whitelisted == true;
+        }
 
         // Keep the model in sync — used by Shut-down-when-empty and the web dashboard's
         // server list (the detail endpoint already gets a live count separately).
@@ -1093,9 +1111,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             OnlinePlayers = parsed;
             PlayerHistory = _playerStats.GetSessions(Server.Id, 50);
             PlayerStatsList = _playerStats.GetPlayerStats(Server.Id, 50);
+            RefreshModerationProfiles();
             RefreshActivityStats();
         });
     }
+
+    private void RefreshModerationProfiles() =>
+        ModerationProfiles = _moderation.GetRecords(Server.Id);
 
     // ── Performance history ──────────────────────────────────────────────────
 
@@ -1272,25 +1294,41 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (string.IsNullOrWhiteSpace(PlayerInput) || Plugin == null) return;
         var reason = string.IsNullOrWhiteSpace(BanReason) ? "Banned by admin" : BanReason;
-        var cmd = Plugin.GetBanCommand(PlayerInput, reason);
-        if (cmd == null) { AppendLog("[Players] Ban not supported.", ConsoleMessageType.Warning); return; }
-        await SendRconOrConsole(cmd);
-        AppendLog($"[Players] Banned: {PlayerInput}", ConsoleMessageType.System);
-        await SyncBanToGroupAsync(PlayerInput, reason);
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!await BanTargetAsync(steamId, playerName, reason)) return;
         BanReason = string.Empty;
+        BanDuration = string.Empty;
         _ = FetchOnlinePlayersAsync();
     }
 
     /// <summary>Records a ban in the server's group ban list and replays it on the group's
     /// other currently-running servers of the same game.</summary>
-    private async Task SyncBanToGroupAsync(string target, string reason)
+    private async Task SyncBanToGroupAsync(
+        string target,
+        string playerName,
+        string reason,
+        string duration,
+        DateTime? expiresAtUtc)
     {
         if (string.IsNullOrEmpty(Server.GroupId) || Plugin == null) return;
-        _groupBans.AddBan(Server.GroupId, Server.GameId, target, reason);
+        _groupBans.AddBan(Server.GroupId, Server.GameId, target, reason,
+            playerName, duration, expiresAtUtc);
 
         foreach (var sibling in _manager.GetRunningGroupSiblings(Server))
         {
-            var cmd = Plugin.GetBanCommand(target, reason);
+            string? cmd;
+            if (RustModerationCommands.IsSteamId(target))
+            {
+                var remaining = expiresAtUtc is { } expiry
+                    ? RustModerationCommands.RemainingDuration(expiry, DateTime.UtcNow)
+                    : string.Empty;
+                if (!RustModerationCommands.TryBuildBan(target, playerName, reason, remaining,
+                    DateTime.UtcNow, out var timedCommand, out _, out _, out _))
+                    continue;
+                cmd = timedCommand;
+            }
+            else
+                cmd = Plugin.GetBanCommand(target, reason);
             if (cmd == null) continue;
             try { await _manager.SendCommandAsync(sibling.Id, cmd); }
             catch { }
@@ -1317,15 +1355,245 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task BanOnlinePlayerAsync(Models.OnlinePlayer? player)
     {
         if (player == null || Plugin == null) return;
-        var target = player.SteamId.Length > 0 ? player.SteamId : player.Name;
         var reason  = string.IsNullOrWhiteSpace(BanReason) ? "Banned by admin" : BanReason;
-        var cmd     = Plugin.GetBanCommand(target, reason);
-        if (cmd == null) { AppendLog("[Players] Ban not supported.", ConsoleMessageType.Warning); return; }
-        await SendRconOrConsole(cmd);
-        AppendLog($"[Players] Banned {player.Name} ({reason})", ConsoleMessageType.System);
-        await SyncBanToGroupAsync(target, reason);
+        if (!await BanTargetAsync(player.SteamId, player.Name, reason)) return;
         BanReason = string.Empty;
+        BanDuration = string.Empty;
         _ = FetchOnlinePlayersAsync();
+    }
+
+    private async Task<bool> BanTargetAsync(string steamId, string playerName, string reason)
+    {
+        if (Plugin == null) return false;
+
+        string? command;
+        string normalizedDuration = string.Empty;
+        DateTime? expiresAtUtc = null;
+        var target = RustModerationCommands.IsSteamId(steamId) ? steamId : playerName;
+
+        if (RustModerationCommands.IsSteamId(steamId))
+        {
+            if (!RustModerationCommands.TryBuildBan(steamId, playerName, reason, BanDuration,
+                DateTime.UtcNow, out var timedCommand, out normalizedDuration, out expiresAtUtc, out var error))
+            {
+                ModerationStatus = error;
+                AppendLog("[Moderation] " + error, ConsoleMessageType.Warning);
+                return false;
+            }
+            command = timedCommand;
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(BanDuration))
+            {
+                ModerationStatus = "Timed bans require a connected player or a 17-digit Steam64 ID.";
+                AppendLog("[Moderation] " + ModerationStatus, ConsoleMessageType.Warning);
+                return false;
+            }
+            command = Plugin.GetBanCommand(target, reason);
+        }
+
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            AppendLog("[Players] Ban not supported.", ConsoleMessageType.Warning);
+            return false;
+        }
+
+        await SendRconOrConsole(command);
+        var durationText = string.IsNullOrEmpty(normalizedDuration) ? "permanent" : normalizedDuration;
+        AppendLog($"[Players] Banned {playerName} ({reason}; {durationText})", ConsoleMessageType.System);
+        ModerationStatus = $"Ban issued for {playerName} ({durationText}).";
+
+        if (RustModerationCommands.IsSteamId(steamId))
+            _moderation.RecordBan(Server.Id, steamId, playerName, reason, normalizedDuration, expiresAtUtc);
+        await SyncBanToGroupAsync(target, playerName, reason, normalizedDuration, expiresAtUtc);
+        RefreshModerationState();
+        return true;
+    }
+
+    private (string SteamId, string PlayerName) ResolvePlayer(string input)
+    {
+        input = input.Trim();
+        var online = OnlinePlayers.FirstOrDefault(p =>
+            p.SteamId.Equals(input, StringComparison.Ordinal)
+            || p.Name.Equals(input, StringComparison.OrdinalIgnoreCase));
+        return online == null
+            ? (RustModerationCommands.IsSteamId(input) ? input : string.Empty, input)
+            : (online.SteamId, online.Name);
+    }
+
+    [RelayCommand]
+    private void SelectAllPlayers()
+    {
+        foreach (var player in OnlinePlayers) player.IsSelected = true;
+        OnlinePlayers = OnlinePlayers.ToList();
+        ModerationStatus = $"Selected {OnlinePlayers.Count} online player(s).";
+    }
+
+    [RelayCommand]
+    private void ClearPlayerSelection()
+    {
+        foreach (var player in OnlinePlayers) player.IsSelected = false;
+        OnlinePlayers = OnlinePlayers.ToList();
+        ModerationStatus = "Player selection cleared.";
+    }
+
+    [RelayCommand]
+    private async Task BulkKickPlayersAsync()
+    {
+        var selected = OnlinePlayers.Where(p => p.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            ModerationStatus = "Select at least one online player first.";
+            return;
+        }
+        if (!ConfirmBulkAction("kick", selected.Count)) return;
+
+        var reason = string.IsNullOrWhiteSpace(KickReason) ? "Kicked by admin" : KickReason;
+        var completed = 0;
+        foreach (var player in selected)
+        {
+            var target = RustModerationCommands.IsSteamId(player.SteamId) ? player.SteamId : player.Name;
+            var command = Plugin?.GetKickCommand(target, reason);
+            if (command == null) continue;
+            await SendRconOrConsole(command);
+            completed++;
+        }
+        AppendLog($"[Moderation] Bulk kicked {completed} player(s): {reason}", ConsoleMessageType.System);
+        ModerationStatus = $"Bulk kick completed for {completed} player(s).";
+        KickReason = string.Empty;
+        _ = FetchOnlinePlayersAsync();
+    }
+
+    [RelayCommand]
+    private async Task BulkBanPlayersAsync()
+    {
+        var selected = OnlinePlayers
+            .Where(p => p.IsSelected && RustModerationCommands.IsSteamId(p.SteamId))
+            .ToList();
+        if (selected.Count == 0)
+        {
+            ModerationStatus = "Select at least one online player with a Steam64 ID first.";
+            return;
+        }
+        if (!ConfirmBulkAction("ban", selected.Count)) return;
+
+        var reason = string.IsNullOrWhiteSpace(BanReason) ? "Banned by admin" : BanReason;
+        var completed = 0;
+        foreach (var player in selected)
+            if (await BanTargetAsync(player.SteamId, player.Name, reason)) completed++;
+
+        AppendLog($"[Moderation] Bulk banned {completed} player(s): {reason}", ConsoleMessageType.System);
+        ModerationStatus = $"Bulk ban completed for {completed} player(s).";
+        BanReason = string.Empty;
+        BanDuration = string.Empty;
+        _ = FetchOnlinePlayersAsync();
+    }
+
+    [RelayCommand]
+    private async Task UnbanPlayerAsync()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!RustModerationCommands.IsSteamId(steamId))
+        {
+            ModerationStatus = "Unban requires a valid 17-digit Steam64 ID.";
+            return;
+        }
+
+        await SendRconOrConsole(RustModerationCommands.Unban(steamId));
+        _moderation.RecordUnban(Server.Id, steamId, playerName);
+        _groupBans.RemoveBan(Server.GroupId, Server.GameId, steamId);
+        ModerationStatus = $"Unban issued for {playerName}.";
+        AppendLog($"[Players] Unbanned {playerName} ({steamId})", ConsoleMessageType.System);
+        RefreshModerationState();
+    }
+
+    [RelayCommand]
+    private void UsePlayerForModeration(Models.OnlinePlayer? player)
+    {
+        if (player == null) return;
+        PlayerInput = RustModerationCommands.IsSteamId(player.SteamId) ? player.SteamId : player.Name;
+        PlayerNote  = player.StaffNotes;
+        ModerationStatus = $"Loaded {player.Name} into the moderation workspace.";
+    }
+
+    [RelayCommand]
+    private void SavePlayerNote()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!RustModerationCommands.IsSteamId(steamId))
+        {
+            ModerationStatus = "Player notes require a valid 17-digit Steam64 ID.";
+            return;
+        }
+        _moderation.SetNote(Server.Id, steamId, playerName, PlayerNote);
+        ModerationStatus = $"Saved staff notes for {playerName}.";
+        RefreshModerationState();
+    }
+
+    [RelayCommand]
+    private async Task GrantWhitelistAsync()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!CanManageWhitelist(steamId)) return;
+        await SendRconOrConsole(RustModerationCommands.GrantWhitelist(steamId));
+        _moderation.SetWhitelisted(Server.Id, steamId, playerName, allowed: true);
+        ModerationStatus = $"Whitelist permission granted to {playerName}.";
+        AppendLog($"[Whitelist] Granted whitelist.allow to {playerName} ({steamId})", ConsoleMessageType.System);
+        RefreshModerationState();
+    }
+
+    [RelayCommand]
+    private async Task RevokeWhitelistAsync()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!CanManageWhitelist(steamId)) return;
+        await SendRconOrConsole(RustModerationCommands.RevokeWhitelist(steamId));
+        _moderation.SetWhitelisted(Server.Id, steamId, playerName, allowed: false);
+        ModerationStatus = $"Whitelist permission revoked from {playerName}.";
+        AppendLog($"[Whitelist] Revoked whitelist.allow from {playerName} ({steamId})", ConsoleMessageType.System);
+        RefreshModerationState();
+    }
+
+    private bool CanManageWhitelist(string steamId)
+    {
+        if (!RustModerationCommands.IsSteamId(steamId))
+        {
+            ModerationStatus = "Whitelist changes require a valid 17-digit Steam64 ID.";
+            return false;
+        }
+        var hasFramework = ModManagerService.GetInstalledOxideVersion(Server.InstallPath) != null
+            || ModManagerService.IsCarbonInstalled(Server.InstallPath);
+        if (!hasFramework)
+        {
+            ModerationStatus = "Install Carbon or Oxide plus the Whitelist plugin before managing whitelist access.";
+            return false;
+        }
+        if (!IsRunning)
+        {
+            ModerationStatus = "Start Rust and connect WebRCON before changing whitelist access.";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool ConfirmBulkAction(string action, int count) =>
+        System.Windows.MessageBox.Show(
+            $"Confirm bulk {action} for {count} selected player(s)?\n\nThis sends live Rust moderation commands and cannot be undone as a group.",
+            $"HighPop — Confirm bulk {action}",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes;
+
+    private void RefreshModerationState()
+    {
+        RefreshModerationProfiles();
+        foreach (var player in OnlinePlayers.Where(p => RustModerationCommands.IsSteamId(p.SteamId)))
+        {
+            var profile = _moderation.GetRecord(Server.Id, player.SteamId);
+            player.StaffNotes     = profile?.Notes ?? string.Empty;
+            player.IsWhitelisted = profile?.Whitelisted == true;
+        }
+        OnlinePlayers = OnlinePlayers.ToList();
     }
 
     [RelayCommand]
@@ -1349,7 +1617,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         var bans = _groupBans.GetBans(Server.GroupId, Server.GameId);
         foreach (var ban in bans)
         {
-            var cmd = Plugin.GetBanCommand(ban.Target, ban.Reason);
+            string? cmd;
+            if (RustModerationCommands.IsSteamId(ban.Target))
+            {
+                var remaining = ban.ExpiresAtUtc is { } expiry
+                    ? RustModerationCommands.RemainingDuration(expiry, DateTime.UtcNow)
+                    : string.Empty;
+                if (!RustModerationCommands.TryBuildBan(
+                    ban.Target, ban.PlayerName, ban.Reason, remaining, DateTime.UtcNow,
+                    out var timedCommand, out _, out _, out _))
+                    continue;
+                cmd = timedCommand;
+            }
+            else
+                cmd = Plugin.GetBanCommand(ban.Target, ban.Reason);
             if (cmd == null) continue;
             try { await SendRconOrConsole(cmd); } catch { }
         }
