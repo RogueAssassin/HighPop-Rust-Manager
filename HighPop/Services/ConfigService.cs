@@ -57,6 +57,7 @@ public class ConfigService
         Directory.CreateDirectory(AppDataPath);
         Directory.CreateDirectory(DefaultInstallRoot);
         LoadSettings();
+        try { Directory.CreateDirectory(DefaultInstallRoot); } catch { }
         // Migrate older configurations that enabled remote control without a token. An empty
         // token would otherwise authenticate an empty Authorization header.
         if (WebApiRequired && string.IsNullOrWhiteSpace(WebApiToken))
@@ -98,7 +99,7 @@ public class ConfigService
         {
             var d = JsonConvert.DeserializeObject<SettingsData>(File.ReadAllText(SettingsFile));
             if (d == null) return;
-            if (!string.IsNullOrEmpty(d.DefaultInstallRoot) && Directory.Exists(d.DefaultInstallRoot))
+            if (!string.IsNullOrEmpty(d.DefaultInstallRoot) && Path.IsPathRooted(d.DefaultInstallRoot))
                 DefaultInstallRoot = d.DefaultInstallRoot;
             if (!string.IsNullOrEmpty(d.BackupPath) && Directory.Exists(d.BackupPath))
                 BackupPath = d.BackupPath;
@@ -164,6 +165,7 @@ public class ConfigService
                 server.GameSpecificSettings ??= new Dictionary<string, string>();
                 server.QuickCommands ??= [];
                 server.LogWatchRules ??= [];
+                server.RustServerVariables ??= RustServerVariable.CreateDefaults();
             }
             return servers;
         }
