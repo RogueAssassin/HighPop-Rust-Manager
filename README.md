@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.3.0-F05A28">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.0-F05A28">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -17,13 +17,13 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
-## Included in v0.3
+## Included in v0.4
 
 | Area | Capabilities |
 |---|---|
 | Rust installation | One-click SteamCMD bootstrap, install, validate, update, public-branch support, update-on-start |
 | Process control | Start, graceful stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
-| High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, managed `serverauto.cfg`, custom log directory, identity and conflict-safe ports |
+| High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, `server.cfg` variable synchronization, custom log directory, identity and conflict-safe ports |
 | Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
 | Mods and maps | Carbon and Oxide installation/detection, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
@@ -38,11 +38,11 @@ HighPop deliberately does not copy proprietary hosted databases or subscription 
 ## Install
 
 1. Download the latest Windows x64 ZIP from [Releases](../../releases).
-2. Extract the entire `HighPop` folder to a writable location.
+2. Verify its matching `.sha256` file, then extract the entire `HighPop` folder to a writable location.
 3. Run `HighPop.exe`.
 4. Add a Rust server profile and choose **Install**. SteamCMD is downloaded automatically.
 
-The published build is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Verify the release and source before choosing **Run anyway**.
+The release also includes a directly downloadable `HighPop-<version>-win-x64.exe`. It is useful for replacing an existing installation while retaining its `assets` folder; the ZIP remains the recommended first installation because it includes editable presets and documentation. Both packages are self-contained, so a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Verify the matching SHA-256 file and source before choosing **Run anyway**.
 
 Administrator rights are only needed for system-wide firewall/URL ACL changes. Normal local management can run without elevation.
 
@@ -85,7 +85,15 @@ Rust does not provide a built-in true whitelist. HighPop's **Allow whitelist** a
 
 HighPop can automatically establish WebRCON after the Rust websocket starts and recover after a dropped connection. This feeds accurate join/leave sessions, moderation, and live player counts without requiring an operator to connect manually after every restart.
 
-The dedicated **Rust** tab separates Facepunch browser tags, community vanilla/modded/development labels, managed `serverauto.cfg` variables, and the Rust log directory from general process settings. “Official” is intentionally not offered as a switch: that browser placement is assigned by Facepunch, not by a server launch setting.
+The dedicated **Rust** tab separates Facepunch browser tags, community vanilla/modded/development labels, custom variables, and the Rust log directory from general process settings. “Official” is intentionally not offered as a switch: that browser placement is assigned by Facepunch, not by a server launch setting.
+
+## Stage 4 configuration and releases
+
+Rust custom variables are read from and saved to `server/<identity>/cfg/server.cfg`. Facepunch documents this as the startup configuration file for larger variable sets and notes that its values take priority over matching command-line values. HighPop loads active assignments already in that file, preserves comments and unrelated lines, and only rewrites changed or explicitly disabled rows.
+
+Upgrading from v0.3 is automatic: HighPop moves variables from its own managed `serverauto.cfg` block into `server.cfg` the next time the configuration is saved or Rust starts. A value already present in `server.cfg` wins. HighPop removes only its marked legacy block and leaves any other `serverauto.cfg` content alone.
+
+Release tags produce five Windows x64 assets: the direct self-contained `.exe`, its SHA-256 file, the recommended portable ZIP, its SHA-256 file, and a JSON manifest containing sizes, hashes, and the source commit. Authenticode signing is enabled automatically when the repository signing certificate secrets are configured.
 
 The **Automation** tab explains local lifecycle rules and the built-in Discord bot. Scheduled actions for one server are serialized and report their last result; restart operations warn players, save the world, stop cleanly, run configured backups, and start again. The bot keeps live status and private administrator boards updated and sends approved actions back to the local manager.
 
@@ -105,7 +113,7 @@ dotnet build HighPop.sln -c Release
 dotnet publish HighPop/HighPop.csproj -c Release -r win-x64 --self-contained true -o publish_out
 ```
 
-Or run `./Build-HighPop.ps1`. Release builds use single-file publishing with native libraries and managed content bundled into `HighPop.exe`; only editable presets and the asset-layout guide ship beside it.
+Or run `./Build-HighPop.ps1`. Release builds use single-file publishing with native libraries and managed content bundled into `HighPop.exe`; only editable presets and the asset-layout guide ship beside it. The script writes a direct executable, portable ZIP, SHA-256 files, and a JSON manifest under `artifacts/`.
 
 ## Architecture
 
