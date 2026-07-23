@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
@@ -186,6 +187,33 @@ public partial class SettingsViewModel : BaseViewModel
     [RelayCommand]
     private void SaveSettings()
     {
+        if (string.IsNullOrWhiteSpace(DefaultInstallRoot)
+            || !System.IO.Path.IsPathRooted(DefaultInstallRoot))
+        {
+            WpfMsgBox.Show("Choose an absolute default server install directory.",
+                "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(BackupPath)
+            || !System.IO.Path.IsPathRooted(BackupPath))
+        {
+            WpfMsgBox.Show("Choose an absolute backup directory.",
+                "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
+        try
+        {
+            System.IO.Directory.CreateDirectory(DefaultInstallRoot);
+            System.IO.Directory.CreateDirectory(BackupPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or ArgumentException or NotSupportedException)
+        {
+            WpfMsgBox.Show($"HighPop cannot create one of the selected folders:\n\n{ex.Message}",
+                "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
+
         var s = _notifications.Settings;
         s.DiscordEnabled    = DiscordEnabled;
         s.DiscordWebhookUrl = DiscordWebhookUrl;
@@ -236,8 +264,6 @@ public partial class SettingsViewModel : BaseViewModel
         _config.HealthCheckAction        = HealthCheckAction;
         if (!EnableUPnP) { UpnpStatus = "Stopped"; OnPropertyChanged(nameof(UpnpIsFound)); }
         _config.Save(); // single save — all settings written atomically
-
-        System.IO.Directory.CreateDirectory(BackupPath);
 
         // Apply bot settings immediately
         _bot.ApplySettings(s);
@@ -290,6 +316,19 @@ public partial class SettingsViewModel : BaseViewModel
         };
         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             BackupPath = dlg.SelectedPath;
+    }
+
+    [RelayCommand]
+    private void BrowseDefaultInstallRoot()
+    {
+        using var dlg = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "Select the default folder for new Rust server installations",
+            SelectedPath = DefaultInstallRoot,
+            UseDescriptionForTitle = true,
+        };
+        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            DefaultInstallRoot = dlg.SelectedPath;
     }
 
     [RelayCommand]

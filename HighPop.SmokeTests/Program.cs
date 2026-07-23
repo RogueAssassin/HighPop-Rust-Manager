@@ -25,10 +25,12 @@ var server = new GameServer
     ServerPort = 28015,
     RconPort = 28016,
     QueryPort = 28017,
-    RconPassword = "0123456789ABCDEF0123456789ABCDEF",
+    RconPassword = "highpop-test-only-rcon-password",
     MaxPlayers = 500,
     GameSpecificSettings = rust.GetDefaultSettings(),
 };
+Check(server.GameSpecificSettings["steamBranch"] == "public",
+    "normal Rust profiles default to the public SteamCMD branch");
 
 var argsLine = rust.BuildStartArguments(server);
 Check(argsLine.Contains("+server.port 28015"), "start args include game port");
@@ -41,7 +43,7 @@ Check(rust.ValidateBeforeStart(server) == null, "valid Rust profile accepted");
 server.RconPassword = "short";
 Check(rust.ValidateBeforeStart(server)?.Contains("12 characters") == true,
     "weak RCON password rejected");
-server.RconPassword = "0123456789ABCDEF0123456789ABCDEF";
+server.RconPassword = "highpop-test-only-rcon-password";
 
 var players = PlayerParserService.ParseRustPlayerList(
     "[{\"DisplayName\":\"Ferris\",\"SteamID\":76561198000000000,\"Ping\":42,\"ConnectedSeconds\":120}]");
@@ -54,6 +56,112 @@ try
     Directory.CreateDirectory(testRoot);
     server.InstallPath = Path.Combine(testRoot, "server");
     Directory.CreateDirectory(server.InstallPath);
+
+    server.RustServerVariables =
+    [
+        new RustServerVariable
+        {
+            Enabled = true,
+            Name = "bear.population",
+            Value = "2",
+            Description = "Smoke test",
+        },
+        new RustServerVariable
+        {
+            Enabled = false,
+            Name = "wolf.population",
+            Value = "4",
+            Description = "Disabled smoke test",
+        },
+    ];
+    var serverAutoPath = RustPlugin.GetServerAutoPath(server);
+    Directory.CreateDirectory(Path.GetDirectoryName(serverAutoPath)!);
+    await File.WriteAllTextAsync(serverAutoPath, "server.hostname \"Preserved\"\n");
+    await rust.PreStartAsync(server);
+    var serverAuto = await File.ReadAllTextAsync(serverAutoPath);
+    Check(serverAuto.Contains("server.hostname \"Preserved\"")
+          && serverAuto.Contains("bear.population \"2\"")
+          && !serverAuto.Contains("wolf.population"),
+        "managed serverauto.cfg preserves owner settings and writes enabled variables");
+
+    server.RustServerVariables.Add(new RustServerVariable
+    {
+        Enabled = true,
+        Name = "unsafe;quit",
+        Value = "1",
+    });
+    Check(rust.ValidateBeforeStart(server)?.Contains("variable names") == true,
+        "unsafe serverauto.cfg variable names are rejected");
+    server.RustServerVariables.RemoveAt(server.RustServerVariables.Count - 1);
+
+    var customLogs = Path.Combine(testRoot, "custom-logs");
+    server.LogDirectory = customLogs;
+    await rust.PreStartAsync(server);
+    var customLogArgs = rust.BuildStartArguments(server);
+    Check(Directory.Exists(customLogs)
+          && customLogArgs.Contains(Path.Combine(customLogs, "RustDedicated.log")),
+        "custom Rust log directory is created and passed to RustDedicated");
+    server.LogDirectory = string.Empty;
+
+    var oxidePlugins = Path.Combine(server.InstallPath, "oxide", "plugins");
+    var carbonPlugins = Path.Combine(server.InstallPath, "carbon", "plugins");
+    Directory.CreateDirectory(oxidePlugins);
+    Directory.CreateDirectory(carbonPlugins);
+    await File.WriteAllTextAsync(Path.Combine(oxidePlugins, "Kits.cs"), "// smoke");
+    await File.WriteAllTextAsync(Path.Combine(oxidePlugins, "Inactive.cs.off"), "// smoke");
+    await File.WriteAllTextAsync(Path.Combine(carbonPlugins, "Economics.dll"), "smoke");
+    var plugins = ModManagerService.GetInstalledPlugins(server.InstallPath);
+    Check(plugins.Count == 3
+          && plugins.Any(p => p.Name == "Kits" && p.Framework == "Oxide" && p.IsEnabled)
+          && plugins.Any(p => p.Name == "Inactive" && !p.IsEnabled)
+          && ModManagerService.GetDetectedFramework(server.InstallPath).Contains("Carbon"),
+        "Oxide/Carbon framework and plugin inventory");
+
+    var oxideConfig = Path.Combine(server.InstallPath, "oxide", "config");
+    var carbonConfig = Path.Combine(server.InstallPath, "carbon", "configs");
+    Directory.CreateDirectory(oxideConfig);
+    Directory.CreateDirectory(carbonConfig);
+    await File.WriteAllTextAsync(Path.Combine(oxideConfig, "Kits.json"), "{}");
+    await File.WriteAllTextAsync(Path.Combine(carbonConfig, "Economics.json"), "{}");
+    var configFiles = new ConfigEditorService(new ConfigService()).FindConfigs(server, rust);
+    Check(configFiles.Any(c => c.DisplayName == "Oxide plugin • Kits.json"
+                               && c.ReloadCommand == "o.reload Kits")
+          && configFiles.Any(c => c.DisplayName == "Carbon plugin • Economics.json"
+                                  && c.ReloadCommand == "c.reload Economics"),
+        "plugin config discovery and framework-specific reload commands");
+
+    var banStart = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    var banBuilt = RustModerationCommands.TryBuildBan(
+        "76561198000000000", "Ferris", "Cheating; quit", "1M7d5m", banStart,
+        out var banCommand, out var banDuration, out var banExpiry, out _);
+    Check(banBuilt
+          && banCommand == "banid 76561198000000000 \"Ferris\" \"Cheating, quit\" 1M7d5m"
+          && banDuration == "1M7d5m"
+          && banExpiry == new DateTime(2026, 2, 8, 0, 5, 0, DateTimeKind.Utc),
+        "validated native Rust timed-ban command");
+
+    var invalidBan = RustModerationCommands.TryBuildBan(
+        "not-a-steamid", "Ferris", "reason", "7d", banStart,
+        out _, out _, out _, out _);
+    Check(!invalidBan, "invalid SteamID rejected for timed ban");
+    Check(RustModerationCommands.GrantWhitelist("76561198000000000")
+              == "o.grant user 76561198000000000 whitelist.allow",
+        "uMod whitelist grant command");
+
+    var moderationDir = Path.Combine(testRoot, "moderation");
+    var moderation = new RustModerationService(moderationDir);
+    moderation.SetNote(server.Id, "76561198000000000", "Ferris", "Watch for ban evasion");
+    moderation.SetWhitelisted(server.Id, "76561198000000000", "Ferris", allowed: true);
+    moderation.RecordBan(server.Id, "76561198000000000", "Ferris", "Cheating",
+        banDuration, banExpiry);
+    var reloadedModeration = new RustModerationService(moderationDir)
+        .GetRecord(server.Id, "76561198000000000");
+    Check(reloadedModeration is
+          {
+              Notes: "Watch for ban evasion",
+              Whitelisted: true,
+              LastBanDuration: "1M7d5m",
+          }, "portable moderation records persist");
 
     var presetService = new ConfigPresetService();
     var preset = new ConfigPreset

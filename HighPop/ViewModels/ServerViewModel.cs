@@ -26,10 +26,12 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private readonly ScheduledTaskService   _scheduler;
     private readonly NetworkMonitorService  _network;
     private readonly GroupBanListService    _groupBans;
+    private readonly RustModerationService  _moderation;
     private readonly ServerHygieneService   _hygiene;
     private readonly ConfigPresetService    _presets;
     private RconService? _rcon;
     private readonly SemaphoreSlim _rconLock  = new(1, 1);
+    private CancellationTokenSource? _rconAutoConnectCts;
     private readonly object        _perfLock  = new();
     private System.Timers.Timer?   _updateTimer;
 
@@ -49,9 +51,12 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private double _cpuPercent;
     [ObservableProperty] private long _memoryMb;
     [ObservableProperty] private bool _rconConnected;
+    [ObservableProperty] private string _rconStatusText = "Disconnected";
     [ObservableProperty] private string _consoleFilter   = string.Empty;
     [ObservableProperty] private string _modStatusText   = string.Empty;
     [ObservableProperty] private bool   _modBusy;
+    [ObservableProperty] private string _detectedModFramework = "Not scanned";
+    [ObservableProperty] private List<InstalledModPlugin> _installedPlugins = [];
 
     // Config editor
     [ObservableProperty] private List<Services.ConfigFileEntry> _configFiles = [];
@@ -67,6 +72,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private List<Services.PlayerSession> _playerHistory  = [];
     [ObservableProperty] private List<Services.PlayerStats>   _playerStatsList = [];
     [ObservableProperty] private List<Services.PlayerStats>   _mostActivePlayers = [];
+    [ObservableProperty] private List<Services.RustPlayerModerationRecord> _moderationProfiles = [];
     [ObservableProperty] private List<HourBar> _hourlyActivity = [];
 
     public class HourBar
@@ -88,17 +94,39 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
     [ObservableProperty] private string _kickReason  = string.Empty;
     [ObservableProperty] private string _banReason   = string.Empty;
+    [ObservableProperty] private string _banDuration = string.Empty;
+    [ObservableProperty] private string _playerNote  = string.Empty;
+    [ObservableProperty] private string _moderationStatus = string.Empty;
 
     private System.Timers.Timer? _playerRefreshTimer;
 
     // Performance history
     [ObservableProperty] private OxyPlot.PlotModel _perfPlot = CreateEmptyPlot();
+    [ObservableProperty] private OxyPlot.PlotModel _operationsPlot = CreateEmptyPlot();
     private OxyPlot.PlotModel?          _perfModel;
+    private OxyPlot.PlotModel?          _operationsModel;
     private OxyPlot.Series.LineSeries?  _cpuSeries;
     private OxyPlot.Series.LineSeries?  _memSeries;
+    private OxyPlot.Series.LineSeries?  _netInSeries;
+    private OxyPlot.Series.LineSeries?  _netOutSeries;
+    private OxyPlot.Series.LineSeries?  _playersSeries;
+    [ObservableProperty] private string _chartSummary = "No samples yet";
     [ObservableProperty] private int _perfRangeMinutes = 15;
     partial void OnPerfRangeMinutesChanged(int _) => UpdatePerfChart();
     public IReadOnlyList<int> PerfRangeOptions { get; } = [5, 15, 30, 60];
+
+    public IReadOnlyList<string> RustServerProfileOptions { get; } =
+        ["Community (Vanilla)", "Modded", "Development"];
+    public IReadOnlyList<string> RustSteamBranchOptions { get; } =
+        ["public", "staging", "aux01"];
+    public ObservableCollection<RustBrowserTagOption> RustBrowserTags { get; } = [];
+    public string EffectiveLogDirectory => IsRust
+        ? RustPlugin.GetEffectiveLogDirectory(Server)
+        : Server.LogDirectory;
+    public string ServerAutoConfigPath => IsRust
+        ? RustPlugin.GetServerAutoPath(Server)
+        : string.Empty;
+    private bool _syncingRustTags;
 
     // Scheduled tasks
     [ObservableProperty] private List<Services.ScheduledTask> _scheduledTasks = [];
@@ -246,6 +274,67 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ? $"{(int)t.TotalHours:D2}:{t.Minutes:D2}:{t.Seconds:D2}"
         : "--:--:--";
 
+    public bool AutoConnectRcon
+    {
+        get => Server.AutoConnectRcon;
+        set
+        {
+            if (Server.AutoConnectRcon == value) return;
+            Server.AutoConnectRcon = value;
+            OnPropertyChanged();
+            if (value) StartAutoRconConnect();
+            else
+            {
+                _rconAutoConnectCts?.Cancel();
+                RconStatusText = RconConnected ? "Connected (auto-reconnect off)" : "Auto-connect disabled";
+            }
+            AddActionLog($"WebRCON auto-connect {(value ? "enabled" : "disabled")}");
+        }
+    }
+
+    public string CustomLogDirectory
+    {
+        get => Server.LogDirectory;
+        set
+        {
+            if (Server.LogDirectory == value) return;
+            Server.LogDirectory = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(EffectiveLogDirectory));
+        }
+    }
+
+    public string RustServerProfile
+    {
+        get => Server.RustServerProfile;
+        set
+        {
+            if (Server.RustServerProfile == value) return;
+            Server.RustServerProfile = value;
+            OnPropertyChanged();
+            AddActionLog($"Rust server profile changed to {value}");
+        }
+    }
+
+    public string RustSteamBranch
+    {
+        get => Server.GameSpecificSettings.GetValueOrDefault("steamBranch", "public");
+        set
+        {
+            var branch = string.IsNullOrWhiteSpace(value) ? "public" : value.Trim();
+            if (RustSteamBranch == branch) return;
+            Server.GameSpecificSettings["steamBranch"] = branch;
+            OnPropertyChanged();
+            if (!branch.Equals("public", StringComparison.OrdinalIgnoreCase)
+                && RustServerProfile != "Modded")
+                RustServerProfile = "Development";
+            else if (branch.Equals("public", StringComparison.OrdinalIgnoreCase)
+                     && RustServerProfile == "Development")
+                RustServerProfile = "Community (Vanilla)";
+            AddActionLog($"Rust SteamCMD branch changed to {branch}");
+        }
+    }
+
     public string DailyRestartTimeText
     {
         get => Server.DailyRestartTime.ToString(@"hh\:mm");
@@ -299,7 +388,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ConfigEditorService configEditor, PlayerStatsService playerStats,
         PerfHistoryService perfHistory,
         TemplateService templates, ScheduledTaskService scheduler, NetworkMonitorService network,
-        GroupBanListService groupBans, ServerHygieneService hygiene,
+        GroupBanListService groupBans, RustModerationService moderation, ServerHygieneService hygiene,
         ConfigPresetService presets)
     {
         Server         = server;
@@ -318,10 +407,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _scheduler     = scheduler;
         _network       = network;
         _groupBans     = groupBans;
+        _moderation    = moderation;
         _hygiene       = hygiene;
         _presets       = presets;
+        Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
         AvailablePresets = _presets.GetPresetsForGame(server.GameId);
         SelectedPreset   = AvailablePresets.FirstOrDefault();
+        InitializeRustBrowserTags();
 
         _network.ServerStatsUpdated += OnServerStatsUpdated;
         FileBrowser.Initialize(server.InstallPath);
@@ -363,12 +455,21 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         foreach (var r in Server.LogWatchRules)  LogWatchRules.Add(r);
 
         PluginFields = Plugin?.GetConfigFields()
-            .Where(f => f.Key is not ("serverName" or "maxPlayers" or "serverPass"))
-            .Select(f => new PluginFieldVm(server, f))
+            .Where(f => f.Key is not ("serverName" or "maxPlayers" or "serverPass"
+                or "steamBranch" or "tags"))
+            .Select(f => new PluginFieldVm(server, f, () =>
+            {
+                if (f.Key != "identity") return;
+                OnPropertyChanged(nameof(EffectiveLogDirectory));
+                OnPropertyChanged(nameof(ServerAutoConfigPath));
+            }))
             .ToList() ?? [];
 
         RefreshStatus();
         RefreshBackups();
+        RefreshModerationProfiles();
+        RefreshInstalledPlugins();
+        RefreshScheduledTasks();
 
         // If the server was already running when this ViewModel was created (e.g. reattached
         // to a process that survived a HighPop restart), the StatusChanged(Running) event already
@@ -378,7 +479,84 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             StartPerfMonitoring();
             StartPlayerRefresh();
             StartUpdateTimer();
+            StartAutoRconConnect();
         }
+        else
+        {
+            _playerStats.CloseOpenSessions(Server.Id);
+        }
+    }
+
+    private void InitializeRustBrowserTags()
+    {
+        if (!IsRust) return;
+        var definitions = new (string Value, string Label, string Group)[]
+        {
+            ("monthly", "Monthly", "wipe"),
+            ("biweekly", "Biweekly", "wipe"),
+            ("weekly", "Weekly", "wipe"),
+            ("vanilla", "Vanilla", "difficulty"),
+            ("hardcore", "Hardcore", "difficulty"),
+            ("softcore", "Softcore", "difficulty"),
+            ("pve", "PvE", ""),
+            ("roleplay", "Roleplay", ""),
+            ("creative", "Creative", ""),
+            ("minigame", "Minigame", ""),
+            ("training", "Combat Training", ""),
+            ("battlefield", "Battlefield", ""),
+            ("broyale", "Battle Royale", ""),
+            ("builds", "Build Server", ""),
+            ("tut", "Tutorial", ""),
+            ("premium", "Premium", ""),
+            ("NA", "North America", "region"),
+            ("SA", "South America", "region"),
+            ("EU", "Europe", "region"),
+            ("WA", "West Asia", "region"),
+            ("EA", "East Asia", "region"),
+            ("OC", "Oceania", "region"),
+            ("AF", "Africa", "region"),
+        };
+        var selected = Server.GameSpecificSettings
+            .GetValueOrDefault("tags", "monthly,vanilla")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        _syncingRustTags = true;
+        foreach (var (value, label, group) in definitions)
+        {
+            var option = new RustBrowserTagOption(value, label, group)
+            {
+                IsSelected = selected.Contains(value),
+            };
+            option.SelectionChanged += OnRustBrowserTagChanged;
+            RustBrowserTags.Add(option);
+        }
+        _syncingRustTags = false;
+    }
+
+    private void OnRustBrowserTagChanged(RustBrowserTagOption changed)
+    {
+        if (_syncingRustTags) return;
+        _syncingRustTags = true;
+        try
+        {
+            if (changed.IsSelected && !string.IsNullOrEmpty(changed.Group))
+            {
+                foreach (var option in RustBrowserTags.Where(o =>
+                    o != changed && o.Group.Equals(changed.Group, StringComparison.Ordinal)))
+                    option.IsSelected = false;
+            }
+            if (changed.IsSelected && RustBrowserTags.Count(o => o.IsSelected) > 4)
+            {
+                changed.IsSelected = false;
+                AppendLog("[Rust] Rust displays at most four browser tags. Deselect one before adding another.",
+                    ConsoleMessageType.Warning);
+            }
+            Server.GameSpecificSettings["tags"] = string.Join(",",
+                RustBrowserTags.Where(o => o.IsSelected).Select(o => o.Value));
+            AddActionLog($"Rust browser tags changed to {Server.GameSpecificSettings["tags"]}");
+        }
+        finally { _syncingRustTags = false; }
     }
 
     // ── Start / Stop / Restart ──────────────────────────────────────────────
@@ -386,6 +564,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private async Task StartAsync()
     {
+        AddActionLog("Start requested");
         try
         {
             if ((Server.UpdateOnStart || Server.AutoUpdate) && Plugin?.SteamAppId > 0)
@@ -424,6 +603,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private async Task StopAsync()
     {
+        AddActionLog("Stop requested");
         try
         {
             StopUpdateTimer();
@@ -448,6 +628,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private async Task KillAsync()
     {
+        AddActionLog("Emergency process kill requested");
         try
         {
             await _manager.KillAsync(Server);
@@ -463,6 +644,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private async Task RestartAsync()
     {
+        AddActionLog("Restart requested");
         AppendLog("[HighPop] " + Loc.StatusStopping, ConsoleMessageType.System);
         await StopAsync();
         await Task.Delay(3000);
@@ -475,6 +657,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task InstallAsync()
     {
         if (Plugin == null) return;
+        AddActionLog("Install/update requested");
 
         var expectedExecutable = Path.Combine(Server.InstallPath, Plugin.Executable);
         var hadExistingInstall = File.Exists(expectedExecutable);
@@ -500,6 +683,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             Server.Status = ServerStatus.Stopped;
             OnPropertyChanged(nameof(InstalledVersionText));
             AppendLog("[HighPop] " + Loc.InstallDone, ConsoleMessageType.System);
+            AddActionLog("Install/update completed");
             await _notifications.NotifyAsync($"✅ {Server.DisplayName} {Loc.InstallDone}", Plugin.GameName, "#3FB950");
         }
         catch (FileNotFoundException ex)
@@ -516,6 +700,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         catch (Exception ex)
         {
             AppendLog("[ERR] Unexpected error: " + ex.Message, ConsoleMessageType.Error);
+            AddActionLog($"Install/update failed: {ex.Message}");
             Server.Status = ServerStatus.Error;
         }
         finally { IsInstalling = false; RefreshStatus(); }
@@ -550,25 +735,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task RunCommandTextAsync(string cmd)
     {
         AppendLog("> " + cmd, ConsoleMessageType.Input);
+        AddActionLog($"Console command sent: {SummarizeCommand(cmd)}");
 
-        if (RconConnected)
-        {
-            await _rconLock.WaitAsync();
-            try
-            {
-                if (_rcon != null)
-                {
-                    var resp = await _rcon.SendCommandAsync(cmd);
-                    if (!string.IsNullOrEmpty(resp))
-                        AppendLog(resp, ConsoleMessageType.Info);
-                }
-            }
-            finally { _rconLock.Release(); }
-        }
-        else
-        {
-            _manager.SendCommand(Server.Id, cmd);
-        }
+        await SendRconOrConsole(cmd);
     }
 
     [RelayCommand]
@@ -641,31 +810,92 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     // ── RCON ─────────────────────────────────────────────────────────────────
 
     [RelayCommand]
-    private async Task ConnectRconAsync()
+    private async Task ConnectRconAsync() => await ConnectRconCoreAsync(automatic: false);
+
+    private async Task<bool> ConnectRconCoreAsync(bool automatic)
     {
-        // Swap in a fresh RconService under lock so SendConsoleCommandAsync never sees a half-constructed state
-        RconService newRcon;
         await _rconLock.WaitAsync();
         try
         {
             _rcon?.Dispose();
             _rcon = new RconService();
-            newRcon = _rcon;
+
+            var ip = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp == "0.0.0.0"
+                ? "127.0.0.1"
+                : Server.ServerIp;
+            var port = Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1;
+            var ok = await _rcon.ConnectAsync(ip, port, Server.RconPassword);
+
+            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            {
+                RconConnected = ok;
+                RconStatusText = ok
+                    ? $"Connected to {ip}:{port}"
+                    : automatic ? $"Waiting for WebRCON on {ip}:{port}" : "Connection failed";
+            });
+            if (ok)
+            {
+                if (!automatic) _rconAutoConnectCts?.Cancel();
+                AppendLog("[RCON] " + (automatic ? "Auto-connected." : Loc.RconConnectedMsg),
+                    ConsoleMessageType.System);
+                AddActionLog(automatic ? "WebRCON auto-connected" : "WebRCON connected");
+            }
+            else if (!automatic)
+            {
+                AppendLog("[RCON] " + Loc.RconFailedMsg, ConsoleMessageType.Error);
+                AddActionLog("WebRCON connection failed");
+            }
+            return ok;
         }
         finally { _rconLock.Release(); }
+    }
 
-        var ip = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp == "0.0.0.0" ? "127.0.0.1" : Server.ServerIp;
-        var port = Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1;
-        var ok   = await newRcon.ConnectAsync(ip, port, Server.RconPassword);
+    private void StartAutoRconConnect()
+    {
+        _rconAutoConnectCts?.Cancel();
+        _rconAutoConnectCts?.Dispose();
+        _rconAutoConnectCts = null;
+        if (!Server.AutoConnectRcon || !HasRcon || !IsRunning) return;
 
-        RconConnected = ok;
-        AppendLog(ok ? "[RCON] " + Loc.RconConnectedMsg : "[RCON] " + Loc.RconFailedMsg,
-            ok ? ConsoleMessageType.System : ConsoleMessageType.Error);
+        var cts = new CancellationTokenSource();
+        _rconAutoConnectCts = cts;
+        var token = cts.Token;
+        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            RconStatusText = "Waiting for Rust WebRCON...");
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(3000, token);
+                for (var attempt = 1; attempt <= 12 && IsRunning && !token.IsCancellationRequested; attempt++)
+                {
+                    if (RconConnected) return;
+                    if (await ConnectRconCoreAsync(automatic: true))
+                    {
+                        await FetchOnlinePlayersAsync();
+                        return;
+                    }
+                    await Task.Delay(5000, token);
+                }
+                if (!token.IsCancellationRequested)
+                {
+                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                        RconStatusText = "Auto-connect timed out — use Connect to retry");
+                    AppendLog("[RCON] Auto-connect timed out after 60 seconds.", ConsoleMessageType.Warning);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                AppendLog($"[RCON] Auto-connect failed: {ex.Message}", ConsoleMessageType.Warning);
+            }
+        }, token);
     }
 
     [RelayCommand]
     private async Task DisconnectRconAsync()
     {
+        _rconAutoConnectCts?.Cancel();
         await _rconLock.WaitAsync();
         try
         {
@@ -675,7 +905,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         finally { _rconLock.Release(); }
 
         RconConnected = false;
+        RconStatusText = "Disconnected";
         AppendLog("[RCON] " + Loc.RconDisconnectedMsg, ConsoleMessageType.System);
+        AddActionLog("WebRCON disconnected");
     }
 
     // ── Backups ──────────────────────────────────────────────────────────────
@@ -688,6 +920,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             AppendLog("[Backup] " + Loc.BackupCreating, ConsoleMessageType.System);
             var entry = await _backup.CreateBackupAsync(Server);
             AppendLog($"[Backup] {Loc.BackupDone}: {entry.SizeText}", ConsoleMessageType.System);
+            AddActionLog($"Backup created ({entry.SizeText})");
             await _notifications.NotifyAsync($"💾 {Server.DisplayName} {Loc.BackupDone}", entry.SizeText, "#D29922");
             RefreshBackups();
         }
@@ -736,6 +969,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         AppendLog($"[Restore] {Loc.RestoreStarting} {entry.CreatedAt:dd.MM.yyyy HH:mm}...", ConsoleMessageType.System);
         await _backup.RestoreBackupAsync(Server, entry.FilePath);
         AppendLog("[Restore] " + Loc.RestoreDone, ConsoleMessageType.System);
+        AddActionLog($"Backup restored: {Path.GetFileName(entry.FilePath)}");
     }
 
     [RelayCommand]
@@ -743,6 +977,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (entry == null) return;
         _backup.DeleteBackup(entry.FilePath);
+        AddActionLog($"Backup deleted: {Path.GetFileName(entry.FilePath)}");
         RefreshBackups();
     }
 
@@ -778,6 +1013,69 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (System.IO.Directory.Exists(Server.InstallPath))
             System.Diagnostics.Process.Start("explorer.exe", Server.InstallPath);
+    }
+
+    [RelayCommand]
+    private void BrowseLogDirectory()
+    {
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "Select the Rust server log directory",
+            SelectedPath = EffectiveLogDirectory,
+            UseDescriptionForTitle = true,
+        };
+        if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+        CustomLogDirectory = dialog.SelectedPath;
+        AddActionLog($"Custom log directory set to {dialog.SelectedPath}");
+    }
+
+    [RelayCommand]
+    private void ResetLogDirectory()
+    {
+        CustomLogDirectory = string.Empty;
+        AddActionLog("Log directory reset to the Rust identity default");
+    }
+
+    [RelayCommand]
+    private void OpenLogDirectory()
+    {
+        var directory = EffectiveLogDirectory;
+        Directory.CreateDirectory(directory);
+        System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo("explorer.exe", directory) { UseShellExecute = true });
+    }
+
+    [RelayCommand]
+    private void OpenServerAutoConfig()
+    {
+        var path = ServerAutoConfigPath;
+        if (string.IsNullOrWhiteSpace(path)) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        if (!File.Exists(path)) File.WriteAllText(path, string.Empty);
+        System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo("notepad.exe", path) { UseShellExecute = true });
+    }
+
+    [RelayCommand]
+    private void AddRustServerVariable()
+    {
+        Server.RustServerVariables.Add(new RustServerVariable
+        {
+            Name = "server.pve",
+            Value = "false",
+            Description = "Custom Rust console variable",
+        });
+        OnPropertyChanged(nameof(Server));
+        AddActionLog("Added a serverauto.cfg variable row");
+    }
+
+    [RelayCommand]
+    private void RemoveRustServerVariable(RustServerVariable? variable)
+    {
+        if (variable == null) return;
+        Server.RustServerVariables.Remove(variable);
+        OnPropertyChanged(nameof(Server));
+        AddActionLog($"Removed serverauto.cfg variable: {variable.Name}");
     }
 
     // ── Config Presets ───────────────────────────────────────────────────────
@@ -897,6 +1195,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
             await _mods.InstallOxideAsync(Plugin, Server.InstallPath, progress);
             AppendLog("[Mods] ✅ Oxide installed successfully.", ConsoleMessageType.System);
+            AddActionLog("Oxide / uMod installed or updated");
+            RefreshInstalledPlugins();
         }
         catch (Exception ex)
         {
@@ -928,6 +1228,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
             await _mods.InstallCarbonAsync(Server.InstallPath, progress);
             AppendLog("[Mods] ✅ Carbon installed successfully.", ConsoleMessageType.System);
+            AddActionLog("Carbon installed or updated");
+            RefreshInstalledPlugins();
         }
         catch (Exception ex)
         {
@@ -948,6 +1250,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ModManagerService.OpenPluginFolder(Plugin, Server.InstallPath);
     }
 
+    [RelayCommand]
+    private void RefreshInstalledPlugins()
+    {
+        DetectedModFramework = ModManagerService.GetDetectedFramework(Server.InstallPath);
+        InstalledPlugins = ModManagerService.GetInstalledPlugins(Server.InstallPath);
+
+        if (!DetectedModFramework.StartsWith("Vanilla", StringComparison.OrdinalIgnoreCase))
+        {
+            if (Server.RustServerProfile == "Community (Vanilla)")
+                RustServerProfile = "Modded";
+        }
+        OnPropertyChanged(nameof(EffectiveLogDirectory));
+    }
+
     // ── Config editor ───────────────────────────────────────────────────────
 
     [RelayCommand]
@@ -955,6 +1271,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         ConfigFiles = _configEditor.FindConfigs(Server, Plugin);
         if (ConfigFiles.Count > 0) SelectedConfigFile = ConfigFiles[0];
+        AppendLog($"[Config] Found {ConfigFiles.Count(f => !f.IsPluginConfig)} server config(s) and " +
+                  $"{ConfigFiles.Count(f => f.IsPluginConfig)} plugin config(s).", ConsoleMessageType.System);
     }
 
     [RelayCommand]
@@ -965,10 +1283,27 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             _configEditor.Save(Server, SelectedConfigFile);
-            AppendLog("[Config] File saved.", ConsoleMessageType.System);
+            AppendLog($"[Config] Saved {SelectedConfigFile.DisplayName}.", ConsoleMessageType.System);
+            AddActionLog($"Config saved: {SelectedConfigFile.DisplayName}");
             RefreshConfigHistory();
         }
         catch (Exception ex) { AppendLog($"[Config] Save failed: {ex.Message}", ConsoleMessageType.Error); }
+    }
+
+    [RelayCommand]
+    private async Task ReloadSelectedPluginAsync()
+    {
+        if (SelectedConfigFile?.CanReloadPlugin != true) return;
+        if (!IsRunning)
+        {
+            AppendLog("[Config] Start Rust before reloading a plugin.", ConsoleMessageType.Warning);
+            return;
+        }
+
+        await SendRconOrConsole(SelectedConfigFile.ReloadCommand);
+        AppendLog($"[Config] Reload requested for {SelectedConfigFile.PluginName} via " +
+                  $"{SelectedConfigFile.ReloadCommand}.", ConsoleMessageType.System);
+        AddActionLog($"Plugin reloaded: {SelectedConfigFile.PluginName}");
     }
 
     [ObservableProperty] private List<Services.ConfigSnapshot> _configHistory = [];
@@ -1060,6 +1395,17 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
         if (string.IsNullOrWhiteSpace(response)) return;
         var parsed = Services.PlayerParserService.ParseRustPlayerList(response);
+        var selectedSteamIds = OnlinePlayers
+            .Where(p => p.IsSelected && RustModerationCommands.IsSteamId(p.SteamId))
+            .Select(p => p.SteamId)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var player in parsed.Where(p => RustModerationCommands.IsSteamId(p.SteamId)))
+        {
+            var profile = _moderation.GetRecord(Server.Id, player.SteamId);
+            player.IsSelected    = selectedSteamIds.Contains(player.SteamId);
+            player.StaffNotes    = profile?.Notes ?? string.Empty;
+            player.IsWhitelisted = profile?.Whitelisted == true;
+        }
 
         // Keep the model in sync — used by Shut-down-when-empty and the web dashboard's
         // server list (the detail endpoint already gets a live count separately).
@@ -1093,9 +1439,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             OnlinePlayers = parsed;
             PlayerHistory = _playerStats.GetSessions(Server.Id, 50);
             PlayerStatsList = _playerStats.GetPlayerStats(Server.Id, 50);
+            RefreshModerationProfiles();
             RefreshActivityStats();
         });
     }
+
+    private void RefreshModerationProfiles() =>
+        ModerationProfiles = _moderation.GetRecords(Server.Id);
 
     // ── Performance history ──────────────────────────────────────────────────
 
@@ -1136,7 +1486,53 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         });
         _perfModel.Series.Add(_cpuSeries);
         _perfModel.Series.Add(_memSeries);
-        WpfApplication.Current?.Dispatcher?.Invoke(() => PerfPlot = _perfModel);
+
+        _netInSeries = new OxyPlot.Series.LineSeries
+        {
+            Title = "Download KB/s", Color = OxyPlot.OxyColor.Parse("#38C976"),
+            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
+        };
+        _netOutSeries = new OxyPlot.Series.LineSeries
+        {
+            Title = "Upload KB/s", Color = OxyPlot.OxyColor.Parse("#F05A28"),
+            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
+        };
+        _playersSeries = new OxyPlot.Series.LineSeries
+        {
+            Title = "Players", Color = OxyPlot.OxyColor.Parse("#FFB020"),
+            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None, YAxisKey = "players",
+        };
+        _operationsModel = new OxyPlot.PlotModel
+        {
+            Background = OxyPlot.OxyColor.FromArgb(0, 0, 0, 0),
+            PlotAreaBorderColor = OxyPlot.OxyColor.Parse("#30363d"),
+            TextColor = OxyPlot.OxyColor.Parse("#8b949e"),
+        };
+        _operationsModel.Axes.Add(new OxyPlot.Axes.DateTimeAxis
+        {
+            Position = OxyPlot.Axes.AxisPosition.Bottom, StringFormat = "HH:mm:ss",
+            AxislineColor = OxyPlot.OxyColor.Parse("#30363d"), TicklineColor = OxyPlot.OxyColor.Parse("#30363d"),
+            MajorGridlineColor = OxyPlot.OxyColor.Parse("#21262d"), MajorGridlineStyle = OxyPlot.LineStyle.Solid,
+        });
+        _operationsModel.Axes.Add(new OxyPlot.Axes.LinearAxis
+        {
+            Position = OxyPlot.Axes.AxisPosition.Left, Title = "Network KB/s", Minimum = 0,
+            MajorGridlineColor = OxyPlot.OxyColor.Parse("#21262d"), MajorGridlineStyle = OxyPlot.LineStyle.Solid,
+        });
+        _operationsModel.Axes.Add(new OxyPlot.Axes.LinearAxis
+        {
+            Key = "players", Position = OxyPlot.Axes.AxisPosition.Right, Title = "Players", Minimum = 0,
+            MinimumMajorStep = 1, MajorStep = 10,
+        });
+        _operationsModel.Series.Add(_netInSeries);
+        _operationsModel.Series.Add(_netOutSeries);
+        _operationsModel.Series.Add(_playersSeries);
+
+        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        {
+            PerfPlot = _perfModel;
+            OperationsPlot = _operationsModel;
+        });
     }
 
     private void UpdatePerfChart()
@@ -1151,13 +1547,25 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         {
             _cpuSeries!.Points.Clear();
             _memSeries!.Points.Clear();
+            _netInSeries!.Points.Clear();
+            _netOutSeries!.Points.Clear();
+            _playersSeries!.Points.Clear();
             foreach (var s in samples)
             {
                 var x = OxyPlot.Axes.DateTimeAxis.ToDouble(s.Time);
                 _cpuSeries.Points.Add(new OxyPlot.DataPoint(x, s.Cpu));
                 _memSeries.Points.Add(new OxyPlot.DataPoint(x, s.MemMb));
+                _netInSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkInKbps));
+                _netOutSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkOutKbps));
+                _playersSeries.Points.Add(new OxyPlot.DataPoint(x, s.Players));
             }
             _perfModel!.InvalidatePlot(true);
+            _operationsModel!.InvalidatePlot(true);
+            ChartSummary = samples.Count == 0
+                ? "No samples in this range."
+                : $"Peak CPU {samples.Max(s => s.Cpu):F1}%  •  Peak RAM {samples.Max(s => s.MemMb):N0} MB  •  " +
+                  $"Peak players {samples.Max(s => s.Players)}  •  Peak network " +
+                  $"{samples.Max(s => s.NetworkInKbps + s.NetworkOutKbps):F1} KB/s";
         });
     }
 
@@ -1263,6 +1671,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         if (cmd == null) { AppendLog("[Players] Kick not supported.", ConsoleMessageType.Warning); return; }
         await SendRconOrConsole(cmd);
         AppendLog($"[Players] Kicked: {PlayerInput}", ConsoleMessageType.System);
+        AddActionLog($"Player kicked: {PlayerInput}");
         KickReason = string.Empty;
         _ = FetchOnlinePlayersAsync();
     }
@@ -1272,25 +1681,41 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (string.IsNullOrWhiteSpace(PlayerInput) || Plugin == null) return;
         var reason = string.IsNullOrWhiteSpace(BanReason) ? "Banned by admin" : BanReason;
-        var cmd = Plugin.GetBanCommand(PlayerInput, reason);
-        if (cmd == null) { AppendLog("[Players] Ban not supported.", ConsoleMessageType.Warning); return; }
-        await SendRconOrConsole(cmd);
-        AppendLog($"[Players] Banned: {PlayerInput}", ConsoleMessageType.System);
-        await SyncBanToGroupAsync(PlayerInput, reason);
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!await BanTargetAsync(steamId, playerName, reason)) return;
         BanReason = string.Empty;
+        BanDuration = string.Empty;
         _ = FetchOnlinePlayersAsync();
     }
 
     /// <summary>Records a ban in the server's group ban list and replays it on the group's
     /// other currently-running servers of the same game.</summary>
-    private async Task SyncBanToGroupAsync(string target, string reason)
+    private async Task SyncBanToGroupAsync(
+        string target,
+        string playerName,
+        string reason,
+        string duration,
+        DateTime? expiresAtUtc)
     {
         if (string.IsNullOrEmpty(Server.GroupId) || Plugin == null) return;
-        _groupBans.AddBan(Server.GroupId, Server.GameId, target, reason);
+        _groupBans.AddBan(Server.GroupId, Server.GameId, target, reason,
+            playerName, duration, expiresAtUtc);
 
         foreach (var sibling in _manager.GetRunningGroupSiblings(Server))
         {
-            var cmd = Plugin.GetBanCommand(target, reason);
+            string? cmd;
+            if (RustModerationCommands.IsSteamId(target))
+            {
+                var remaining = expiresAtUtc is { } expiry
+                    ? RustModerationCommands.RemainingDuration(expiry, DateTime.UtcNow)
+                    : string.Empty;
+                if (!RustModerationCommands.TryBuildBan(target, playerName, reason, remaining,
+                    DateTime.UtcNow, out var timedCommand, out _, out _, out _))
+                    continue;
+                cmd = timedCommand;
+            }
+            else
+                cmd = Plugin.GetBanCommand(target, reason);
             if (cmd == null) continue;
             try { await _manager.SendCommandAsync(sibling.Id, cmd); }
             catch { }
@@ -1317,15 +1742,252 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task BanOnlinePlayerAsync(Models.OnlinePlayer? player)
     {
         if (player == null || Plugin == null) return;
-        var target = player.SteamId.Length > 0 ? player.SteamId : player.Name;
         var reason  = string.IsNullOrWhiteSpace(BanReason) ? "Banned by admin" : BanReason;
-        var cmd     = Plugin.GetBanCommand(target, reason);
-        if (cmd == null) { AppendLog("[Players] Ban not supported.", ConsoleMessageType.Warning); return; }
-        await SendRconOrConsole(cmd);
-        AppendLog($"[Players] Banned {player.Name} ({reason})", ConsoleMessageType.System);
-        await SyncBanToGroupAsync(target, reason);
+        if (!await BanTargetAsync(player.SteamId, player.Name, reason)) return;
         BanReason = string.Empty;
+        BanDuration = string.Empty;
         _ = FetchOnlinePlayersAsync();
+    }
+
+    private async Task<bool> BanTargetAsync(string steamId, string playerName, string reason)
+    {
+        if (Plugin == null) return false;
+
+        string? command;
+        string normalizedDuration = string.Empty;
+        DateTime? expiresAtUtc = null;
+        var target = RustModerationCommands.IsSteamId(steamId) ? steamId : playerName;
+
+        if (RustModerationCommands.IsSteamId(steamId))
+        {
+            if (!RustModerationCommands.TryBuildBan(steamId, playerName, reason, BanDuration,
+                DateTime.UtcNow, out var timedCommand, out normalizedDuration, out expiresAtUtc, out var error))
+            {
+                ModerationStatus = error;
+                AppendLog("[Moderation] " + error, ConsoleMessageType.Warning);
+                return false;
+            }
+            command = timedCommand;
+        }
+        else
+        {
+            if (!string.IsNullOrWhiteSpace(BanDuration))
+            {
+                ModerationStatus = "Timed bans require a connected player or a 17-digit Steam64 ID.";
+                AppendLog("[Moderation] " + ModerationStatus, ConsoleMessageType.Warning);
+                return false;
+            }
+            command = Plugin.GetBanCommand(target, reason);
+        }
+
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            AppendLog("[Players] Ban not supported.", ConsoleMessageType.Warning);
+            return false;
+        }
+
+        await SendRconOrConsole(command);
+        var durationText = string.IsNullOrEmpty(normalizedDuration) ? "permanent" : normalizedDuration;
+        AppendLog($"[Players] Banned {playerName} ({reason}; {durationText})", ConsoleMessageType.System);
+        AddActionLog($"Player banned: {playerName} ({durationText})");
+        ModerationStatus = $"Ban issued for {playerName} ({durationText}).";
+
+        if (RustModerationCommands.IsSteamId(steamId))
+            _moderation.RecordBan(Server.Id, steamId, playerName, reason, normalizedDuration, expiresAtUtc);
+        await SyncBanToGroupAsync(target, playerName, reason, normalizedDuration, expiresAtUtc);
+        RefreshModerationState();
+        return true;
+    }
+
+    private (string SteamId, string PlayerName) ResolvePlayer(string input)
+    {
+        input = input.Trim();
+        var online = OnlinePlayers.FirstOrDefault(p =>
+            p.SteamId.Equals(input, StringComparison.Ordinal)
+            || p.Name.Equals(input, StringComparison.OrdinalIgnoreCase));
+        return online == null
+            ? (RustModerationCommands.IsSteamId(input) ? input : string.Empty, input)
+            : (online.SteamId, online.Name);
+    }
+
+    [RelayCommand]
+    private void SelectAllPlayers()
+    {
+        foreach (var player in OnlinePlayers) player.IsSelected = true;
+        OnlinePlayers = OnlinePlayers.ToList();
+        ModerationStatus = $"Selected {OnlinePlayers.Count} online player(s).";
+    }
+
+    [RelayCommand]
+    private void ClearPlayerSelection()
+    {
+        foreach (var player in OnlinePlayers) player.IsSelected = false;
+        OnlinePlayers = OnlinePlayers.ToList();
+        ModerationStatus = "Player selection cleared.";
+    }
+
+    [RelayCommand]
+    private async Task BulkKickPlayersAsync()
+    {
+        var selected = OnlinePlayers.Where(p => p.IsSelected).ToList();
+        if (selected.Count == 0)
+        {
+            ModerationStatus = "Select at least one online player first.";
+            return;
+        }
+        if (!ConfirmBulkAction("kick", selected.Count)) return;
+
+        var reason = string.IsNullOrWhiteSpace(KickReason) ? "Kicked by admin" : KickReason;
+        var completed = 0;
+        foreach (var player in selected)
+        {
+            var target = RustModerationCommands.IsSteamId(player.SteamId) ? player.SteamId : player.Name;
+            var command = Plugin?.GetKickCommand(target, reason);
+            if (command == null) continue;
+            await SendRconOrConsole(command);
+            completed++;
+        }
+        AppendLog($"[Moderation] Bulk kicked {completed} player(s): {reason}", ConsoleMessageType.System);
+        AddActionLog($"Bulk kick completed for {completed} player(s)");
+        ModerationStatus = $"Bulk kick completed for {completed} player(s).";
+        KickReason = string.Empty;
+        _ = FetchOnlinePlayersAsync();
+    }
+
+    [RelayCommand]
+    private async Task BulkBanPlayersAsync()
+    {
+        var selected = OnlinePlayers
+            .Where(p => p.IsSelected && RustModerationCommands.IsSteamId(p.SteamId))
+            .ToList();
+        if (selected.Count == 0)
+        {
+            ModerationStatus = "Select at least one online player with a Steam64 ID first.";
+            return;
+        }
+        if (!ConfirmBulkAction("ban", selected.Count)) return;
+
+        var reason = string.IsNullOrWhiteSpace(BanReason) ? "Banned by admin" : BanReason;
+        var completed = 0;
+        foreach (var player in selected)
+            if (await BanTargetAsync(player.SteamId, player.Name, reason)) completed++;
+
+        AppendLog($"[Moderation] Bulk banned {completed} player(s): {reason}", ConsoleMessageType.System);
+        AddActionLog($"Bulk ban completed for {completed} player(s)");
+        ModerationStatus = $"Bulk ban completed for {completed} player(s).";
+        BanReason = string.Empty;
+        BanDuration = string.Empty;
+        _ = FetchOnlinePlayersAsync();
+    }
+
+    [RelayCommand]
+    private async Task UnbanPlayerAsync()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!RustModerationCommands.IsSteamId(steamId))
+        {
+            ModerationStatus = "Unban requires a valid 17-digit Steam64 ID.";
+            return;
+        }
+
+        await SendRconOrConsole(RustModerationCommands.Unban(steamId));
+        _moderation.RecordUnban(Server.Id, steamId, playerName);
+        _groupBans.RemoveBan(Server.GroupId, Server.GameId, steamId);
+        ModerationStatus = $"Unban issued for {playerName}.";
+        AppendLog($"[Players] Unbanned {playerName} ({steamId})", ConsoleMessageType.System);
+        AddActionLog($"Player unbanned: {playerName}");
+        RefreshModerationState();
+    }
+
+    [RelayCommand]
+    private void UsePlayerForModeration(Models.OnlinePlayer? player)
+    {
+        if (player == null) return;
+        PlayerInput = RustModerationCommands.IsSteamId(player.SteamId) ? player.SteamId : player.Name;
+        PlayerNote  = player.StaffNotes;
+        ModerationStatus = $"Loaded {player.Name} into the moderation workspace.";
+    }
+
+    [RelayCommand]
+    private void SavePlayerNote()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!RustModerationCommands.IsSteamId(steamId))
+        {
+            ModerationStatus = "Player notes require a valid 17-digit Steam64 ID.";
+            return;
+        }
+        _moderation.SetNote(Server.Id, steamId, playerName, PlayerNote);
+        ModerationStatus = $"Saved staff notes for {playerName}.";
+        AddActionLog($"Staff note updated for {playerName}");
+        RefreshModerationState();
+    }
+
+    [RelayCommand]
+    private async Task GrantWhitelistAsync()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!CanManageWhitelist(steamId)) return;
+        await SendRconOrConsole(RustModerationCommands.GrantWhitelist(steamId));
+        _moderation.SetWhitelisted(Server.Id, steamId, playerName, allowed: true);
+        ModerationStatus = $"Whitelist permission granted to {playerName}.";
+        AppendLog($"[Whitelist] Granted whitelist.allow to {playerName} ({steamId})", ConsoleMessageType.System);
+        AddActionLog($"Whitelist granted: {playerName}");
+        RefreshModerationState();
+    }
+
+    [RelayCommand]
+    private async Task RevokeWhitelistAsync()
+    {
+        var (steamId, playerName) = ResolvePlayer(PlayerInput);
+        if (!CanManageWhitelist(steamId)) return;
+        await SendRconOrConsole(RustModerationCommands.RevokeWhitelist(steamId));
+        _moderation.SetWhitelisted(Server.Id, steamId, playerName, allowed: false);
+        ModerationStatus = $"Whitelist permission revoked from {playerName}.";
+        AppendLog($"[Whitelist] Revoked whitelist.allow from {playerName} ({steamId})", ConsoleMessageType.System);
+        AddActionLog($"Whitelist revoked: {playerName}");
+        RefreshModerationState();
+    }
+
+    private bool CanManageWhitelist(string steamId)
+    {
+        if (!RustModerationCommands.IsSteamId(steamId))
+        {
+            ModerationStatus = "Whitelist changes require a valid 17-digit Steam64 ID.";
+            return false;
+        }
+        var hasFramework = ModManagerService.GetInstalledOxideVersion(Server.InstallPath) != null
+            || ModManagerService.IsCarbonInstalled(Server.InstallPath);
+        if (!hasFramework)
+        {
+            ModerationStatus = "Install Carbon or Oxide plus the Whitelist plugin before managing whitelist access.";
+            return false;
+        }
+        if (!IsRunning)
+        {
+            ModerationStatus = "Start Rust and connect WebRCON before changing whitelist access.";
+            return false;
+        }
+        return true;
+    }
+
+    private static bool ConfirmBulkAction(string action, int count) =>
+        System.Windows.MessageBox.Show(
+            $"Confirm bulk {action} for {count} selected player(s)?\n\nThis sends live Rust moderation commands and cannot be undone as a group.",
+            $"HighPop — Confirm bulk {action}",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes;
+
+    private void RefreshModerationState()
+    {
+        RefreshModerationProfiles();
+        foreach (var player in OnlinePlayers.Where(p => RustModerationCommands.IsSteamId(p.SteamId)))
+        {
+            var profile = _moderation.GetRecord(Server.Id, player.SteamId);
+            player.StaffNotes     = profile?.Notes ?? string.Empty;
+            player.IsWhitelisted = profile?.Whitelisted == true;
+        }
+        OnlinePlayers = OnlinePlayers.ToList();
     }
 
     [RelayCommand]
@@ -1349,7 +2011,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         var bans = _groupBans.GetBans(Server.GroupId, Server.GameId);
         foreach (var ban in bans)
         {
-            var cmd = Plugin.GetBanCommand(ban.Target, ban.Reason);
+            string? cmd;
+            if (RustModerationCommands.IsSteamId(ban.Target))
+            {
+                var remaining = ban.ExpiresAtUtc is { } expiry
+                    ? RustModerationCommands.RemainingDuration(expiry, DateTime.UtcNow)
+                    : string.Empty;
+                if (!RustModerationCommands.TryBuildBan(
+                    ban.Target, ban.PlayerName, ban.Reason, remaining, DateTime.UtcNow,
+                    out var timedCommand, out _, out _, out _))
+                    continue;
+                cmd = timedCommand;
+            }
+            else
+                cmd = Plugin.GetBanCommand(ban.Target, ban.Reason);
             if (cmd == null) continue;
             try { await SendRconOrConsole(cmd); } catch { }
         }
@@ -1362,11 +2037,26 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         if (RconConnected && _rcon != null)
         {
             await _rconLock.WaitAsync();
-            try { var r = await _rcon.SendCommandAsync(cmd); if (!string.IsNullOrEmpty(r)) AppendLog(r); }
+            try
+            {
+                var r = await _rcon.SendCommandAsync(cmd);
+                if (!string.IsNullOrEmpty(r)) AppendLog(r);
+                if (_rcon.IsConnected) return;
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"[RCON] Connection lost: {ex.Message}", ConsoleMessageType.Warning);
+            }
             finally { _rconLock.Release(); }
+
+            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            {
+                RconConnected = false;
+                RconStatusText = "Connection lost — using process console";
+            });
+            if (Server.AutoConnectRcon) StartAutoRconConnect();
         }
-        else
-            _manager.SendCommand(Server.Id, cmd);
+        await _manager.SendCommandAsync(Server.Id, cmd);
     }
 
     // ── Templates ─────────────────────────────────────────────────────────────
@@ -1523,6 +2213,15 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         RefreshScheduledTasks();
     }
 
+    [RelayCommand]
+    private async Task RunScheduledTaskNowAsync(Services.ScheduledTask? task)
+    {
+        if (task == null || task.IsRunning) return;
+        AddActionLog($"Scheduled {task.ActionText} started manually");
+        await _scheduler.ExecuteNowAsync(task.Id);
+        RefreshScheduledTasks();
+    }
+
     // ── Performance monitoring ───────────────────────────────────────────────
 
     private void StartPerfMonitoring()
@@ -1544,7 +2243,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 }
                 var m = _perfMonitor.Get(Server.Id);
                 if (m == null) return;
-                _perfHistory.Record(Server.Id, m.CurrentCpu, m.CurrentMemMb);
+                var network = _network.GetServerStats(Server.Id);
+                _perfHistory.Record(
+                    Server.Id,
+                    m.CurrentCpu,
+                    m.CurrentMemMb,
+                    (network?.BytesInPerSec ?? 0) / 1024.0,
+                    (network?.BytesOutPerSec ?? 0) / 1024.0,
+                    Server.CurrentPlayers);
                 UpdatePerfChart();
                 WpfApplication.Current?.Dispatcher?.Invoke(() =>
                 {
@@ -1571,10 +2277,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             _perfTimer = null;
         }
         _perfMonitor.Untrack(Server.Id);
-        _perfModel  = null;
-        _cpuSeries  = null;
-        _memSeries  = null;
-        WpfApplication.Current?.Dispatcher?.Invoke(() => { CpuPercent = 0; MemoryMb = 0; PerfPlot = CreateEmptyPlot(); });
+        _perfHistory.Flush(Server.Id);
+        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        {
+            CpuPercent = 0;
+            MemoryMb = 0;
+        });
+        UpdatePerfChart();
     }
 
     // ── Events ───────────────────────────────────────────────────────────────
@@ -1618,15 +2327,19 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 StartPerfMonitoring();
                 StartPlayerRefresh();
                 if (_updateTimer == null) StartUpdateTimer();
+                StartAutoRconConnect();
             });
             _ = ReplayGroupBansAsync();
         }
         else if (status == ServerStatus.Stopped || status == ServerStatus.Error)
         {
+            _rconAutoConnectCts?.Cancel();
+            _playerStats.CloseOpenSessions(Server.Id);
+            _playersFetchedOnce = false;
+            _ = DisconnectRconForStopAsync();
             WpfApplication.Current?.Dispatcher?.Invoke(() =>
             {
                 StopPerfMonitoring();
-                _perfHistory.Clear(Server.Id);
                 StopPlayerRefresh();
                 OnlinePlayers = [];
                 Server.CurrentPlayers = 0;
@@ -1634,6 +2347,24 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     StopUpdateTimer();
             });
         }
+    }
+
+    private async Task DisconnectRconForStopAsync()
+    {
+        await _rconLock.WaitAsync();
+        try
+        {
+            _rcon?.Dispose();
+            _rcon = null;
+        }
+        catch { }
+        finally { _rconLock.Release(); }
+
+        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        {
+            RconConnected = false;
+            RconStatusText = "Disconnected";
+        });
     }
 
     private void OnPortsReassigned(Models.GameServer srv)
@@ -1684,6 +2415,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public void AppendConsoleWarning(string text)
         => AppendLog(text, ConsoleMessageType.Warning);
 
+    public void RecordAction(string action) => AddActionLog(action);
+
+    public async Task SendManagedCommandAsync(string command, string source)
+    {
+        AddActionLog($"{source} command: {SummarizeCommand(command)}");
+        await SendRconOrConsole(command);
+    }
+
     private void AddActionLog(string action)
     {
         var entry = $"[{DateTime.Now:dd.MM HH:mm:ss}] {action}";
@@ -1692,6 +2431,19 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             ActionLog.Insert(0, entry);
             if (ActionLog.Count > 100) ActionLog.RemoveAt(ActionLog.Count - 1);
         });
+    }
+
+    private static string SummarizeCommand(string command)
+    {
+        var first = command.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()
+            ?? "(empty)";
+        if (first.Contains("password", StringComparison.OrdinalIgnoreCase)
+            || first.Contains("token", StringComparison.OrdinalIgnoreCase)
+            || first.Contains("secret", StringComparison.OrdinalIgnoreCase))
+            return first + " [value hidden]";
+
+        var safe = new string(command.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        return safe.Length <= 100 ? safe : safe[..100] + "…";
     }
 
     private void RefreshStatus()
@@ -1728,6 +2480,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         StopUpdateTimer();
         StopPerfMonitoring();
         StopPlayerRefresh();
+        _rconAutoConnectCts?.Cancel();
+        _rconAutoConnectCts?.Dispose();
+        _rconAutoConnectCts = null;
         if (_rconLock.Wait(TimeSpan.FromSeconds(3)))
         {
             try { _rcon?.Dispose(); _rcon = null; }
@@ -1740,7 +2495,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             _rcon = null;
         }
 
-        _rconLock.Dispose();
+        // Do not dispose the semaphore: a cancelled auto-connect attempt may still be queued
+        // briefly, and disposing a semaphore with waiters can surface an ObjectDisposedException
+        // during manager shutdown.
     }
 
     // ── Plugin-specific settings fields ──────────────────────────────────────
@@ -1750,12 +2507,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 public partial class PluginFieldVm : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
 {
     private readonly GameServer _server;
+    private readonly Action? _changed;
     public HighPop.Games.ConfigField Field { get; }
 
-    public PluginFieldVm(GameServer server, HighPop.Games.ConfigField field)
+    public PluginFieldVm(GameServer server, HighPop.Games.ConfigField field, Action? changed = null)
     {
         _server = server;
         Field   = field;
+        _changed = changed;
     }
 
     public string Value
@@ -1765,6 +2524,7 @@ public partial class PluginFieldVm : CommunityToolkit.Mvvm.ComponentModel.Observ
         {
             _server.GameSpecificSettings[Field.Key] = value;
             OnPropertyChanged();
+            _changed?.Invoke();
         }
     }
 }

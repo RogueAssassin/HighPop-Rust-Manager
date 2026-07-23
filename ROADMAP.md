@@ -1,11 +1,19 @@
 # Roadmap
 
-HighPop v0.1 establishes the portable Rust operations foundation. Roadmap items are prioritized by stability and self-hostability.
+HighPop v0.3 expands the Rust-native administration stage into a clearer, more resilient operations workspace. Roadmap items are prioritized by stability and self-hostability.
+
+## Completed in v0.3
+
+- Auto-reconnecting WebRCON and improved player session collection
+- Dedicated Rust browser tag, profile, `serverauto.cfg`, and log-path controls
+- Carbon/Oxide detection with plugin and plugin-config inventories
+- Serialized scheduled operations with visible outcomes
+- Detailed resource/network/player charts and expanded operational audit entries
+- Integrated Discord status boards and private administrator controls
 
 ## Next
 
 - Signed Windows releases and reproducible release checksums
-- Rust-native timed bans, whitelist management, player notes, and bulk moderation
 - Optional Carbon/uMod HighPop bridge for structured combat logs, chat, events, and richer player telemetry
 - Live map adapter with explicit opt-in and documented server-plugin requirements
 - SFTP/FTPS file transfer profiles for remote hosts

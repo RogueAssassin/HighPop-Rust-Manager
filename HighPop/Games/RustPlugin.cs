@@ -1,9 +1,17 @@
 using HighPop.Models;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace HighPop.Games;
 
 public class RustPlugin : GamePluginBase, IWipePlugin
 {
+    private const string ManagedCfgStart = "// HighPop managed variables — begin";
+    private const string ManagedCfgEnd   = "// HighPop managed variables — end";
+    private static readonly Regex SafeVariableName =
+        new(@"^[A-Za-z0-9_.]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     public override string GameId        => "rust";
     public override string GameName      => "Rust";
     public override string Description   => "Multiplayer survival with base building and PvP";
@@ -48,8 +56,9 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         var appPort   = S(s, "appPort", (s.RconPort > 0 ? s.RconPort + 67 : s.ServerPort + 68).ToString());
 
         var fps = S(s, "fpsLimit", "60");
+        var logFile = Path.Combine(GetEffectiveLogDirectory(s), "RustDedicated.log");
 
-        var args = $"-batchmode -nographics +server.ip {Safe(s.ServerIp)} +server.port {s.ServerPort} " +
+        var args = $"-batchmode -nographics -logfile \"{Safe(logFile)}\" +server.ip {Safe(s.ServerIp)} +server.port {s.ServerPort} " +
                    $"+server.queryport {s.QueryPort} +app.port {appPort} " +
                    $"+fps.limit {fps} " +
                    $"+server.tickrate {tickrate} +server.hostname \"{Safe(s.ServerName)}\" " +
@@ -68,6 +77,62 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             args += $" +rcon.enabled 1 +rcon.password \"{Safe(s.RconPassword)}\"";
 
         return args;
+    }
+
+    public override Task PreStartAsync(GameServer server)
+    {
+        Directory.CreateDirectory(GetEffectiveLogDirectory(server));
+        WriteManagedServerAuto(server);
+        return Task.CompletedTask;
+    }
+
+    public static string GetEffectiveLogDirectory(GameServer server)
+    {
+        if (!string.IsNullOrWhiteSpace(server.LogDirectory))
+            return Path.GetFullPath(server.LogDirectory.Trim());
+
+        return Path.Combine(server.InstallPath, "server", GetIdentity(server), "logs");
+    }
+
+    public static string GetServerAutoPath(GameServer server) =>
+        Path.Combine(server.InstallPath, "server", GetIdentity(server), "cfg", "serverauto.cfg");
+
+    private static void WriteManagedServerAuto(GameServer server)
+    {
+        var path = GetServerAutoPath(server);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        var existing = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        var start = existing.IndexOf(ManagedCfgStart, StringComparison.Ordinal);
+        if (start >= 0)
+        {
+            var end = existing.IndexOf(ManagedCfgEnd, start, StringComparison.Ordinal);
+            existing = end >= 0
+                ? existing.Remove(start, end + ManagedCfgEnd.Length - start)
+                : existing[..start];
+        }
+
+        var enabled = (server.RustServerVariables ?? [])
+            .Where(v => v.Enabled && SafeVariableName.IsMatch(v.Name?.Trim() ?? string.Empty))
+            .ToList();
+
+        var content = new StringBuilder(existing.TrimEnd());
+        if (content.Length > 0) content.AppendLine().AppendLine();
+        if (enabled.Count > 0)
+        {
+            content.AppendLine(ManagedCfgStart);
+            foreach (var variable in enabled)
+            {
+                var name = variable.Name.Trim();
+                var value = SafeCfgValue(variable.Value);
+                content.Append(name).Append(' ').Append('"').Append(value).AppendLine("\"");
+            }
+            content.AppendLine(ManagedCfgEnd);
+        }
+
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, content.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.Move(temp, path, overwrite: true);
     }
 
     public override string? GetStopCommand(GameServer server) => "quit";
@@ -105,6 +170,20 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             && (!Uri.TryCreate(levelUrl, UriKind.Absolute, out var mapUri)
                 || mapUri.Scheme is not ("http" or "https")))
             return "Custom map URL must be an absolute HTTP or HTTPS URL.";
+        if (!string.IsNullOrWhiteSpace(server.LogDirectory)
+            && !Path.IsPathRooted(server.LogDirectory))
+            return "Custom log directory must be an absolute path.";
+        if (!string.IsNullOrWhiteSpace(server.LogDirectory))
+        {
+            try { _ = Path.GetFullPath(server.LogDirectory); }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return "Custom log directory is not a valid Windows path.";
+            }
+        }
+        if ((server.RustServerVariables ?? []).Any(v =>
+                v.Enabled && !SafeVariableName.IsMatch(v.Name?.Trim() ?? string.Empty)))
+            return "Enabled serverauto.cfg variable names may only contain letters, numbers, dots, and underscores.";
         return null;
     }
 
@@ -130,6 +209,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
 
     public override Dictionary<string, string> GetDefaultSettings() => new()
     {
+        ["steamBranch"] = "public",
         ["seed"]        = "12345",
         ["worldSize"]   = "4500",
         ["tickRate"]    = "30",
@@ -168,6 +248,13 @@ public class RustPlugin : GamePluginBase, IWipePlugin
 
     private static string Safe(string? value) => (value ?? string.Empty)
         .Replace("\r", " ").Replace("\n", " ").Replace("\"", "'").Trim();
+
+    private static string SafeCfgValue(string? value) => new string((value ?? string.Empty)
+        .Where(c => !char.IsControl(c) && c != ';')
+        .ToArray())
+        .Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("\"", "\\\"", StringComparison.Ordinal)
+        .Trim();
 
     private static string SafeIdentity(string? value)
     {

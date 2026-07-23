@@ -13,6 +13,8 @@ public class GameServer
     public int QueryPort { get; set; }
     public int RconPort { get; set; }
     public string RconPassword { get; set; } = string.Empty;
+    /// <summary>Connect HighPop's WebRCON client automatically after Rust starts.</summary>
+    public bool AutoConnectRcon { get; set; } = true;
     public string ServerPassword { get; set; } = string.Empty;
     public string ServerName { get; set; } = string.Empty;
     public int MaxPlayers { get; set; }
@@ -59,6 +61,17 @@ public class GameServer
     /// </summary>
     public string BackupSavePath   { get; set; } = string.Empty;
     public bool FirewallAutoManage { get; set; } = true;
+    /// <summary>
+    /// Optional absolute directory for Rust log output. When empty, HighPop uses
+    /// server/&lt;identity&gt;/logs beneath the Rust installation.
+    /// </summary>
+    public string LogDirectory { get; set; } = string.Empty;
+    /// <summary>
+    /// Operator-facing profile. This does not claim Facepunch "Official" status;
+    /// it documents whether this installation is community vanilla, modded, or development.
+    /// </summary>
+    public string RustServerProfile { get; set; } = "Community (Vanilla)";
+    public List<RustServerVariable> RustServerVariables { get; set; } = RustServerVariable.CreateDefaults();
     public Dictionary<string, string> GameSpecificSettings { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? LastStarted { get; set; }
@@ -83,6 +96,24 @@ public class GameServer
 
     [JsonIgnore]
     public TimeSpan Uptime { get; set; }
+}
+
+public class RustServerVariable
+{
+    public bool Enabled { get; set; }
+    public string Name  { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+
+    public static List<RustServerVariable> CreateDefaults() =>
+    [
+        new() { Name = "bear.population", Value = "2", Description = "Target bear population multiplier." },
+        new() { Name = "wolf.population", Value = "2", Description = "Target wolf population multiplier." },
+        new() { Name = "server.pve", Value = "false", Description = "Disables player-vs-player damage when true." },
+        new() { Name = "decay.scale", Value = "1", Description = "Global building decay multiplier." },
+        new() { Name = "server.itemdespawn", Value = "300", Description = "Seconds before dropped items despawn." },
+        new() { Name = "server.corpses", Value = "1", Description = "Controls corpse persistence." },
+    ];
 }
 
 public class QuickCommand

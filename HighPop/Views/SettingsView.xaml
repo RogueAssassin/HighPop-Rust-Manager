@@ -12,8 +12,18 @@
                     <TextBlock Text="General Settings" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,16"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
                     <TextBlock Text="Default install directory" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource DarkTextBox}" Margin="0,0,0,12"
-                             Text="{Binding DefaultInstallRoot, UpdateSourceTrigger=PropertyChanged}"/>
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Style="{StaticResource DarkTextBox}"
+                                 Text="{Binding DefaultInstallRoot, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Button Grid.Column="1" Content="Browse" Style="{StaticResource GhostButton}"
+                                Margin="8,0,0,0" Command="{Binding BrowseDefaultInstallRootCommand}"/>
+                    </Grid>
+                    <TextBlock Text="New Rust profiles are installed beneath this folder. Existing servers keep their current paths."
+                               FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12"/>
                     <TextBlock Text="Backup folder" Style="{StaticResource FieldLabel}"/>
                     <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>
@@ -75,7 +85,7 @@
                     <TextBlock Text="Steam Login" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,4"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
                     <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,16"
-                               Text="Required for games that don't support anonymous download (e.g. Wreckfest 2, Conan Exiles)"/>
+                               Text="Rust normally installs through anonymous SteamCMD access. Only enter a Steam account if Valve requires one for your environment."/>
                     <TextBlock Text="Steam username" Style="{StaticResource FieldLabel}"/>
                     <TextBox Style="{StaticResource DarkTextBox}" Margin="0,0,0,12"
                              Text="{Binding SteamLogin, UpdateSourceTrigger=PropertyChanged}"/>
@@ -85,7 +95,7 @@
                                  BorderBrush="#30363D" BorderThickness="1" Padding="10,8"
                                  PasswordChanged="SteamPassBox_PasswordChanged"/>
                     <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}"
-                               Text="⚠ Password is stored in plain text. Use a dedicated Steam account for servers."/>
+                               Text="Stored locally with Windows DPAPI encryption. A dedicated Steam server account is still recommended."/>
                     <Button Content="Save" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"
                             Margin="0,12,0,0" Command="{Binding SaveSettingsCommand}"/>
                 </StackPanel>
@@ -230,7 +240,7 @@
                     <TextBlock Text="Discord Remote Control Bot" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,4"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
                     <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12">
-                        Control your servers from Discord. Create a bot at discord.com/developers, give it Read/Send Messages permission in your control channel, paste the token and channel ID below.
+                        HighPop includes a local Discord bot: command polling controls servers, a gateway connection powers status/admin buttons, and tokens are DPAPI-encrypted on this PC. Create a bot at discord.com/developers, grant View Channel, Read Message History and Send Messages in a private control channel, then add authorized Discord user IDs below.
                     </TextBlock>
 
                     <CheckBox IsChecked="{Binding BotEnabled}" Style="{StaticResource DarkCheckBox}"

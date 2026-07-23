@@ -3,11 +3,18 @@ using System.Text.Json;
 
 namespace HighPop.Services;
 
-public record PerfSnapshot(DateTime Time, double Cpu, long MemMb);
+public record PerfSnapshot(
+    DateTime Time,
+    double Cpu,
+    long MemMb,
+    double NetworkInKbps = 0,
+    double NetworkOutKbps = 0,
+    int Players = 0);
 
 public class PerfHistoryService
 {
     private readonly Dictionary<string, Queue<PerfSnapshot>> _history = new();
+    private readonly Dictionary<string, int> _samplesSinceSave = new();
     private readonly object _lock = new();
     private readonly string _dir;
 
@@ -20,7 +27,13 @@ public class PerfHistoryService
         Directory.CreateDirectory(_dir);
     }
 
-    public void Record(string serverId, double cpu, long memMb)
+    public void Record(
+        string serverId,
+        double cpu,
+        long memMb,
+        double networkInKbps = 0,
+        double networkOutKbps = 0,
+        int players = 0)
     {
         lock (_lock)
         {
@@ -30,12 +43,24 @@ public class PerfHistoryService
                 _history[serverId] = q;
             }
 
-            q.Enqueue(new PerfSnapshot(DateTime.Now, cpu, memMb));
+            q.Enqueue(new PerfSnapshot(
+                DateTime.Now,
+                cpu,
+                memMb,
+                Math.Max(0, networkInKbps),
+                Math.Max(0, networkOutKbps),
+                Math.Max(0, players)));
             while (q.Count > MaxSamples) q.Dequeue();
 
-            // persist every 60 samples (~2 min)
-            if (q.Count % 60 == 0)
+            // Persist every 60 new samples (~2 min). Using q.Count here would write on
+            // every sample once the fixed-size queue reaches 1,800 entries.
+            var pending = _samplesSinceSave.GetValueOrDefault(serverId) + 1;
+            _samplesSinceSave[serverId] = pending;
+            if (pending >= 60)
+            {
                 SaveToDisk(serverId, q);
+                _samplesSinceSave[serverId] = 0;
+            }
         }
     }
 
@@ -52,11 +77,24 @@ public class PerfHistoryService
         }
     }
 
+    public void Flush(string serverId)
+    {
+        lock (_lock)
+        {
+            if (_history.TryGetValue(serverId, out var q))
+            {
+                SaveToDisk(serverId, q);
+                _samplesSinceSave[serverId] = 0;
+            }
+        }
+    }
+
     public void Clear(string serverId)
     {
         lock (_lock)
         {
             _history.Remove(serverId);
+            _samplesSinceSave.Remove(serverId);
             var f = FilePath(serverId);
             if (File.Exists(f)) File.Delete(f);
         }

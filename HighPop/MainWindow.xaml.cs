@@ -22,6 +22,8 @@ public partial class MainWindow : Window
         catch { }
 
         Loaded += MainWindow_Loaded;
+        StateChanged += (_, _) =>
+            MaximizeButton.Content = WindowState == WindowState.Maximized ? "❐" : "☐";
     }
 
     private void MainWindow_Loaded(object? sender, RoutedEventArgs e)
@@ -40,7 +42,15 @@ public partial class MainWindow : Window
 
     private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton == MouseButton.Left) DragMove();
+        if (e.ChangedButton != MouseButton.Left) return;
+        if (e.ClickCount == 2)
+        {
+            WindowState = WindowState == WindowState.Maximized
+                ? WindowState.Normal
+                : WindowState.Maximized;
+            return;
+        }
+        DragMove();
     }
 
     private void MinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;

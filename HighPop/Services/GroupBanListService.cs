@@ -5,11 +5,14 @@ namespace HighPop.Services;
 
 public class GroupBanEntry
 {
-    public string   GroupId  { get; set; } = string.Empty;
-    public string   GameId   { get; set; } = string.Empty;
-    public string   Target   { get; set; } = string.Empty; // SteamId or player name, whatever the ban command used
-    public string   Reason   { get; set; } = string.Empty;
-    public DateTime BannedAt { get; set; } = DateTime.Now;
+    public string   GroupId       { get; set; } = string.Empty;
+    public string   GameId        { get; set; } = string.Empty;
+    public string   Target        { get; set; } = string.Empty;
+    public string   PlayerName    { get; set; } = string.Empty;
+    public string   Reason        { get; set; } = string.Empty;
+    public string   Duration      { get; set; } = string.Empty;
+    public DateTime BannedAtUtc   { get; set; } = DateTime.UtcNow;
+    public DateTime? ExpiresAtUtc { get; set; }
 }
 
 /// <summary>
@@ -29,7 +32,14 @@ public class GroupBanListService
         Load();
     }
 
-    public void AddBan(string groupId, string gameId, string target, string reason)
+    public void AddBan(
+        string groupId,
+        string gameId,
+        string target,
+        string reason,
+        string playerName = "",
+        string duration = "",
+        DateTime? expiresAtUtc = null)
     {
         if (string.IsNullOrWhiteSpace(groupId) || string.IsNullOrWhiteSpace(target)) return;
         lock (_lock)
@@ -37,7 +47,16 @@ public class GroupBanListService
             // Avoid duplicate entries for the same player in the same group/game
             _entries.RemoveAll(e => e.GroupId == groupId && e.GameId == gameId
                                   && e.Target.Equals(target, StringComparison.OrdinalIgnoreCase));
-            _entries.Add(new GroupBanEntry { GroupId = groupId, GameId = gameId, Target = target, Reason = reason });
+            _entries.Add(new GroupBanEntry
+            {
+                GroupId     = groupId,
+                GameId      = gameId,
+                Target      = target,
+                PlayerName  = playerName,
+                Reason      = reason,
+                Duration    = duration,
+                ExpiresAtUtc = expiresAtUtc,
+            });
             Save();
         }
     }
@@ -45,7 +64,22 @@ public class GroupBanListService
     public List<GroupBanEntry> GetBans(string groupId, string gameId)
     {
         lock (_lock)
+        {
+            var removed = _entries.RemoveAll(e => e.ExpiresAtUtc is { } expiry && expiry <= DateTime.UtcNow);
+            if (removed > 0) Save();
             return _entries.Where(e => e.GroupId == groupId && e.GameId == gameId).ToList();
+        }
+    }
+
+    public void RemoveBan(string groupId, string gameId, string target)
+    {
+        if (string.IsNullOrWhiteSpace(groupId) || string.IsNullOrWhiteSpace(target)) return;
+        lock (_lock)
+        {
+            if (_entries.RemoveAll(e => e.GroupId == groupId && e.GameId == gameId
+                && e.Target.Equals(target, StringComparison.OrdinalIgnoreCase)) > 0)
+                Save();
+        }
     }
 
     private void Load()

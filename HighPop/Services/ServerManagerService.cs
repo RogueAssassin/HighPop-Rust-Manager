@@ -21,6 +21,7 @@ public class ServerInstance
     public int RestartCount { get; set; }
     public CancellationTokenSource DailyRestartCts { get; } = new();
     public nint JobHandle { get; set; } = nint.Zero;
+    public volatile bool IntentionalStop;
 
     /// <summary>Times of recent crashes (last 10 minutes). Used for crash-loop detection.</summary>
     public List<DateTime> CrashTimes { get; } = [];
@@ -49,6 +50,7 @@ public class ServerManagerService
     private readonly NetworkMonitorService _network;
     private readonly ConfigService _config;
     private readonly ConcurrentDictionary<string, ServerInstance> _running = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _lifecycleGates = new();
 
     [DllImport("psapi.dll", SetLastError = true)]
     private static extern bool EmptyWorkingSet(IntPtr hProcess);
@@ -141,6 +143,16 @@ public class ServerManagerService
 
     public async Task StartAsync(GameServer server)
     {
+        var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try { await StartCoreAsync(server); }
+        finally { gate.Release(); }
+    }
+
+    private async Task StartCoreAsync(GameServer server)
+    {
+        if (IsRunning(server.Id)) return;
+
         var plugin = GameRegistry.Get(server.GameId);
         if (plugin == null) throw new InvalidOperationException("This profile is not a Rust Dedicated Server.");
 
@@ -148,6 +160,8 @@ public class ServerManagerService
         if (validationError != null) throw new InvalidOperationException(validationError);
 
         SetStatus(server, ServerStatus.Starting);
+        try
+        {
 
         try { Directory.CreateDirectory(server.InstallPath); } catch { }
         await plugin.PreStartAsync(server);
@@ -338,7 +352,7 @@ public class ServerManagerService
                 SetStatus(server, ServerStatus.Stopped);
                 server.RunningPid = 0;
 
-                if (!server.AutoRestart || !_running.ContainsKey(server.Id))
+                if (inst.IntentionalStop || !server.AutoRestart || !_running.ContainsKey(server.Id))
                 {
                     _running.TryRemove(server.Id, out _);
                     return;
@@ -472,9 +486,25 @@ public class ServerManagerService
             FirewallService.AddRules(server);
 
         SetStatus(server, ServerStatus.Running);
+        }
+        catch
+        {
+            _running.TryRemove(server.Id, out _);
+            server.RunningPid = 0;
+            SetStatus(server, ServerStatus.Error);
+            throw;
+        }
     }
 
     public async Task StopAsync(GameServer server)
+    {
+        var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try { await StopCoreAsync(server); }
+        finally { gate.Release(); }
+    }
+
+    private async Task StopCoreAsync(GameServer server)
     {
         if (!_running.TryGetValue(server.Id, out var inst))
         {
@@ -483,6 +513,8 @@ public class ServerManagerService
             await KillOrphanedPidAsync(server);
             return;
         }
+        inst.IntentionalStop = true;
+        inst.DailyRestartCts.Cancel();
         SetStatus(server, ServerStatus.Stopping);
 
         var plugin = GameRegistry.Get(server.GameId);
@@ -495,7 +527,6 @@ public class ServerManagerService
             await Task.Delay(5000);
         }
 
-        inst.DailyRestartCts.Cancel();
         _running.TryRemove(server.Id, out _);
         _network.UnregisterServer(server.Id);
         if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
@@ -555,6 +586,7 @@ public class ServerManagerService
     {
         if (!_running.TryGetValue(server.Id, out var inst)) return KillOrphanedPidAsync(server);
         SetStatus(server, ServerStatus.Stopping);
+        inst.IntentionalStop = true;
         inst.DailyRestartCts.Cancel();
         JobObjectService.ReleaseJob(inst.JobHandle);
         _running.TryRemove(server.Id, out _);
@@ -571,7 +603,12 @@ public class ServerManagerService
     {
         foreach (var id in _running.Keys.ToList())
         {
-            try { _running[id].Process?.Kill(entireProcessTree: true); } catch { }
+            try
+            {
+                _running[id].IntentionalStop = true;
+                _running[id].Process?.Kill(entireProcessTree: true);
+            }
+            catch { }
         }
         _running.Clear();
     }
@@ -681,9 +718,24 @@ public class ServerManagerService
             inst.AddToLog(msg);
             LogReceived?.Invoke(server.Id, msg);
 
-            await StopAsync(server);
-            await Task.Delay(3000);
-            await StartAsync(server);
+            try
+            {
+                await SendCommandAsync(server.Id, "server.save");
+                await Task.Delay(1000);
+                await StopAsync(server);
+                await Task.Delay(3000);
+                await StartAsync(server);
+            }
+            catch (Exception ex)
+            {
+                var error = new ConsoleMessage
+                {
+                    Text = $"[HighPop] Daily restart failed: {ex.Message}",
+                    Type = ConsoleMessageType.Error,
+                };
+                inst.AddToLog(error);
+                try { LogReceived?.Invoke(server.Id, error); } catch { }
+            }
             return; // new instance will spawn its own RunDailyRestartAsync
         }
     }
@@ -695,7 +747,16 @@ public class ServerManagerService
         // one StatusChanged event (and one Discord notification) fires per real change.
         if (server.Status == status) return;
         server.Status = status;
-        StatusChanged?.Invoke(server.Id, status);
+        var handlers = StatusChanged?.GetInvocationList();
+        if (handlers == null) return;
+        foreach (var handler in handlers)
+        {
+            try { ((Action<string, ServerStatus>)handler)(server.Id, status); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ServerManager] StatusChanged subscriber failed: {ex}");
+            }
+        }
     }
 
     private static string? TryFindExecutable(string installPath, string hintExe)
