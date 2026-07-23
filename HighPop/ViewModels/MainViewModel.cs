@@ -246,38 +246,59 @@ public partial class MainViewModel : BaseViewModel
         _healthCheck.StartMonitoring();
 
         // Wire up Discord bot callbacks — same Dispatcher fix as WebAPI
-        _bot.GetServers    = () => Servers.Select(v => v.Server);
+        _bot.GetServers    = () =>
+            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                Servers.Select(v => v.Server).ToList()) ?? [];
         _bot.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartCommand.ExecuteAsync(null)        : Task.CompletedTask; });
         _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopCommand.ExecuteAsync(null)         : Task.CompletedTask; });
         _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartCommand.ExecuteAsync(null)      : Task.CompletedTask; });
         _bot.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)       : Task.CompletedTask; });
         _bot.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.CreateBackupCommand.ExecuteAsync(null) : Task.CompletedTask; });
-        _bot.SendCmd       = async (id, cmd) => await manager.SendCommandAsync(id, cmd);
+        _bot.SendCmd       = (id, cmd) => DispatchCommandAndWait(() =>
+        {
+            var vm = FindServer(id);
+            return vm != null
+                ? vm.SendManagedCommandAsync(cmd, "Discord")
+                : Task.CompletedTask;
+        });
 
         // Start bot if already configured
         _bot.ApplySettings(notifications.Settings);
 
         // Wire Scheduled Task callbacks
-        _scheduler.GetServers   = () => Servers.Select(v => v.Server);
-        _scheduler.UpdateServer = async id => { var vm = FindServer(id); if (vm != null) await vm.UpdateCommand.ExecuteAsync(null); };
+        _scheduler.GetServers   = () =>
+            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                Servers.Select(v => v.Server).ToList()) ?? [];
+        _scheduler.UpdateServer = id => DispatchCommandAndWait(() =>
+        {
+            var vm = FindServer(id);
+            return vm != null ? vm.UpdateCommand.ExecuteAsync(null) : Task.CompletedTask;
+        });
 
         // Backup/Restart/Stop scheduled tasks can create a backup behind the scenes (the task
         // itself, or BackupOnShutdown) — refresh the Backups tab if that server is open so the
         // new file shows up without the user having to trigger something else first.
-        _scheduler.TaskExecuted += (task, _) =>
+        _scheduler.TaskExecuted += (task, result) =>
         {
-            if (task.Action is not (ScheduledActionType.Backup or ScheduledActionType.Restart or ScheduledActionType.Stop)) return;
-            var vm = FindServer(task.ServerId);
-            if (vm == null) return;
-            WpfApplication.Current?.Dispatcher?.Invoke(vm.RefreshBackups);
+            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            {
+                var vm = FindServer(task.ServerId);
+                if (vm == null) return;
+                vm.RecordAction($"Scheduled {task.Action}: {result}");
+                vm.RefreshScheduledTasksCommand.Execute(null);
+                if (task.Action is ScheduledActionType.Backup or ScheduledActionType.Restart or ScheduledActionType.Stop)
+                    vm.RefreshBackups();
+            });
         };
 
         // Same idea for idle-shutdown backups, which bypass the scheduler entirely
         _wakeOnDemand.ServerBackedUp += id =>
         {
-            var vm = FindServer(id);
-            if (vm == null) return;
-            WpfApplication.Current?.Dispatcher?.Invoke(vm.RefreshBackups);
+            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            {
+                var vm = FindServer(id);
+                vm?.RefreshBackups();
+            });
         };
 
         // Wire Web API callbacks
@@ -295,6 +316,13 @@ public partial class MainViewModel : BaseViewModel
                 try { await action(); } catch { }
             });
             return Task.CompletedTask;
+        }
+        static Task DispatchCommandAndWait(Func<Task> action)
+        {
+            var dispatcher = WpfApplication.Current?.Dispatcher;
+            return dispatcher == null
+                ? action()
+                : dispatcher.InvokeAsync(action).Task.Unwrap();
         }
         _webApi.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartCommand.ExecuteAsync(null)         : Task.CompletedTask; });
         _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopCommand.ExecuteAsync(null)          : Task.CompletedTask; });
@@ -865,6 +893,7 @@ public partial class MainViewModel : BaseViewModel
             QueryPort            = qp,
             RconPort             = gp + 1,
             RconPassword         = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
+            AutoConnectRcon      = src.AutoConnectRcon,
             MaxPlayers           = src.MaxPlayers,
             AutoRestart          = src.AutoRestart,
             AutoUpdate           = src.AutoUpdate,
@@ -875,6 +904,16 @@ public partial class MainViewModel : BaseViewModel
             BackupRetention      = src.BackupRetention,
             CpuAffinityMask      = src.CpuAffinityMask,
             ProcessPriority      = src.ProcessPriority,
+            RustServerProfile    = src.RustServerProfile,
+            RustServerVariables  = src.RustServerVariables
+                .Select(variable => new RustServerVariable
+                {
+                    Enabled = variable.Enabled,
+                    Name = variable.Name,
+                    Value = variable.Value,
+                    Description = variable.Description,
+                })
+                .ToList(),
             Status               = ServerStatus.NotInstalled,
             GameSpecificSettings = new Dictionary<string, string>(src.GameSpecificSettings),
         };
