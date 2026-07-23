@@ -93,7 +93,7 @@ Rust custom variables are read from and saved to `server/<identity>/cfg/server.c
 
 Upgrading from v0.3 is automatic: HighPop moves variables from its own managed `serverauto.cfg` block into `server.cfg` the next time the configuration is saved or Rust starts. A value already present in `server.cfg` wins. HighPop removes only its marked legacy block and leaves any other `serverauto.cfg` content alone.
 
-Release tags produce five Windows x64 assets: the direct self-contained `.exe`, its SHA-256 file, the recommended portable ZIP, its SHA-256 file, and a JSON manifest containing sizes, hashes, and the source commit. Authenticode signing is enabled automatically when the repository signing certificate secrets are configured.
+When a previously unreleased project version reaches `main`, GitHub Actions creates its version tag and publishes five Windows x64 assets: the direct self-contained `.exe`, its SHA-256 file, the recommended portable ZIP, its SHA-256 file, and a JSON manifest containing sizes, hashes, and the source commit. Later commits with the same project version skip release publication. Authenticode signing is enabled automatically when the repository signing certificate secrets are configured.
 
 The **Automation** tab explains local lifecycle rules and the built-in Discord bot. Scheduled actions for one server are serialized and report their last result; restart operations warn players, save the world, stop cleanly, run configured backups, and start again. The bot keeps live status and private administrator boards updated and sends approved actions back to the local manager.
 
