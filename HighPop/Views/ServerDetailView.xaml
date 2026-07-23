@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 52067)
-Total output lines: 2558
-
 <UserControl x:Class="HighPop.Views.ServerDetailView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -989,7 +986,590 @@ Total output lines: 2558
                                            TextWrapping="Wrap" Margin="0,0,0,12"/>
                                 <CheckBox IsChecked="{Binding Server.DiscordAlertsEnabled}" Style="{StaticResource DarkCheckBox}"
                                           Content="Send alerts for this server" Margin="0,0,0,10"/>
-                            …12067 tokens truncated…/>
+                                <TextBlock Text="Server webhook override (optional)" Style="{StaticResource FieldLabel}"/>
+                                <TextBox Text="{Binding Server.DiscordWebhookUrl, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource DarkTextBox}" Margin="0,0,0,10"/>
+                                <TextBlock Text="Public status-board channel ID (optional)" Style="{StaticResource FieldLabel}"/>
+                                <TextBox Text="{Binding Server.DiscordStatusChannelId, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource DarkTextBox}" Margin="0,0,0,4"/>
+                                <TextBlock Text="Leave empty to use the combined board configured in Settings → Discord Bot."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12"/>
+                                <CheckBox IsChecked="{Binding Server.DiscordAdminControls}" Style="{StaticResource DarkCheckBox}"
+                                          Content="Publish administrator action buttons" Margin="0,0,0,8"/>
+                                <StackPanel Visibility="{Binding Server.DiscordAdminControls, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="Private administrator channel ID" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox Text="{Binding Server.DiscordAdminChannelId, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource DarkTextBox}" Margin="0,0,0,5"/>
+                                    <TextBlock Text="Keep this channel staff-only and configure Allowed User IDs globally. These controls can stop or update the live server."
+                                               FontSize="11" Foreground="{StaticResource AccentRedBrush}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── RUST SETTINGS ── -->
+            <TabItem Header="🦀 Rust" Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
+                <ScrollViewer Background="{StaticResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24">
+                        <TextBlock Text="Rust Settings" Style="{StaticResource SectionHeader}"/>
+
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="HighPop operations profile" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="This label helps HighPop present the intended server type. Installing Carbon or Oxide automatically changes a vanilla profile to Modded."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,10"/>
+                                <ComboBox ItemsSource="{Binding RustServerProfileOptions}"
+                                          SelectedItem="{Binding RustServerProfile}"
+                                          Style="{StaticResource DarkComboBox}" Width="260"
+                                          HorizontalAlignment="Left"/>
+                                <TextBlock Text="SteamCMD branch" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
+                                <ComboBox ItemsSource="{Binding RustSteamBranchOptions}"
+                                          Text="{Binding RustSteamBranch, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEditable="True" Style="{StaticResource DarkComboBox}" Width="260"
+                                          HorizontalAlignment="Left"/>
+                                <TextBlock Text="Use public for a normal live server. staging and aux branches are development/test builds and may make the server appear as development."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <Border Background="#2A1D0C" BorderBrush="{StaticResource AccentOrangeBrush}"
+                                        BorderThickness="1" CornerRadius="5" Padding="10" Margin="0,12,0,0">
+                                    <TextBlock Text="Official status is assigned by Facepunch. A community server cannot become Official through a launch argument or manager setting."
+                                               TextWrapping="Wrap" FontSize="11"
+                                               Foreground="{StaticResource AccentOrangeBrush}"/>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Server browser tags" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Choose Rust's documented operator tags. Wipe schedule, difficulty, and region groups allow one selection each; Rust displays up to four at once. Modded, Oxide, and Carbon are detected/reported by the framework instead."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,10"/>
+                                <ItemsControl ItemsSource="{Binding RustBrowserTags}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}"
+                                                      Style="{StaticResource DarkCheckBox}" Width="160"
+                                                      Margin="0,0,8,8" ToolTip="{Binding Value}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Server custom variables" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="HighPop reads active variables from the identity's cfg\server.cfg. Save updates changed rows and adds new enabled rows without replacing your comments or unrelated settings. Rust applies server.cfg at startup and it overrides matching command-line defaults."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,5"/>
+                                <TextBlock Text="{Binding ServerConfigPath}" FontSize="10" FontFamily="Consolas"
+                                           Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                                           Margin="0,0,0,4"/>
+                                <TextBlock Text="{Binding RustVariableStatus}" FontSize="10"
+                                           Foreground="{StaticResource AccentOrangeBrush}" TextWrapping="Wrap"
+                                           Margin="0,0,0,10"/>
+                                <Grid Margin="10,0,40,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="210"/>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Use" Style="{StaticResource FieldLabel}" Margin="0,0,10,0"/>
+                                    <TextBlock Grid.Column="1" Text="Variable" Style="{StaticResource FieldLabel}"/>
+                                    <TextBlock Grid.Column="2" Text="Value" Style="{StaticResource FieldLabel}"/>
+                                    <TextBlock Grid.Column="3" Text="Purpose" Style="{StaticResource FieldLabel}"/>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Server.RustServerVariables}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="5"
+                                                    Padding="10,7" Margin="0,0,0,5">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="210"/>
+                                                        <ColumnDefinition Width="140"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox IsChecked="{Binding Enabled}" Style="{StaticResource DarkCheckBox}"
+                                                              VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                                    <TextBox Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                             Style="{StaticResource DarkTextBox}" FontFamily="Consolas" Margin="0,0,8,0"/>
+                                                    <TextBox Grid.Column="2" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                                             Style="{StaticResource DarkTextBox}" FontFamily="Consolas" Margin="0,0,8,0"/>
+                                                    <TextBlock Grid.Column="3" Text="{Binding Description}" FontSize="11"
+                                                               Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="4" Content="✕" Style="{StaticResource DangerButton}"
+                                                            Width="30" Padding="0" Margin="8,0,0,0"
+                                                            Command="{Binding DataContext.RemoveRustServerVariableCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Content="+ Add variable" Style="{StaticResource GhostButton}"
+                                            Command="{Binding AddRustServerVariableCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="💾 Save to server.cfg" Style="{StaticResource PrimaryButton}"
+                                            Command="{Binding SaveServerConfigVariablesCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="↻ Reload from file" Style="{StaticResource GhostButton}"
+                                            Command="{Binding ReloadServerConfigVariablesCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenServerConfigCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Rust log directory" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Leave the custom location empty to use server\&lt;identity&gt;\logs under the Rust installation."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,8"/>
+                                <TextBlock Text="Custom location (optional, absolute path)" Style="{StaticResource FieldLabel}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding CustomLogDirectory, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource DarkTextBox}"/>
+                                    <Button Grid.Column="1" Content="Browse" Style="{StaticResource GhostButton}"
+                                            Command="{Binding BrowseLogDirectoryCommand}" Margin="8,0,0,0"/>
+                                    <Button Grid.Column="2" Content="Use default" Style="{StaticResource GhostButton}"
+                                            Command="{Binding ResetLogDirectoryCommand}" Margin="8,0,0,0"/>
+                                </Grid>
+                                <TextBlock Text="Effective directory" Style="{StaticResource FieldLabel}" Margin="0,10,0,0"/>
+                                <TextBlock Text="{Binding EffectiveLogDirectory}" FontFamily="Consolas" FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                                <Button Content="📂 Open log directory" Style="{StaticResource GhostButton}"
+                                        Command="{Binding OpenLogDirectoryCommand}" HorizontalAlignment="Left"
+                                        Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── BACKUPS ── -->
+            <TabItem Header="{Binding Loc.TabBackups}">
+                <Grid Background="{StaticResource BgDeepBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,12">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="{Binding Loc.BackupCreate}" Style="{StaticResource PrimaryButton}"
+                                        Command="{Binding CreateBackupCommand}" Margin="0,0,8,0"/>
+                                <TextBlock Text="{Binding Backups.Count, Mode=OneWay, StringFormat='{}{0} backups'}"
+                                           VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <TextBlock Text="Keep at most" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,8,0"/>
+                                <TextBox Style="{StaticResource DarkTextBox}" Width="60" TextAlignment="Center"
+                                         Text="{Binding BackupRetention, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Text="backups (0 = unlimited)" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="8,0,24,0"/>
+                                <TextBlock Text="Delete backups older than" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,8,0"/>
+                                <TextBox Style="{StaticResource DarkTextBox}" Width="60" TextAlignment="Center"
+                                         Text="{Binding BackupMaxAgeDays, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Text="days (0 = off)" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="8,0,16,0"/>
+                                <Button Content="🗑 Clean up now" Style="{StaticResource GhostButton}"
+                                        Command="{Binding CleanupBackupsNowCommand}"
+                                        ToolTip="Permanently delete backups that exceed the limits above, right now"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <CheckBox IsChecked="{Binding UseIncrementalBackups}" Style="{StaticResource DarkCheckBox}"
+                                          Content="Incremental backups" Margin="0,0,16,0"
+                                          ToolTip="Only changed files are zipped after the first backup — much faster and smaller for large worlds"/>
+                                <TextBlock Text="Full backup every" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,8,0"
+                                           Visibility="{Binding UseIncrementalBackups, Converter={StaticResource BoolToVis}}"/>
+                                <TextBox Style="{StaticResource DarkTextBox}" Width="60" TextAlignment="Center"
+                                         Text="{Binding FullBackupEveryN, UpdateSourceTrigger=PropertyChanged}"
+                                         Visibility="{Binding UseIncrementalBackups, Converter={StaticResource BoolToVis}}"/>
+                                <TextBlock Text="backups" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="8,0,0,0"
+                                           Visibility="{Binding UseIncrementalBackups, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16">
+                        <ItemsControl ItemsSource="{Binding Backups}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock FontWeight="SemiBold" FontSize="13">
+                                                    <Run Text="{Binding CreatedAt, StringFormat='dd.MM.yyyy HH:mm:ss', Mode=OneWay}"/>
+                                                    <Run Text=" · "/>
+                                                    <Run Text="{Binding IsIncremental, Converter={StaticResource BoolToIncrementalLabel}, Mode=OneWay}"
+                                                         Foreground="{StaticResource TextMutedBrush}" FontWeight="Normal" FontSize="11"/>
+                                                </TextBlock>
+                                                <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="12">
+                                                    <Run Text="{Binding SizeText, Mode=OneWay}"/>
+                                                    <Run Text=" · "/>
+                                                    <Run Text="{Binding FilePath, Mode=OneWay}"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Content="↩ Restore" Style="{StaticResource GhostButton}" Margin="0,0,8,0"
+                                                        Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"/>
+                                                <Button Content="✕" Style="{StaticResource DangerButton}" Width="32" Padding="0"
+                                                        Command="{Binding DataContext.DeleteBackupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <!-- ── INFO ── -->
+            <TabItem Header="{Binding Loc.TabInfo}">
+                <ScrollViewer Background="{StaticResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24">
+                        <TextBlock Text="Game info" Style="{StaticResource SectionHeader}"/>
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="12"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="Game" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Plugin.GameName}" FontWeight="SemiBold"/>
+
+                                <TextBlock Grid.Row="2" Text="Category" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Plugin.Category}"/>
+
+                                <TextBlock Grid.Row="4" Text="Steam App ID" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Plugin.SteamAppId}"/>
+
+                                <TextBlock Grid.Row="6" Text="This server's port" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Server.ServerPort}" FontWeight="SemiBold"/>
+
+                                <TextBlock Grid.Row="8" Text="Game's default port" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding Plugin.DefaultPort}" Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                                <TextBlock Grid.Row="10" Text="RCON supported" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding Plugin.HasRcon}"/>
+
+                                <TextBlock Grid.Row="12" Text="Description" Style="{StaticResource FieldLabel}"/>
+                                <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding Plugin.Description}"
+                                           TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel Visibility="{Binding ShowVersionInfo, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Installed version" Style="{StaticResource SectionHeader}" Margin="0,20,0,0"/>
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Build number" Style="{StaticResource FieldLabel}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding InstalledVersionText}" FontWeight="SemiBold"/>
+                                    </Grid>
+                                    <TextBlock Text="SteamCMD checks for updates automatically every time you click Install/Update."
+                                               FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Rust Operations" Style="{StaticResource SectionHeader}" Margin="0,20,0,0"/>
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="A live operational summary of the settings and services HighPop uses for this Rust instance."
+                                               FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                               TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="16"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="12"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Grid.Row="0">
+                                            <TextBlock Text="Server profile" Style="{StaticResource FieldLabel}"/>
+                                            <TextBlock Text="{Binding RustServerProfile}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="Official placement remains Facepunch-assigned."
+                                                       FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="2">
+                                            <TextBlock Text="Mod framework" Style="{StaticResource FieldLabel}"/>
+                                            <TextBlock Text="{Binding DetectedModFramework}" FontWeight="SemiBold"/>
+                                            <TextBlock FontSize="10" Foreground="{StaticResource TextMutedBrush}">
+                                                <Run Text="{Binding InstalledPlugins.Count, Mode=OneWay}"/>
+                                                <Run Text=" plugin file(s) detected"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2">
+                                            <TextBlock Text="WebRCON" Style="{StaticResource FieldLabel}"/>
+                                            <TextBlock Text="{Binding RconStatusText}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="Auto-connect and player activity collection share this connection."
+                                                       FontSize="10" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="2">
+                                            <TextBlock Text="Managed Rust paths" Style="{StaticResource FieldLabel}"/>
+                                            <TextBlock Text="{Binding EffectiveLogDirectory}" FontFamily="Consolas"
+                                                       FontSize="10" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding ServerConfigPath}" FontFamily="Consolas"
+                                                       FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                        <Button Content="↻ Rescan mods" Style="{StaticResource GhostButton}"
+                                                Command="{Binding RefreshInstalledPluginsCommand}" Margin="0,0,8,0"/>
+                                        <Button Content="📂 Open Rust logs" Style="{StaticResource GhostButton}"
+                                                Command="{Binding OpenLogDirectoryCommand}" Margin="0,0,8,0"/>
+                                        <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
+                                                Command="{Binding OpenServerConfigCommand}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <TextBlock Text="Share" Style="{StaticResource SectionHeader}" Margin="0,20,0,0"/>
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <TextBlock Text="Generates a read-only status link (player count, uptime) safe to post in Discord or on a website — no controls, no login needed."
+                                           TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,10"/>
+                                <Button Content="🔗 Copy shareable status link" Style="{StaticResource GhostButton}"
+                                        HorizontalAlignment="Left" Command="{Binding CopyStatusLinkCommand}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── MODS ── -->
+            <TabItem Header="🧩 Mods"
+                     Visibility="{Binding HasModSupport, Converter={StaticResource BoolToVis}}">
+                <ScrollViewer Background="{StaticResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24">
+                        <TextBlock Text="Mod Manager" Style="{StaticResource SectionHeader}"/>
+
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Detected framework" Style="{StaticResource FieldLabel}"/>
+                                    <TextBlock Text="{Binding DetectedModFramework}" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AccentGreenBrush}"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="↻ Rescan" Style="{StaticResource GhostButton}"
+                                        Command="{Binding RefreshInstalledPluginsCommand}" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Status bar -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                                Visibility="{Binding ModBusy, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding ModStatusText}" FontSize="13"
+                                       Foreground="{StaticResource AccentBlueBrush}" TextWrapping="Wrap"/>
+                        </Border>
+
+                        <!-- Oxide section -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                                Visibility="{Binding Plugin.SupportsOxide, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Oxide / uMod" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="3"
+                                            Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Rust compatibility framework" FontSize="11"
+                                                   Foreground="{StaticResource AccentBlueBrush}"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12">
+                                    Downloads and installs the latest Oxide (uMod) framework directly into the server folder.
+                                    Stop Rust first and do not combine Oxide with Carbon. Place plugins in oxide/plugins/.
+                                </TextBlock>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="⬇ Install / Update Oxide" Style="{StaticResource PrimaryButton}"
+                                            Margin="0,0,8,0"
+                                            Command="{Binding InstallOxideCommand}"
+                                            IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
+                                    <Button Content="📂 Open plugins folder" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenPluginFolderCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Carbon section (Rust only) -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                                Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="Carbon" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Border Background="#2A1D0C" BorderBrush="{StaticResource AccentOrangeBrush}"
+                                            BorderThickness="1" CornerRadius="3" Padding="6,2" Margin="10,0,0,0">
+                                        <TextBlock Text="High-performance Rust framework" FontSize="11"
+                                                   Foreground="{StaticResource AccentOrangeBrush}"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,0,0,12"
+                                           Text="Installs the latest stable official Carbon Windows release. Stop Rust first and do not combine Carbon with Oxide; plugins and configuration are preserved during updates."/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="⬇ Install / Update Carbon" Style="{StaticResource PrimaryButton}"
+                                            Margin="0,0,8,0" Command="{Binding InstallCarbonCommand}"
+                                            IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
+                                    <Button Content="📂 Open Carbon plugins" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenCarbonPluginFolderCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Installed plugins" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="HighPop scans the Oxide and Carbon plugin folders. Disabled .off and .disabled files remain visible."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,10"/>
+                                <TextBlock Text="No plugins were found." FontSize="12"
+                                           Foreground="{StaticResource TextMutedBrush}" Margin="0,4"
+                                           Visibility="{Binding InstalledPlugins.Count, Converter={StaticResource ZeroToVis}, Mode=OneWay}"/>
+                                <ItemsControl ItemsSource="{Binding InstalledPlugins}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="5"
+                                                    Padding="10,7" Margin="0,0,0,5">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="100"/>
+                                                        <ColumnDefinition Width="100"/>
+                                                        <ColumnDefinition Width="150"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                        <TextBlock Text="{Binding FileName}" FontFamily="Consolas"
+                                                                   FontSize="10" Foreground="{StaticResource TextMutedBrush}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Framework}"
+                                                               VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding StateText}"
+                                                               VerticalAlignment="Center" Foreground="{StaticResource AccentGreenBrush}"/>
+                                                    <TextBlock Grid.Column="3" Text="{Binding LastModified, StringFormat='{}{0:g}'}"
+                                                               VerticalAlignment="Center" FontSize="11"
+                                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── SCHEDULE ── -->
+            <TabItem Header="⏰ Schedule">
+                <Grid Background="{StaticResource BgDeepBrush}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Reliable scheduled Rust operations" FontWeight="SemiBold"/>
+                                <TextBlock Text="Actions for the same server are serialized. Restarts warn players, save, stop, back up when configured, and start again."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="↻ Refresh" Style="{StaticResource GhostButton}"
+                                        Command="{Binding RefreshScheduledTasksCommand}" Margin="0,0,8,0"/>
+                                <Button Content="+ Add task" Style="{StaticResource PrimaryButton}"
+                                        Click="AddScheduleTask_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16">
+                        <StackPanel>
+                            <TextBlock Text="No scheduled tasks." FontSize="13" Foreground="{StaticResource TextMutedBrush}" Margin="0,12,0,0"
+                                       Visibility="{Binding ScheduledTasks.Count, Converter={StaticResource ZeroToVis}, Mode=OneWay}"/>
+                            <ItemsControl ItemsSource="{Binding ScheduledTasks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock FontWeight="SemiBold" FontSize="13">
+                                                        <Run Text="{Binding ActionText, Mode=OneWay}"/>
+                                                        <Run Text=" — "/>
+                                                        <Run Text="{Binding FrequencyText, Mode=OneWay}"/>
+                                                    </TextBlock>
+                                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="12">
+                                                        <Run Text="Last: "/>
                                                         <Run Text="{Binding LastRun, StringFormat='dd.MM HH:mm', TargetNullValue='Never', Mode=OneWay}"/>
                                                         <Run Text="  Next: "/>
                                                         <Run Text="{Binding NextRun, StringFormat='dd.MM HH:mm', TargetNullValue='—', Mode=OneWay}"/>
