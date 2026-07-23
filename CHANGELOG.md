@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- Made the identity's `cfg/server.cfg` authoritative for Rust custom variables and added explicit reload, save, and open-file controls.
+- Added safe parsing of existing active `server.cfg` assignments so HighPop displays operator-defined variables instead of only its starter rows.
+- Preserved comments and unrelated settings while updating changed rows, disabling removed assignments, and adding new enabled variables in a managed block.
+- Added one-time migration of HighPop's v0.3 managed block from `serverauto.cfg`; existing `server.cfg` values win and unrelated `serverauto.cfg` content is retained.
+- Added regression coverage for config loading, precedence, migration, preservation, disabling, input validation, and idempotent writes.
+- Added a direct self-contained Windows executable, ZIP package, per-file SHA-256 checksums, and a machine-readable release manifest to the release workflow.
+- Added optional Authenticode signing through repository secrets while keeping unsigned local/community builds supported.
+- Split the remaining roadmap into stable, versioned stages for telemetry/maps, remote portability, provider interfaces, and headless/accessibility work.
+
 ## 0.3.0
 
 - Fixed custom-titlebar maximize behavior so the main and settings windows fill the work area without a transparent white banner.
