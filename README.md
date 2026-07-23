@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.2.0-F05A28">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.3.0-F05A28">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -17,19 +17,19 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
-## Included in v0.2
+## Included in v0.3
 
 | Area | Capabilities |
 |---|---|
 | Rust installation | One-click SteamCMD bootstrap, install, validate, update, public-branch support, update-on-start |
-| Process control | Start, graceful stop, restart, crash recovery, crash-loop protection, daily restarts, idle shutdown, wake on demand |
-| High-pop profiles | 500-player default, world size/seed/tick/FPS/save interval, browser tags, header and website, unique identity and conflict-safe ports |
-| Administration | Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, history and session statistics |
-| Mods and maps | Carbon and Oxide installation, plugin folders, HTTP(S) custom-map URL, configuration editor and history |
+| Process control | Start, graceful stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
+| High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, managed `serverauto.cfg`, custom log directory, identity and conflict-safe ports |
+| Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
+| Mods and maps | Carbon and Oxide installation/detection, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
 | Automation | Once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands |
-| Monitoring | Per-server CPU/RAM graphs, system metrics, bandwidth, health checks, log watches, crash-risk warnings, server hygiene |
-| Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, Discord controls and webhooks, SMTP alerts |
+| Monitoring | Persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |
+| Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, a local Discord bot with live boards and staff controls, webhooks, and SMTP alerts |
 | Windows controls | System tray, startup registration, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
 | Customization | Portable Rust presets, editable launch/config values, server templates, custom images, and replaceable brand assets |
 
@@ -80,6 +80,14 @@ The query port must differ from the game port, and the RCON password must be at 
 The Players workspace supports permanent and native timed bans using Rust's `banid` duration format, including values such as `30m`, `12h`, `7d`, and `1M7d`. Online players can be selected for confirmation-gated bulk kick or ban operations. Staff notes, whitelist state, and HighPop-issued ban metadata are persisted locally in `assets/data/rust_player_moderation.json`.
 
 Rust does not provide a built-in true whitelist. HighPop's **Allow whitelist** and **Remove whitelist** actions use the `whitelist.allow` permission and therefore require Carbon or Oxide/uMod plus the [Whitelist plugin described by Facepunch](https://wiki.facepunch.com/rust/Creating_a_hidden_whitelisted_server). Rust's live bans and mod permissions remain authoritative; HighPop's local records are an operator aid and audit trail.
+
+## Stage 3 Rust operations
+
+HighPop can automatically establish WebRCON after the Rust websocket starts and recover after a dropped connection. This feeds accurate join/leave sessions, moderation, and live player counts without requiring an operator to connect manually after every restart.
+
+The dedicated **Rust** tab separates Facepunch browser tags, community vanilla/modded/development labels, managed `serverauto.cfg` variables, and the Rust log directory from general process settings. “Official” is intentionally not offered as a switch: that browser placement is assigned by Facepunch, not by a server launch setting.
+
+The **Automation** tab explains local lifecycle rules and the built-in Discord bot. Scheduled actions for one server are serialized and report their last result; restart operations warn players, save the world, stop cleanly, run configured backups, and start again. The bot keeps live status and private administrator boards updated and sends approved actions back to the local manager.
 
 ## Remote access security
 
