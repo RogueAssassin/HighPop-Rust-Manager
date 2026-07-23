@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -10,11 +12,56 @@ permissions:
   contents: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        run: |
+          version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' HighPop/HighPop.csproj | head -n 1)"
+          if [[ -z "$version" ]]; then
+            echo "Could not read the HighPop project version" >&2
+            exit 1
+          fi
+
+          tag="v$version"
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            tag="${{ github.ref_name }}"
+            if [[ "$tag" != "v$version" ]]; then
+              echo "Tag $tag does not match project version $version" >&2
+              exit 1
+            fi
+            publish=true
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; this main-branch push does not need another release."
+            publish=false
+          else
+            publish=true
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
   windows-x64:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: windows-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
@@ -38,12 +85,10 @@ jobs:
         run: |
           $exe = Get-Item publish_out/HighPop.exe
           if ($exe.Length -lt 1MB) { throw "HighPop.exe is unexpectedly small" }
-          if ("${{ github.ref_type }}" -eq "tag") {
-            $expected = "${{ github.ref_name }}".TrimStart("v")
-            $actual = $exe.VersionInfo.FileVersion
-            if ($actual -ne "$expected.0") {
-              throw "Tag ${{ github.ref_name }} does not match executable version $actual"
-            }
+          $expected = "${{ needs.prepare.outputs.version }}"
+          $actual = $exe.VersionInfo.FileVersion
+          if ($actual -ne "$expected.0") {
+            throw "Release ${{ needs.prepare.outputs.tag }} does not match executable version $actual"
           }
 
       - name: Sign executable when a certificate is configured
@@ -75,7 +120,7 @@ jobs:
       - name: Assemble portable package
         shell: pwsh
         run: |
-          $baseName = "HighPop-${{ github.ref_name }}-win-x64"
+          $baseName = "HighPop-${{ needs.prepare.outputs.tag }}-win-x64"
           New-Item package/HighPop/assets/presets -ItemType Directory -Force | Out-Null
           Copy-Item publish_out/HighPop.exe package/HighPop/
           Copy-Item HighPop/assets/README.txt package/HighPop/assets/
@@ -92,7 +137,7 @@ jobs:
 
           $manifest = [ordered]@{
             product = "HighPop Rust Manager"
-            version = "${{ github.ref_name }}".TrimStart("v")
+            version = "${{ needs.prepare.outputs.version }}"
             runtime = "win-x64"
             commit = "${{ github.sha }}"
             files = @($releaseFiles | ForEach-Object {
@@ -109,24 +154,33 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HighPop-${{ github.ref_name }}-win-x64
+          name: HighPop-${{ needs.prepare.outputs.tag }}-win-x64
           path: |
-            HighPop-${{ github.ref_name }}-win-x64.exe
-            HighPop-${{ github.ref_name }}-win-x64.exe.sha256
-            HighPop-${{ github.ref_name }}-win-x64.zip
-            HighPop-${{ github.ref_name }}-win-x64.zip.sha256
-            HighPop-${{ github.ref_name }}-win-x64.manifest.json
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.exe
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.exe.sha256
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip.sha256
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.manifest.json
+
+      - name: Create release tag
+        if: github.ref_type != 'tag'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ needs.prepare.outputs.tag }}" -m "HighPop Rust Manager ${{ needs.prepare.outputs.tag }}" "$env:GITHUB_SHA"
+          git push origin "refs/tags/${{ needs.prepare.outputs.tag }}"
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          name: HighPop Rust Manager ${{ github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: HighPop Rust Manager ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            HighPop-${{ github.ref_name }}-win-x64.exe
-            HighPop-${{ github.ref_name }}-win-x64.exe.sha256
-            HighPop-${{ github.ref_name }}-win-x64.zip
-            HighPop-${{ github.ref_name }}-win-x64.zip.sha256
-            HighPop-${{ github.ref_name }}-win-x64.manifest.json
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.exe
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.exe.sha256
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip.sha256
+            HighPop-${{ needs.prepare.outputs.tag }}-win-x64.manifest.json
