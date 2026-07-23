@@ -7,10 +7,15 @@ namespace HighPop.Games;
 
 public class RustPlugin : GamePluginBase, IWipePlugin
 {
-    private const string ManagedCfgStart = "// HighPop managed variables — begin";
-    private const string ManagedCfgEnd   = "// HighPop managed variables — end";
+    private const string ManagedCfgStart       = "# HighPop managed variables - begin";
+    private const string ManagedCfgEnd         = "# HighPop managed variables - end";
+    private const string LegacyManagedCfgStart = "// HighPop managed variables — begin";
+    private const string LegacyManagedCfgEnd   = "// HighPop managed variables — end";
     private static readonly Regex SafeVariableName =
         new(@"^[A-Za-z0-9_.]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ConfigAssignment =
+        new(@"^\s*(?<name>[A-Za-z0-9_.]+)\s+(?<value>.+?)\s*$",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public override string GameId        => "rust";
     public override string GameName      => "Rust";
@@ -82,7 +87,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
     public override Task PreStartAsync(GameServer server)
     {
         Directory.CreateDirectory(GetEffectiveLogDirectory(server));
-        WriteManagedServerAuto(server);
+        WriteManagedServerConfig(server);
         return Task.CompletedTask;
     }
 
@@ -94,45 +99,127 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         return Path.Combine(server.InstallPath, "server", GetIdentity(server), "logs");
     }
 
-    public static string GetServerAutoPath(GameServer server) =>
+    public static string GetServerConfigPath(GameServer server) =>
+        Path.Combine(server.InstallPath, "server", GetIdentity(server), "cfg", "server.cfg");
+
+    public static string GetLegacyServerAutoPath(GameServer server) =>
         Path.Combine(server.InstallPath, "server", GetIdentity(server), "cfg", "serverauto.cfg");
 
-    private static void WriteManagedServerAuto(GameServer server)
+    /// <summary>
+    /// Makes server.cfg authoritative in the Rust workspace. Existing variables are merged into
+    /// the HighPop rows and their last active assignment wins, matching Rust's normal cfg behavior.
+    /// </summary>
+    public static int LoadServerConfigVariables(GameServer server)
     {
-        var path = GetServerAutoPath(server);
+        server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+        foreach (var variable in server.RustServerVariables)
+        {
+            variable.LoadedFromServerConfig = false;
+            variable.LoadedConfigValue = string.Empty;
+        }
+
+        var path = GetServerConfigPath(server);
+        if (!File.Exists(path)) return 0;
+
+        var assignments = ParseAssignments(File.ReadAllLines(path)).ToList();
+        var legacyManagedBlockExists = HasManagedBlock(
+            GetLegacyServerAutoPath(server), LegacyManagedCfgStart);
+
+        // After the v0.3 legacy block is gone, server.cfg is the source of truth. During the
+        // one-time migration, retain saved enabled rows so they can move across safely.
+        if (!legacyManagedBlockExists)
+        {
+            foreach (var variable in server.RustServerVariables)
+                variable.Enabled = false;
+        }
+
+        foreach (var assignment in assignments
+                     .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => group.Last()))
+        {
+            var variable = server.RustServerVariables.FirstOrDefault(item =>
+                string.Equals(item.Name, assignment.Name, StringComparison.OrdinalIgnoreCase));
+            if (variable == null)
+            {
+                variable = new RustServerVariable
+                {
+                    Name = assignment.Name,
+                    Description = "Read from server.cfg",
+                };
+                server.RustServerVariables.Add(variable);
+            }
+
+            variable.Enabled = true;
+            variable.Value = assignment.Value;
+            variable.LoadedFromServerConfig = true;
+            variable.LoadedConfigValue = assignment.Value;
+        }
+
+        return assignments
+            .Select(a => a.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+    }
+
+    /// <summary>
+    /// Synchronizes HighPop's variable rows to server.cfg without replacing the operator's file.
+    /// Existing comments and unrelated lines remain in place. Only HighPop's previous managed
+    /// block is removed from serverauto.cfg during the v0.3 migration.
+    /// </summary>
+    public static int WriteManagedServerConfig(GameServer server)
+    {
+        var validation = ValidateServerVariables(server);
+        if (validation != null) throw new InvalidDataException(validation);
+
+        var migrated = MigrateLegacyManagedVariables(server);
+        var path = GetServerConfigPath(server);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
         var existing = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
-        var start = existing.IndexOf(ManagedCfgStart, StringComparison.Ordinal);
-        if (start >= 0)
-        {
-            var end = existing.IndexOf(ManagedCfgEnd, start, StringComparison.Ordinal);
-            existing = end >= 0
-                ? existing.Remove(start, end + ManagedCfgEnd.Length - start)
-                : existing[..start];
-        }
+        var newline = DetectNewline(existing);
+        var lines = StripManagedBlock(
+            SplitLines(existing), ManagedCfgStart, ManagedCfgEnd);
+        var variables = (server.RustServerVariables ?? [])
+            .Where(v => SafeVariableName.IsMatch(v.Name?.Trim() ?? string.Empty))
+            .GroupBy(v => v.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(),
+                StringComparer.OrdinalIgnoreCase);
+        var existingActiveNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var enabled = (server.RustServerVariables ?? [])
-            .Where(v => v.Enabled && SafeVariableName.IsMatch(v.Name?.Trim() ?? string.Empty))
-            .ToList();
-
-        var content = new StringBuilder(existing.TrimEnd());
-        if (content.Length > 0) content.AppendLine().AppendLine();
-        if (enabled.Count > 0)
+        for (var index = 0; index < lines.Count; index++)
         {
-            content.AppendLine(ManagedCfgStart);
-            foreach (var variable in enabled)
+            if (!TryParseAssignment(lines[index], out var name, out var currentValue)
+                || !variables.TryGetValue(name, out var variable))
+                continue;
+
+            if (!variable.Enabled)
             {
-                var name = variable.Name.Trim();
-                var value = SafeCfgValue(variable.Value);
-                content.Append(name).Append(' ').Append('"').Append(value).AppendLine("\"");
+                lines[index] = $"# Disabled by HighPop: {lines[index].Trim()}";
+                continue;
             }
-            content.AppendLine(ManagedCfgEnd);
+
+            existingActiveNames.Add(name);
+            if (!string.Equals(currentValue, variable.Value, StringComparison.Ordinal))
+                lines[index] = FormatAssignment(variable);
         }
 
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, content.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        File.Move(temp, path, overwrite: true);
+        var append = variables.Values
+            .Where(v => v.Enabled && !existingActiveNames.Contains(v.Name.Trim()))
+            .OrderBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
+            lines.RemoveAt(lines.Count - 1);
+        if (append.Count > 0)
+        {
+            if (lines.Count > 0) lines.Add(string.Empty);
+            lines.Add(ManagedCfgStart);
+            lines.AddRange(append.Select(FormatAssignment));
+            lines.Add(ManagedCfgEnd);
+        }
+
+        AtomicWrite(path, lines.Count == 0 ? string.Empty : string.Join(newline, lines) + newline);
+        LoadServerConfigVariables(server);
+        return migrated;
     }
 
     public override string? GetStopCommand(GameServer server) => "quit";
@@ -181,9 +268,14 @@ public class RustPlugin : GamePluginBase, IWipePlugin
                 return "Custom log directory is not a valid Windows path.";
             }
         }
+        return ValidateServerVariables(server);
+    }
+
+    public static string? ValidateServerVariables(GameServer server)
+    {
         if ((server.RustServerVariables ?? []).Any(v =>
                 v.Enabled && !SafeVariableName.IsMatch(v.Name?.Trim() ?? string.Empty)))
-            return "Enabled serverauto.cfg variable names may only contain letters, numbers, dots, and underscores.";
+            return "Enabled server.cfg variable names may only contain letters, numbers, dots, and underscores.";
         return null;
     }
 
@@ -255,6 +347,160 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         .Replace("\\", "\\\\", StringComparison.Ordinal)
         .Replace("\"", "\\\"", StringComparison.Ordinal)
         .Trim();
+
+    private static int MigrateLegacyManagedVariables(GameServer server)
+    {
+        var path = GetLegacyServerAutoPath(server);
+        if (!File.Exists(path)) return 0;
+
+        var existing = File.ReadAllText(path);
+        if (!existing.Contains(LegacyManagedCfgStart, StringComparison.Ordinal)) return 0;
+
+        var newline = DetectNewline(existing);
+        var lines = SplitLines(existing);
+        var retained = new List<string>();
+        var managed = new List<string>();
+        var inside = false;
+        foreach (var line in lines)
+        {
+            if (line.Trim().Equals(LegacyManagedCfgStart, StringComparison.Ordinal))
+            {
+                inside = true;
+                continue;
+            }
+            if (inside && line.Trim().Equals(LegacyManagedCfgEnd, StringComparison.Ordinal))
+            {
+                inside = false;
+                continue;
+            }
+
+            if (inside) managed.Add(line);
+            else retained.Add(line);
+        }
+
+        var serverConfigNames = File.Exists(GetServerConfigPath(server))
+            ? ParseAssignments(File.ReadAllLines(GetServerConfigPath(server)))
+                .Select(a => a.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var migrated = 0;
+        foreach (var assignment in ParseAssignments(managed)
+                     .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => group.Last()))
+        {
+            if (serverConfigNames.Contains(assignment.Name)) continue;
+            var variable = server.RustServerVariables.FirstOrDefault(item =>
+                string.Equals(item.Name, assignment.Name, StringComparison.OrdinalIgnoreCase));
+            if (variable == null)
+            {
+                variable = new RustServerVariable
+                {
+                    Name = assignment.Name,
+                    Description = "Migrated from HighPop's legacy serverauto.cfg block",
+                };
+                server.RustServerVariables.Add(variable);
+            }
+            variable.Enabled = true;
+            variable.Value = assignment.Value;
+            migrated++;
+        }
+
+        while (retained.Count > 0 && string.IsNullOrWhiteSpace(retained[^1]))
+            retained.RemoveAt(retained.Count - 1);
+        AtomicWrite(path, retained.Count == 0
+            ? string.Empty
+            : string.Join(newline, retained) + newline);
+        return migrated;
+    }
+
+    private static bool HasManagedBlock(string path, string marker)
+    {
+        try
+        {
+            return File.Exists(path)
+                   && File.ReadAllText(path).Contains(marker, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static List<string> StripManagedBlock(
+        IEnumerable<string> source, string startMarker, string endMarker)
+    {
+        var result = new List<string>();
+        var inside = false;
+        foreach (var line in source)
+        {
+            if (line.Trim().Equals(startMarker, StringComparison.Ordinal))
+            {
+                inside = true;
+                continue;
+            }
+            if (inside && line.Trim().Equals(endMarker, StringComparison.Ordinal))
+            {
+                inside = false;
+                continue;
+            }
+            if (!inside) result.Add(line);
+        }
+        return result;
+    }
+
+    private static IEnumerable<(string Name, string Value)> ParseAssignments(
+        IEnumerable<string> lines)
+    {
+        foreach (var line in lines)
+            if (TryParseAssignment(line, out var name, out var value))
+                yield return (name, value);
+    }
+
+    private static bool TryParseAssignment(string line, out string name, out string value)
+    {
+        name = string.Empty;
+        value = string.Empty;
+        var trimmed = line.Trim();
+        if (trimmed.Length == 0 || trimmed.StartsWith('#') || trimmed.StartsWith("//"))
+            return false;
+
+        var match = ConfigAssignment.Match(line);
+        if (!match.Success) return false;
+        name = match.Groups["name"].Value;
+        var raw = match.Groups["value"].Value.Trim();
+        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+        {
+            raw = raw[1..^1]
+                .Replace("\\\"", "\"", StringComparison.Ordinal)
+                .Replace("\\\\", "\\", StringComparison.Ordinal);
+        }
+        value = raw;
+        return true;
+    }
+
+    private static string FormatAssignment(RustServerVariable variable) =>
+        $"{variable.Name.Trim()} \"{SafeCfgValue(variable.Value)}\"";
+
+    private static List<string> SplitLines(string content)
+    {
+        if (content.Length == 0) return [];
+        var lines = content.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n')
+            .ToList();
+        if (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
+        return lines;
+    }
+
+    private static string DetectNewline(string content) =>
+        content.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+
+    private static void AtomicWrite(string path, string content)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, content, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.Move(temp, path, overwrite: true);
+    }
 
     private static string SafeIdentity(string? value)
     {
