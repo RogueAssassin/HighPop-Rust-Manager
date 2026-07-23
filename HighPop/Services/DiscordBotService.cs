@@ -27,7 +27,7 @@ namespace HighPop.Services;
 ///   !restart &lt;name&gt;         — restart a server
 ///   !update  &lt;name&gt;         — update a server
 ///   !backup  &lt;name&gt;         — create a backup
-///   !cmd     &lt;name&gt; &lt;cmd&gt;   — send console command to server
+///   !cmd     &lt;name&gt; :: &lt;cmd&gt; — send console command to server
 /// </summary>
 public class DiscordBotService : IDisposable
 {
@@ -99,14 +99,12 @@ public class DiscordBotService : IDisposable
         Stop();
         _cts  = new CancellationTokenSource();
         _loop = Task.Run(() => PollLoop(_cts.Token));
-        if (StatusEnabled)
-        {
-            // Re-use whatever message IDs we last knew about (loaded from disk) instead of
-            // clearing them — otherwise every HighPop restart abandons the old message in Discord
-            // and posts a brand new one, leaving duplicates piling up in the channel.
-            _statusLoop  = Task.Run(() => StatusUpdateLoop(_cts.Token));
-            _gatewayLoop = Task.Run(() => GatewayLoop(_cts.Token));
-        }
+        // Re-use whatever message IDs we last knew about (loaded from disk) instead of
+        // clearing them — otherwise every HighPop restart abandons the old message in Discord.
+        // Keep these loops alive even when the public status board is disabled: a server may
+        // enable its private administrator board later while HighPop is already running.
+        _statusLoop  = Task.Run(() => StatusUpdateLoop(_cts.Token));
+        _gatewayLoop = Task.Run(() => GatewayLoop(_cts.Token));
         StatusChanged?.Invoke("✅ Discord bot started");
     }
 
@@ -193,7 +191,8 @@ public class DiscordBotService : IDisposable
         {
             try
             {
-                await PostOrEditStatusMessage(ct);
+                if (StatusEnabled)
+                    await PostOrEditStatusMessage(ct);
                 await PostOrEditAdminMessage(ct);
                 await Task.Delay(60_000, ct);
             }
@@ -736,7 +735,7 @@ public class DiscordBotService : IDisposable
         $"`{CommandPrefix}restart <name>`          — restart server\n" +
         $"`{CommandPrefix}update  <name>`          — update server\n" +
         $"`{CommandPrefix}backup  <name>`          — create backup\n" +
-        $"`{CommandPrefix}cmd     <name> <cmd>`    — send console command\n" +
+        $"`{CommandPrefix}cmd     <name> :: <cmd>` — send console command (use :: for names with spaces)\n" +
         $"*Name matching is case-insensitive and partial.*";
 
     private string BuildStatus()
@@ -783,10 +782,17 @@ public class DiscordBotService : IDisposable
     private async Task<string> RunConsoleCmd(string[] args)
     {
         if (args.Length < 2)
-            return $"Usage: `{CommandPrefix}cmd <server name> <command>`";
+            return $"Usage: `{CommandPrefix}cmd <server name> :: <command>`";
 
-        var name = args[0];
-        var cmd  = string.Join(" ", args.Skip(1));
+        var separator = Array.IndexOf(args, "::");
+        var name = separator > 0
+            ? string.Join(" ", args.Take(separator))
+            : args[0];
+        var cmd = separator > 0
+            ? string.Join(" ", args.Skip(separator + 1))
+            : string.Join(" ", args.Skip(1));
+        if (string.IsNullOrWhiteSpace(cmd))
+            return $"Usage: `{CommandPrefix}cmd <server name> :: <command>`";
         var srv  = FindServer(name);
         if (srv == null)
             return $"❌ Server not found: `{name}`";
@@ -794,7 +800,20 @@ public class DiscordBotService : IDisposable
         if (SendCmd != null)
             await SendCmd(srv.Id, cmd);
 
-        return $"📨 Sent to **{srv.DisplayName}**: `{cmd}`";
+        return $"📨 Sent to **{srv.DisplayName}**: `{SafeCommandSummary(cmd)}`";
+    }
+
+    private static string SafeCommandSummary(string command)
+    {
+        var first = command.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault() ?? string.Empty;
+        if (first.Contains("password", StringComparison.OrdinalIgnoreCase)
+            || first.Contains("token", StringComparison.OrdinalIgnoreCase)
+            || first.Contains("secret", StringComparison.OrdinalIgnoreCase))
+            return first + " [value hidden]";
+
+        var safe = new string(command.Where(c => !char.IsControl(c) && c != '`').ToArray());
+        return safe.Length <= 120 ? safe : safe[..120] + "…";
     }
 
     private GameServer? FindServer(string namePart)
