@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- Fixed custom-titlebar maximize behavior so the main and settings windows fill the work area without a transparent white banner.
+- Added optional WebRCON auto-connect, retry, reconnect status, and automatic player activity collection.
+- Added a dedicated Rust settings workspace for server profile labels, Facepunch-documented browser tags, managed `serverauto.cfg` variables, and custom/default identity log paths.
+- Added Carbon/Oxide detection, installed-plugin inventory, plugin-config discovery, history, and live reload commands.
+- Hardened scheduled actions with per-server serialization, guarded event subscribers, manual run support, and visible last results.
+- Expanded player session aggregates, persistent CPU/RAM/network/player charts, file selection contrast, and the operational action log.
+- Moved lifecycle and Discord controls into a documented Automation workspace and exposed the built-in Discord status/admin bot behavior.
+- Added a global default Rust installation folder picker and expanded the Info tab's Rust Operations summary.
+
 ## 0.2.0
 
 - Added native Rust timed bans with strict Steam64 ID and duration validation.
