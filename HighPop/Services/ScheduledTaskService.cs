@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using System.Collections.Concurrent;
 
 namespace HighPop.Services;
 
@@ -21,6 +22,8 @@ public class ScheduledTask
     public bool   IsEnabled   { get; set; } = true;
     public DateTime? LastRun  { get; set; }
     public DateTime? NextRun  { get; set; }
+    public string LastResult { get; set; } = "Never run";
+    [JsonIgnore] public bool IsRunning { get; set; }
 
     public string ActionText => Action switch
     {
@@ -60,6 +63,8 @@ public class ScheduledTaskService : IDisposable
     private List<ScheduledTask> _tasks = [];
     private readonly string _file;
     private int _checkRunning; // Interlocked flag — prevents concurrent CheckTasksAsync runs
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _serverGates = new();
+    private readonly ConcurrentDictionary<string, byte> _activeTasks = new();
 
     public event Action<ScheduledTask, string>? TaskExecuted;
 
@@ -80,8 +85,17 @@ public class ScheduledTaskService : IDisposable
 
         Load();
         _timer = new System.Timers.Timer(30_000); // check every 30s
-        _timer.Elapsed += async (_, _) => await CheckTasksAsync();
+        _timer.Elapsed += OnTimerElapsed;
         _timer.Start();
+    }
+
+    private async void OnTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        try { await CheckTasksAsync(); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Scheduler] Timer check failed: {ex}");
+        }
     }
 
     public IReadOnlyList<ScheduledTask> Tasks
@@ -119,7 +133,15 @@ public class ScheduledTaskService : IDisposable
     {
         ScheduledTask? task;
         lock (_lock) { task = _tasks.FirstOrDefault(t => t.Id == taskId); }
-        if (task != null) await ExecuteTaskAsync(task);
+        if (task == null) return;
+        await ExecuteTaskAsync(task);
+        List<ScheduledTask> snapshot;
+        lock (_lock)
+        {
+            task.LastRun = DateTime.Now;
+            snapshot = [.. _tasks];
+        }
+        SaveSnapshot(snapshot);
     }
 
     private async Task CheckTasksAsync()
@@ -162,33 +184,68 @@ public class ScheduledTaskService : IDisposable
 
     private async Task ExecuteTaskAsync(ScheduledTask task)
     {
+        if (!_activeTasks.TryAdd(task.Id, 0))
+        {
+            task.LastResult = "Skipped — this task is already running";
+            PublishTaskExecuted(task, task.LastResult);
+            return;
+        }
+
         var server = GetServer(task.ServerId);
-        if (server == null) return;
+        if (server == null)
+        {
+            task.LastResult = "Failed — server profile not found";
+            PublishTaskExecuted(task, task.LastResult);
+            _activeTasks.TryRemove(task.Id, out _);
+            return;
+        }
+
+        var gate = _serverGates.GetOrAdd(task.ServerId, _ => new SemaphoreSlim(1, 1));
+        task.IsRunning = true;
+        await gate.WaitAsync();
 
         try
         {
             switch (task.Action)
             {
                 case ScheduledActionType.Restart:
-                    await _manager.WarnPlayersAsync(server, "Server restarting in 1 minute");
-                    await Task.Delay(60_000);
-                    await _manager.StopAsync(server);
-                    if (server.BackupOnShutdown) { try { await _backup.CreateBackupAsync(server); } catch { } }
-                    await Task.Delay(3000);
+                    if (_manager.IsRunning(server.Id))
+                    {
+                        await _manager.WarnPlayersAsync(server, "Server restarting in 1 minute");
+                        await Task.Delay(60_000);
+                        await _manager.SendCommandAsync(server.Id, "server.save");
+                        await Task.Delay(1000);
+                        await _manager.StopAsync(server);
+                        if (server.BackupOnShutdown) await _backup.CreateBackupAsync(server);
+                        await Task.Delay(3000);
+                    }
                     await _manager.StartAsync(server);
                     break;
                 case ScheduledActionType.Stop:
+                    if (!_manager.IsRunning(server.Id))
+                    {
+                        task.LastResult = "Skipped — server is already stopped";
+                        PublishTaskExecuted(task, task.LastResult);
+                        return;
+                    }
                     await _manager.StopAsync(server);
-                    if (server.BackupOnShutdown) { try { await _backup.CreateBackupAsync(server); } catch { } }
+                    if (server.BackupOnShutdown) await _backup.CreateBackupAsync(server);
                     break;
                 case ScheduledActionType.Start:
+                    if (_manager.IsRunning(server.Id))
+                    {
+                        task.LastResult = "Skipped — server is already running";
+                        PublishTaskExecuted(task, task.LastResult);
+                        return;
+                    }
                     await _manager.StartAsync(server);
                     break;
                 case ScheduledActionType.Backup:
                     if (!_manager.IsRunning(server.Id) &&
                         (server.LastStarted == null || server.LastStarted < DateTime.Now.AddHours(-24)))
                     {
-                        TaskExecuted?.Invoke(task, "Skipped — server hasn't run in the last 24h, nothing new to back up");
+                        task.LastResult = "Skipped — server hasn't run in the last 24h, nothing new to back up";
+                        PublishTaskExecuted(task, task.LastResult);
                         return;
                     }
                     await _backup.CreateBackupAsync(server);
@@ -197,6 +254,12 @@ public class ScheduledTaskService : IDisposable
                     if (UpdateServer != null) await UpdateServer(task.ServerId);
                     break;
                 case ScheduledActionType.QuickCommand:
+                    if (!_manager.IsRunning(server.Id))
+                    {
+                        task.LastResult = "Skipped — server is stopped";
+                        PublishTaskExecuted(task, task.LastResult);
+                        return;
+                    }
                     if (!string.IsNullOrWhiteSpace(task.Command))
                         await _manager.SendCommandAsync(server.Id, task.Command);
                     break;
@@ -204,11 +267,18 @@ public class ScheduledTaskService : IDisposable
                 case ScheduledActionType.WipeMap:
                     if (!await ExecuteWipeAsync(server, task.Action == ScheduledActionType.Wipe))
                     {
-                        TaskExecuted?.Invoke(task, "Skipped — this game does not support scheduled wipes");
+                        task.LastResult = "Skipped — this game does not support scheduled wipes";
+                        PublishTaskExecuted(task, task.LastResult);
                         return;
                     }
                     break;
                 case ScheduledActionType.Broadcast:
+                    if (!_manager.IsRunning(server.Id))
+                    {
+                        task.LastResult = "Skipped — server is stopped";
+                        PublishTaskExecuted(task, task.LastResult);
+                        return;
+                    }
                     if (!string.IsNullOrWhiteSpace(task.Command))
                     {
                         var bPlugin = Games.GameRegistry.All.FirstOrDefault(p => p.GameId == server.GameId);
@@ -217,17 +287,41 @@ public class ScheduledTaskService : IDisposable
                             await _manager.SendCommandAsync(server.Id, bcmd);
                         else
                         {
-                            TaskExecuted?.Invoke(task, "Skipped — this game does not support in-game broadcasts");
+                            task.LastResult = "Skipped — this game does not support in-game broadcasts";
+                            PublishTaskExecuted(task, task.LastResult);
                             return;
                         }
                     }
                     break;
             }
-            TaskExecuted?.Invoke(task, "OK");
+            task.LastResult = $"OK — {DateTime.Now:g}";
+            PublishTaskExecuted(task, task.LastResult);
         }
         catch (Exception ex)
         {
-            TaskExecuted?.Invoke(task, ex.Message);
+            task.LastResult = $"Failed — {ex.Message}";
+            PublishTaskExecuted(task, task.LastResult);
+        }
+        finally
+        {
+            task.IsRunning = false;
+            gate.Release();
+            _activeTasks.TryRemove(task.Id, out _);
+        }
+    }
+
+    private void PublishTaskExecuted(ScheduledTask task, string result)
+    {
+        task.LastRun = DateTime.Now;
+        var handlers = TaskExecuted?.GetInvocationList();
+        if (handlers == null) return;
+        foreach (var handler in handlers)
+        {
+            try { ((Action<ScheduledTask, string>)handler)(task, result); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Scheduler] TaskExecuted subscriber failed: {ex}");
+            }
         }
     }
 
@@ -349,5 +443,14 @@ public class ScheduledTaskService : IDisposable
         catch { }
     }
 
-    public void Dispose() { _timer.Stop(); _timer.Dispose(); }
+    public void Dispose()
+    {
+        _timer.Stop();
+        _timer.Elapsed -= OnTimerElapsed;
+        _timer.Dispose();
+        // A restart/wipe can still be finishing its warning delay while the app closes.
+        // Dropping references is safer than disposing semaphores underneath active waiters.
+        _serverGates.Clear();
+        _activeTasks.Clear();
+    }
 }
