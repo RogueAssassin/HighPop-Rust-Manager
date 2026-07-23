@@ -9,6 +9,7 @@
 - Added regression coverage for config loading, precedence, migration, preservation, disabling, input validation, and idempotent writes.
 - Added a direct self-contained Windows executable, ZIP package, per-file SHA-256 checksums, and a machine-readable release manifest to the release workflow.
 - Added optional Authenticode signing through repository secrets while keeping unsigned local/community builds supported.
+- Automated version-tag and GitHub Release creation when a previously unreleased project version reaches `main`.
 - Split the remaining roadmap into stable, versioned stages for telemetry/maps, remote portability, provider interfaces, and headless/accessibility work.
 
 ## 0.3.0
