@@ -9,6 +9,12 @@ public class ConfigFileEntry
     public string Name    { get; set; } = string.Empty;
     public string Path    { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
+    public string Scope { get; set; } = "Server";
+    public string PluginName { get; set; } = string.Empty;
+    public string ReloadCommand { get; set; } = string.Empty;
+    public bool IsPluginConfig => Scope != "Server";
+    public bool CanReloadPlugin => IsPluginConfig && !string.IsNullOrWhiteSpace(ReloadCommand);
+    public string DisplayName => $"{Scope} • {Name}";
 }
 
 public class ConfigSnapshot
@@ -67,7 +73,48 @@ public class ConfigEditorService
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
 
-        return result;
+        AddPluginConfigs(result, server.InstallPath, "Oxide",
+            System.IO.Path.Combine(server.InstallPath, "oxide", "config"), "o.reload");
+        AddPluginConfigs(result, server.InstallPath, "Carbon",
+            System.IO.Path.Combine(server.InstallPath, "carbon", "configs"), "c.reload");
+        AddPluginConfigs(result, server.InstallPath, "Carbon",
+            System.IO.Path.Combine(server.InstallPath, "carbon", "config"), "c.reload");
+
+        return result
+            .OrderBy(r => r.IsPluginConfig)
+            .ThenBy(r => r.Scope, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static void AddPluginConfigs(
+        List<ConfigFileEntry> result,
+        string installPath,
+        string framework,
+        string directory,
+        string reloadPrefix)
+    {
+        if (!Directory.Exists(directory) || !IsPathInside(installPath, directory)) return;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(directory, "*.json", SearchOption.AllDirectories))
+            {
+                if (!IsPathInside(installPath, file) || result.Any(r =>
+                        string.Equals(r.Path, file, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                var pluginName = System.IO.Path.GetFileNameWithoutExtension(file);
+                result.Add(new ConfigFileEntry
+                {
+                    Name = System.IO.Path.GetRelativePath(directory, file),
+                    Path = file,
+                    Scope = $"{framework} plugin",
+                    PluginName = pluginName,
+                    ReloadCommand = $"{reloadPrefix} {pluginName}",
+                });
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     public void LoadContent(ConfigFileEntry entry)
