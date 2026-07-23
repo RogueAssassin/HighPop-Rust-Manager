@@ -1,14 +1,15 @@
 # Roadmap
 
-HighPop v0.2 adds the first Rust-native administration stage on top of the portable operations foundation. Roadmap items are prioritized by stability and self-hostability.
+HighPop v0.3 expands the Rust-native administration stage into a clearer, more resilient operations workspace. Roadmap items are prioritized by stability and self-hostability.
 
-## Completed in v0.2
+## Completed in v0.3
 
-- Native timed bans with validated Steam64 IDs and Rust duration strings
-- Persistent player notes and local moderation records
-- Carbon/Oxide whitelist permission controls with explicit plugin requirements
-- Confirmation-gated bulk kick and ban actions
-- Expiry-aware group-ban replay
+- Auto-reconnecting WebRCON and improved player session collection
+- Dedicated Rust browser tag, profile, `serverauto.cfg`, and log-path controls
+- Carbon/Oxide detection with plugin and plugin-config inventories
+- Serialized scheduled operations with visible outcomes
+- Detailed resource/network/player charts and expanded operational audit entries
+- Integrated Discord status boards and private administrator controls
 
 ## Next
 
