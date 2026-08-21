@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace HighPop.Models;
 
@@ -89,7 +91,7 @@ public class GameServer
     public bool RustTelemetryEnabled { get; set; } = false;
     public int RustTelemetryRetentionDays { get; set; } = 14;
     public int RustTelemetryMaxMegabytes { get; set; } = 256;
-    public List<RustServerVariable> RustServerVariables { get; set; } = RustServerVariable.CreateDefaults();
+    public ObservableCollection<RustServerVariable> RustServerVariables { get; set; } = RustServerVariable.CreateDefaults();
     public Dictionary<string, string> GameSpecificSettings { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? LastStarted { get; set; }
@@ -122,12 +124,17 @@ public class GameServer
     public TimeSpan Uptime { get; set; }
 }
 
-public class RustServerVariable
+public class RustServerVariable : ObservableObject
 {
-    public bool Enabled { get; set; }
-    public string Name  { get; set; } = string.Empty;
-    public string Value { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
+    private bool _enabled;
+    private string _name = string.Empty;
+    private string _value = string.Empty;
+    private string _description = string.Empty;
+
+    public bool Enabled { get => _enabled; set => SetProperty(ref _enabled, value); }
+    public string Name { get => _name; set => SetProperty(ref _name, value); }
+    public string Value { get => _value; set => SetProperty(ref _value, value); }
+    public string Description { get => _description; set => SetProperty(ref _description, value); }
 
     [JsonIgnore]
     public bool LoadedFromServerConfig { get; set; }
@@ -135,7 +142,11 @@ public class RustServerVariable
     [JsonIgnore]
     public string LoadedConfigValue { get; set; } = string.Empty;
 
-    public static List<RustServerVariable> CreateDefaults() =>
+    public bool HasUnsavedChanges => LoadedFromServerConfig
+        ? !Enabled || !string.Equals(Value, LoadedConfigValue, StringComparison.Ordinal)
+        : Enabled;
+
+    public static ObservableCollection<RustServerVariable> CreateDefaults() =>
     [
         new() { Name = "bear.population", Value = "2", Description = "Target bear population multiplier." },
         new() { Name = "wolf.population", Value = "2", Description = "Target wolf population multiplier." },

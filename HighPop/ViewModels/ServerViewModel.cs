@@ -59,6 +59,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private string _modStatusText   = string.Empty;
     [ObservableProperty] private bool   _modBusy;
     [ObservableProperty] private string _detectedModFramework = "Not scanned";
+    [ObservableProperty] private string _rogueRustStatus = "Not installed";
     [ObservableProperty] private List<InstalledModPlugin> _installedPlugins = [];
 
     // Config editor
@@ -133,6 +134,17 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ? _telemetry.GetServerDirectory(Server)
         : string.Empty;
     [ObservableProperty] private string _rustVariableStatus = "server.cfg has not been read yet.";
+    [ObservableProperty] private int _rustVariablePendingCount;
+    [ObservableProperty] private string _rustVariableFilter = string.Empty;
+    public IEnumerable<RustServerVariable> FilteredRustServerVariables =>
+        string.IsNullOrWhiteSpace(RustVariableFilter)
+            ? Server.RustServerVariables
+            : Server.RustServerVariables.Where(variable =>
+                variable.Name.Contains(RustVariableFilter, StringComparison.OrdinalIgnoreCase)
+                || variable.Description.Contains(RustVariableFilter, StringComparison.OrdinalIgnoreCase));
+    partial void OnRustVariableFilterChanged(string value) =>
+        OnPropertyChanged(nameof(FilteredRustServerVariables));
+    private readonly HashSet<RustServerVariable> _trackedRustVariables = [];
     private bool _syncingRustTags;
 
     // Scheduled tasks
@@ -422,6 +434,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _presets       = presets;
         _telemetry     = telemetry;
         Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+        Server.RustServerVariables.CollectionChanged += (_, _) => TrackRustVariableChanges();
         if (IsRust)
         {
             try
@@ -436,6 +449,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 RustVariableStatus = $"Could not read server.cfg: {ex.Message}";
             }
         }
+        TrackRustVariableChanges();
         AvailablePresets = _presets.GetPresetsForGame(server.GameId);
         SelectedPreset   = AvailablePresets.FirstOrDefault();
         InitializeRustBrowserTags();
@@ -1121,6 +1135,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             var count = RustPlugin.LoadServerConfigVariables(Server);
+            TrackRustVariableChanges();
             OnPropertyChanged(nameof(Server));
             RustVariableStatus = File.Exists(ServerConfigPath)
                 ? $"Reloaded {count} active variable(s) from server.cfg."
@@ -1135,7 +1150,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private void SaveServerConfigVariables()
+    private void SaveServerConfigVariables() => TrySaveServerConfigVariables();
+
+    private bool TrySaveServerConfigVariables()
     {
         var validation = RustPlugin.ValidateServerVariables(Server);
         if (validation != null)
@@ -1143,12 +1160,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             RustVariableStatus = validation;
             WpfMsgBox.Show(validation, "Invalid server.cfg variable",
                 WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
-            return;
+            return false;
         }
 
         try
         {
             var migrated = RustPlugin.WriteManagedServerConfig(Server);
+            TrackRustVariableChanges();
             OnPropertyChanged(nameof(Server));
             RustVariableStatus = migrated > 0
                 ? $"Saved server.cfg and migrated {migrated} legacy variable(s) from serverauto.cfg."
@@ -1156,12 +1174,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             AddActionLog(migrated > 0
                 ? $"Saved server.cfg and migrated {migrated} legacy serverauto.cfg variable(s)"
                 : "Saved Rust custom variables to server.cfg");
+            return true;
         }
         catch (Exception ex)
         {
             RustVariableStatus = $"Could not save server.cfg: {ex.Message}";
             WpfMsgBox.Show(RustVariableStatus, "server.cfg save failed",
                 WpfMsgBoxButton.OK, WpfMsgBoxImage.Error);
+            return false;
         }
     }
 
@@ -1178,6 +1198,50 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         OnPropertyChanged(nameof(Server));
         RustVariableStatus = "Unsaved variable row added.";
         AddActionLog("Added a server.cfg variable row");
+    }
+
+    [RelayCommand]
+    private async Task ApplyRustVariablesLiveAsync()
+    {
+        var validation = RustPlugin.ValidateServerVariables(Server);
+        if (validation != null)
+        {
+            RustVariableStatus = validation;
+            return;
+        }
+
+        var changed = Server.RustServerVariables
+            .Where(variable => variable.Enabled && variable.HasUnsavedChanges)
+            .Select(variable => (variable.Name, variable.Value))
+            .ToList();
+        if (!TrySaveServerConfigVariables()) return;
+        if (!IsRunning)
+        {
+            RustVariableStatus += " Rust is stopped, so the saved values will apply at next start.";
+            return;
+        }
+
+        foreach (var (name, value) in changed)
+            await _manager.SendCommandAsync(Server.Id, $"{name} \"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"");
+
+        RustVariableStatus = changed.Count == 0
+            ? "server.cfg is already synchronized; there were no live changes to send."
+            : $"Saved server.cfg and applied {changed.Count} changed value(s) to the running Rust console.";
+        AddActionLog($"Applied {changed.Count} server.cfg variable change(s) live");
+    }
+
+    private void TrackRustVariableChanges()
+    {
+        foreach (var variable in Server.RustServerVariables.Where(v => _trackedRustVariables.Add(v)))
+            variable.PropertyChanged += (_, _) => RefreshRustVariableState();
+        RefreshRustVariableState();
+        OnPropertyChanged(nameof(FilteredRustServerVariables));
+    }
+
+    private void RefreshRustVariableState()
+    {
+        RustVariablePendingCount = Server.RustServerVariables.Count(variable => variable.HasUnsavedChanges);
+        OnPropertyChanged(nameof(FilteredRustServerVariables));
     }
 
     [RelayCommand]
@@ -1413,6 +1477,54 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
+    private async Task InstallRogueRustAsync()
+    {
+        if (Plugin?.GameId != "rust") return;
+        if (IsRunning)
+        {
+            ModStatusText = "Stop the Rust server before installing or updating RogueRust.";
+            return;
+        }
+        if (ModManagerService.GetInstalledOxideVersion(Server.InstallPath) == null)
+        {
+            ModStatusText = "RogueRust requires Oxide/uMod. Install Oxide first.";
+            return;
+        }
+
+        ModBusy = true;
+        try
+        {
+            var progress = new Progress<(int pct, string msg)>(x =>
+                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
+            var version = await _mods.InstallRogueRustAsync(Server.InstallPath, progress);
+            RogueRustStatus = $"Installed {version}";
+            AppendLog($"[Mods] ✅ RogueRust {version} installed and SHA-256 verified.", ConsoleMessageType.System);
+            AddActionLog($"RogueRust {version} installed or updated");
+            RefreshInstalledPlugins();
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Mods] ❌ RogueRust: {ex.Message}", ConsoleMessageType.Error);
+            ModStatusText = $"❌ {ex.Message}";
+        }
+        finally { ModBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task CheckRogueRustHealthAsync()
+    {
+        if (!IsRunning)
+        {
+            ModStatusText = "Start Rust before running RogueRust diagnostics.";
+            return;
+        }
+        await _manager.SendCommandAsync(Server.Id, "roguerust.version");
+        await _manager.SendCommandAsync(Server.Id, "roguerust.readiness");
+        ModStatusText = "RogueRust version and readiness commands sent. Review the Console tab.";
+        AddActionLog("Requested RogueRust readiness diagnostics");
+    }
+
+    [RelayCommand]
     private void OpenCarbonPluginFolder() =>
         ModManagerService.OpenCarbonPluginFolder(Server.InstallPath);
 
@@ -1427,6 +1539,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void RefreshInstalledPlugins()
     {
         DetectedModFramework = ModManagerService.GetDetectedFramework(Server.InstallPath);
+        RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
+            ? $"Installed {version}"
+            : "Not installed";
         InstalledPlugins = ModManagerService.GetInstalledPlugins(Server.InstallPath);
 
         if (!DetectedModFramework.StartsWith("Vanilla", StringComparison.OrdinalIgnoreCase))

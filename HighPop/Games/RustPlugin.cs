@@ -217,9 +217,31 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             lines.Add(ManagedCfgEnd);
         }
 
-        AtomicWrite(path, lines.Count == 0 ? string.Empty : string.Join(newline, lines) + newline);
+        var updated = lines.Count == 0 ? string.Empty : string.Join(newline, lines) + newline;
+        if (!string.Equals(existing, updated, StringComparison.Ordinal))
+        {
+            CreateServerConfigBackup(path);
+            AtomicWrite(path, updated);
+        }
         LoadServerConfigVariables(server);
         return migrated;
+    }
+
+    private static void CreateServerConfigBackup(string path)
+    {
+        if (!File.Exists(path)) return;
+        var backupDirectory = Path.Combine(Path.GetDirectoryName(path)!, ".highpop-backups");
+        Directory.CreateDirectory(backupDirectory);
+        var backup = Path.Combine(backupDirectory, $"server-{DateTime.Now:yyyyMMdd-HHmmss-fff}.cfg");
+        File.Copy(path, backup, overwrite: false);
+
+        foreach (var old in new DirectoryInfo(backupDirectory)
+                     .GetFiles("server-*.cfg")
+                     .OrderByDescending(file => file.CreationTimeUtc)
+                     .Skip(20))
+        {
+            try { old.Delete(); } catch { }
+        }
     }
 
     public override string? GetStopCommand(GameServer server) => "quit";

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
 using HighPop.Games;
 
@@ -25,6 +26,8 @@ public sealed class ModManagerService
     private const string OxideDownloadUrl = "https://umod.org/games/rust/download";
     private const string CarbonLatestReleaseApi =
         "https://api.github.com/repos/CarbonCommunity/Carbon/releases/latest";
+    private const string RogueRustLatestReleaseApi =
+        "https://api.github.com/repos/RogueAssassin/Oxide.Ext.RogueRust/releases/latest";
 
     public async Task InstallOxideAsync(
         IGamePlugin plugin,
@@ -71,6 +74,72 @@ public sealed class ModManagerService
         var bytes = await Http.GetByteArrayAsync(asset.Url);
         await ExtractArchiveAsync(bytes, installPath, "carbon", progress);
         Report(progress, 100, "Carbon installed. Restart Rust to load the framework.");
+    }
+
+    public async Task<string> InstallRogueRustAsync(
+        string installPath,
+        IProgress<(int pct, string msg)>? progress = null)
+    {
+        EnsureRustInstalled(installPath);
+        if (GetInstalledOxideVersion(installPath) == null)
+            throw new InvalidOperationException("Install Oxide/uMod before installing the RogueRust extension.");
+
+        Report(progress, 0, "Resolving the latest RogueRust release from GitHub...");
+        using var request = new HttpRequestMessage(HttpMethod.Get, RogueRustLatestReleaseApi);
+        request.Headers.UserAgent.ParseAdd("HighPop-Rust-Manager/0.7");
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        using var release = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var tag = release.RootElement.GetProperty("tag_name").GetString()
+            ?? throw new InvalidOperationException("RogueRust release did not provide a version tag.");
+        var assets = release.RootElement.GetProperty("assets").EnumerateArray()
+            .Select(item => new
+            {
+                Name = item.GetProperty("name").GetString() ?? string.Empty,
+                Url = item.GetProperty("browser_download_url").GetString() ?? string.Empty,
+            })
+            .ToList();
+        var dllAsset = assets.FirstOrDefault(item =>
+            item.Name.Equals("Oxide.Ext.RogueRust.dll", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("The latest RogueRust release has no Oxide.Ext.RogueRust.dll asset.");
+        var sumsAsset = assets.FirstOrDefault(item =>
+            item.Name.Equals("SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("The RogueRust release has no SHA256SUMS.txt verification asset.");
+
+        Report(progress, 20, $"Downloading RogueRust {tag}...");
+        var bytes = await Http.GetByteArrayAsync(dllAsset.Url);
+        var sums = await Http.GetStringAsync(sumsAsset.Url);
+        var expected = sums.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault(line => line.EndsWith(dllAsset.Name, StringComparison.OrdinalIgnoreCase))?
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        var actual = Convert.ToHexString(SHA256.HashData(bytes));
+        if (string.IsNullOrWhiteSpace(expected)
+            || !actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("RogueRust SHA-256 verification failed; the existing installation was not changed.");
+
+        var managed = Path.Combine(installPath, "RustDedicated_Data", "Managed");
+        Directory.CreateDirectory(managed);
+        var destination = Path.Combine(managed, dllAsset.Name);
+        if (File.Exists(destination))
+            File.Copy(destination, destination + $".bak-{DateTime.Now:yyyyMMdd-HHmmss}", overwrite: false);
+        var temporary = destination + ".highpop.tmp";
+        await File.WriteAllBytesAsync(temporary, bytes);
+        File.Move(temporary, destination, overwrite: true);
+        Report(progress, 100, $"RogueRust {tag} installed and verified. Restart Rust to load it.");
+        return tag;
+    }
+
+    public static string? GetInstalledRogueRustVersion(string installPath)
+    {
+        var dll = Path.Combine(installPath, "RustDedicated_Data", "Managed", "Oxide.Ext.RogueRust.dll");
+        if (!File.Exists(dll)) return null;
+        try
+        {
+            var info = FileVersionInfo.GetVersionInfo(dll);
+            return info.ProductVersion ?? info.FileVersion ?? "Installed";
+        }
+        catch { return "Installed"; }
     }
 
     public static string? GetInstalledOxideVersion(string installPath)

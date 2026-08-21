@@ -29,6 +29,12 @@ var server = new GameServer
     MaxPlayers = 500,
     GameSpecificSettings = rust.GetDefaultSettings(),
 };
+var variableNotifications = 0;
+server.RustServerVariables[0].PropertyChanged += (_, _) => variableNotifications++;
+server.RustServerVariables[0].Enabled = true;
+Check(variableNotifications == 1 && server.RustServerVariables[0].HasUnsavedChanges,
+    "Rust variable rows notify the workspace immediately when edited");
+server.RustServerVariables[0].Enabled = false;
 Check(server.GameSpecificSettings["steamBranch"] == "public",
     "normal Rust profiles default to the public SteamCMD branch");
 Check(server.RconAutoConnectDelaySeconds == 60
@@ -173,6 +179,10 @@ try
     RustPlugin.WriteManagedServerConfig(server);
     Check(await File.ReadAllTextAsync(serverConfigPath) == firstWrite,
         "server.cfg synchronization is idempotent");
+    var configBackupDirectory = Path.Combine(Path.GetDirectoryName(serverConfigPath)!, ".highpop-backups");
+    Check(Directory.Exists(configBackupDirectory)
+          && Directory.GetFiles(configBackupDirectory, "server-*.cfg").Length > 0,
+        "server.cfg changes create automatic rollback copies");
 
     loadedBoar = server.RustServerVariables.First(v => v.Name == "boar.population");
     loadedBoar.Enabled = false;

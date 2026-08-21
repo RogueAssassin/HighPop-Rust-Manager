@@ -1,6 +1,8 @@
 HighPop runtime assets
 ======================
 
+HighPop Rust Manager v0.7.0
+
 HighPop.exe is self-contained. This folder is the only external location HighPop uses:
 
 Production Rust profiles use the always-on policy by default. HighPop resumes them when the

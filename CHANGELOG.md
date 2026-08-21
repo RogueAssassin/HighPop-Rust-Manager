@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- Rebuilt Rust custom variables as an observable workspace so add/remove/edit operations update immediately instead of relying on a full view refresh.
+- Added variable filtering, pending-change counts, automatic timestamped `server.cfg` rollback copies, and a Save + apply-live action for running Rust servers.
+- Added first-class RogueRust extension installation/update from the latest public GitHub release, including SHA-256 verification and rollback copies of replaced DLLs.
+- Added RogueRust installed-version detection and one-click `roguerust.version` / `roguerust.readiness` diagnostics.
+- Refined cards, spacing, status pills, hierarchy, and the Mods workspace while retaining HighPop's lightweight native WPF design.
+- Updated the roadmap after comparing HighPop with AMP, GameServerApp, LinuxGSM, and Pterodactyl workflows.
+
 ## 0.6.0
 
 - Added an always-on production policy, enabled by default, that resumes Rust with HighPop and never shuts it down merely because the player count is zero.

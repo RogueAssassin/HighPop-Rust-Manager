@@ -916,15 +916,14 @@ public partial class MainViewModel : BaseViewModel
             RustTelemetryEnabled = src.RustTelemetryEnabled,
             RustTelemetryRetentionDays = src.RustTelemetryRetentionDays,
             RustTelemetryMaxMegabytes = src.RustTelemetryMaxMegabytes,
-            RustServerVariables  = src.RustServerVariables
+            RustServerVariables  = new ObservableCollection<RustServerVariable>(src.RustServerVariables
                 .Select(variable => new RustServerVariable
                 {
                     Enabled = variable.Enabled,
                     Name = variable.Name,
                     Value = variable.Value,
                     Description = variable.Description,
-                })
-                .ToList(),
+                })),
             Status               = ServerStatus.NotInstalled,
             GameSpecificSettings = new Dictionary<string, string>(src.GameSpecificSettings),
         };

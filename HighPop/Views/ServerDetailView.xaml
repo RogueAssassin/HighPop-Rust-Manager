@@ -160,17 +160,19 @@
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="TabItem">
-                                <Border x:Name="bd" Background="Transparent"
+                                <Border x:Name="bd" Background="Transparent" CornerRadius="7,7,0,0"
                                         BorderBrush="Transparent" BorderThickness="0,0,0,2"
                                         Padding="{TemplateBinding Padding}">
                                     <ContentPresenter ContentSource="Header"/>
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource BgSurface2Brush}"/>
                                         <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
                                         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource BgSurface2Brush}"/>
                                         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                                     </Trigger>
                                 </ControlTemplate.Triggers>
@@ -1124,6 +1126,21 @@
                                 <TextBlock Text="{Binding RustVariableStatus}" FontSize="10"
                                            Foreground="{StaticResource AccentOrangeBrush}" TextWrapping="Wrap"
                                            Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding RustVariableFilter, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource DarkTextBox}"
+                                             ToolTip="Filter by variable name or purpose"/>
+                                    <Border Grid.Column="1" Style="{StaticResource StatusPill}" Margin="8,0,0,0">
+                                        <TextBlock Foreground="{StaticResource AccentOrangeBrush}">
+                                            <Run Text="{Binding RustVariablePendingCount, Mode=OneWay}"/>
+                                            <Run Text=" pending"/>
+                                        </TextBlock>
+                                    </Border>
+                                </Grid>
                                 <Grid Margin="10,0,40,4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
@@ -1136,7 +1153,7 @@
                                     <TextBlock Grid.Column="2" Text="Value" Style="{StaticResource FieldLabel}"/>
                                     <TextBlock Grid.Column="3" Text="Purpose" Style="{StaticResource FieldLabel}"/>
                                 </Grid>
-                                <ItemsControl ItemsSource="{Binding Server.RustServerVariables}">
+                                <ItemsControl ItemsSource="{Binding FilteredRustServerVariables}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="5"
@@ -1172,6 +1189,9 @@
                                             Command="{Binding AddRustServerVariableCommand}" Margin="0,0,8,0"/>
                                     <Button Content="💾 Save to server.cfg" Style="{StaticResource PrimaryButton}"
                                             Command="{Binding SaveServerConfigVariablesCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="⚡ Save + apply live" Style="{StaticResource SuccessButton}"
+                                            Command="{Binding ApplyRustVariablesLiveCommand}" Margin="0,0,8,0"
+                                            ToolTip="Writes server.cfg, then sends changed enabled values to the running Rust console. Disabled variables require a restart."/>
                                     <Button Content="↻ Reload from file" Style="{StaticResource GhostButton}"
                                             Command="{Binding ReloadServerConfigVariablesCommand}" Margin="0,0,8,0"/>
                                     <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
@@ -1558,6 +1578,45 @@
                                             Command="{Binding OpenCarbonPluginFolderCommand}"/>
                                 </StackPanel>
                             </StackPanel>
+                        </Border>
+
+                        <!-- RogueRust extension -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                                Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Background="{StaticResource AccentOrangeBrush}" CornerRadius="3"/>
+                                <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="RogueRust Extension" FontSize="15" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="RogueAssassin/Oxide.Ext.RogueRust"
+                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Style="{StaticResource StatusPill}">
+                                            <TextBlock Text="{Binding RogueRustStatus}" Foreground="{StaticResource AccentGreenBrush}"/>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="Installs the latest public RogueRust DLL from GitHub into RustDedicated_Data/Managed. HighPop verifies SHA-256 before replacing the current DLL and keeps a timestamped rollback copy. Oxide/uMod is required."
+                                               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="⬇ Install / Update RogueRust" Style="{StaticResource PrimaryButton}"
+                                                Command="{Binding InstallRogueRustCommand}" Margin="0,0,8,0"
+                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
+                                        <Button Content="✓ Run readiness check" Style="{StaticResource GhostButton}"
+                                                Command="{Binding CheckRogueRustHealthCommand}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
                         </Border>
 
                         <Border Style="{StaticResource Card}" Margin="0,0,0,16">

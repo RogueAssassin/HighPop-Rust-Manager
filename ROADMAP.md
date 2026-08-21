@@ -24,25 +24,36 @@ HighPop releases are staged around stability and self-hostability. A stage is me
 - Daily, weekly, interval, and one-time scheduling with persisted next-run repair
 - Corrupt scheduler-state quarantine instead of manager instability
 
-## Stage 7 — v0.7 remote portability
+## Completed — Stage 7 / v0.7 Rust workspace and managed extensions
+
+- Observable, filterable `server.cfg` variable workspace with pending-change visibility
+- Automatic rollback copies and comment-preserving atomic config writes
+- Save-and-apply-live workflow for enabled Rust console variables
+- Verified RogueRust GitHub installation/update with version and readiness diagnostics
+- Clearer visual hierarchy, status pills, spacing, and managed-mod presentation
+
+## Stage 8 — v0.8 automation and remote portability
 
 - SFTP/FTPS file-transfer profiles for remote hosts
 - Import/export bundles with secrets excluded by default
 - Dry-run import validation, conflict reporting, and rollback snapshots
 - Scheduled off-machine backup replication without requiring a hosted HighPop account
+- Event-triggered automation for crash, player-count, update, backup, and readiness events
+- Maintenance windows and update deferral while players are online
 
-## Stage 8 — v0.8 provider interfaces
+## Stage 9 — v0.9 provider interfaces
 
 - Pluggable VPN/proxy and geolocation lookups with caching and clear privacy controls
 - Optional VAC/profile-risk sources that comply with provider terms
 - Federated ban-list adapter with signatures, audit history, and per-list trust controls
 - Prometheus/OpenTelemetry export and documented webhook event schemas
 
-## Stage 9 — v0.9 service and experience
+## Stage 10 — v1.0 service and experience
 
 - More languages and accessible high-contrast themes
 - First-run diagnostics for NAT, firewall, SteamCMD, WebRCON, and Rust+ ports
 - Preset marketplace based on signed plain JSON bundles
 - Headless Windows service mode with the desktop application acting as a client
+- Role-based operator audit views and reusable per-server dashboard layouts
 
 Hosted vendor datasets and accounts will remain optional. Local Rust management must continue to work without an account, subscription, or recurring fee.
