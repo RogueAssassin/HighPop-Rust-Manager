@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- Corrected lifecycle policy so `Always-on` protects only a server HighPop deliberately started or reattached; opening the manager no longer starts a stopped always-on profile unless `Auto-start` is separately enabled.
+- Added smoke coverage for the startup-policy boundary to prevent `KeepOnline` and `AutoStart` from becoming coupled again.
+- Extended the verified RogueRust installer to support both frameworks: Oxide/uMod installs to `RustDedicated_Data/Managed`, while Carbon installs to `carbon/extensions`.
+- Added dual-framework target detection, per-target rollback copies, and clearer framework-aware status and install guidance.
+- Carried forward the v0.7 custom-variable workspace and visual refresh as the foundation of the v0.8 automation and portability milestone.
+
 ## 0.7.0
 
 - Rebuilt Rust custom variables as an observable workspace so add/remove/edit operations update immediately instead of relying on a full view refresh.

@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.7.0-F05A28">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.8.0-F05A28">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -17,7 +17,7 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
-## Included in v0.7
+## Included in v0.8
 
 | Area | Capabilities |
 |---|---|
@@ -25,9 +25,9 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 | Process control | Start, graceful stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
 | High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, `server.cfg` variable synchronization, custom log directory, identity and conflict-safe ports |
 | Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
-| Mods and maps | Carbon and Oxide installation/detection, verified RogueRust installation/update/readiness checks, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
+| Mods and maps | Carbon and Oxide installation/detection, framework-aware verified RogueRust installation/update/readiness checks, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
-| Reliability | Always-on uptime policy, bounded crash-loop backoff, slow-start readiness grace, WebRCON retries, reasoned process-exit diagnostics, and non-destructive update checks |
+| Reliability | Explicit-start always-on recovery, separate launch-on-manager-start control, bounded crash-loop backoff, slow-start readiness grace, WebRCON retries, reasoned process-exit diagnostics, and non-destructive update checks |
 | Local telemetry | Opt-in versioned lifecycle/action/player-count JSONL events with per-server age and storage retention |
 | Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, serialized per server with visible results |
 | Monitoring | Persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |

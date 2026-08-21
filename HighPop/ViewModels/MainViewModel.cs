@@ -531,9 +531,9 @@ public partial class MainViewModel : BaseViewModel
             var vm = MakeVm(srv);
             vm.ServerNumber = num++;
             Servers.Add(vm);
-            // Always-on profiles resume whenever HighPop launches, even if an older profile
-            // was saved before AutoStart was enabled.
-            if ((srv.AutoStart || srv.KeepOnline) && !reattached)
+            // KeepOnline protects an already-running/reattached process; it must never
+            // turn opening the manager into an implicit server start.
+            if (ServerStartupPolicy.ShouldStartOnManagerLaunch(srv, reattached))
                 _ = WpfApplication.Current?.Dispatcher?.InvokeAsync(() => vm.StartCommand.ExecuteAsync(null))
                         .Task.ContinueWith(t => Console.WriteLine($"[HighPop] AutoStart failed for {srv.DisplayName}: {t.Exception?.InnerException?.Message}"),
                             TaskContinuationOptions.OnlyOnFaulted);

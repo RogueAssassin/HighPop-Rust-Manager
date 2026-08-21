@@ -17,7 +17,7 @@ HighPop releases are staged around stability and self-hostability. A stage is me
 
 ## Completed — Stage 6 / v0.6 always-on operations
 
-- Production always-on policy that overrides empty-player shutdown and resumes with HighPop
+- Production always-on policy that overrides empty-player shutdown and recovers deliberately started or reattached servers
 - Persistent recovery after unexpected exits and failed relaunches
 - Shared crash history with capped exponential backoff to prevent hot restart loops
 - Durable, serialized scheduler execution with visible results, failure counts, and timings
@@ -32,7 +32,14 @@ HighPop releases are staged around stability and self-hostability. A stage is me
 - Verified RogueRust GitHub installation/update with version and readiness diagnostics
 - Clearer visual hierarchy, status pills, spacing, and managed-mod presentation
 
-## Stage 8 — v0.8 automation and remote portability
+## Stage 8 — v0.8 automation and remote portability (in progress)
+
+Delivered in the first v0.8 slice:
+
+- `Auto-start` and `Always-on` are independent: loading HighPop cannot start a stopped always-on profile
+- Framework-aware RogueRust deployment for Oxide/uMod and Carbon, including dual-install detection and verified rollback-safe replacement
+
+Remaining v0.8 work:
 
 - SFTP/FTPS file-transfer profiles for remote hosts
 - Import/export bundles with secrets excluded by default
@@ -40,6 +47,7 @@ HighPop releases are staged around stability and self-hostability. A stage is me
 - Scheduled off-machine backup replication without requiring a hosted HighPop account
 - Event-triggered automation for crash, player-count, update, backup, and readiness events
 - Maintenance windows and update deferral while players are online
+- Opt-in live map workspace fed by an authenticated RogueRust telemetry bridge; vanilla WebRCON does not expose trustworthy player coordinates
 
 ## Stage 9 — v0.9 provider interfaces
 

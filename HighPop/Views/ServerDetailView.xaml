@@ -908,7 +908,7 @@
                                 <CheckBox IsChecked="{Binding Server.KeepOnline}" Style="{StaticResource DarkCheckBox}"
                                           Content="Always-on: keep this server online" Margin="0,0,0,5"
                                           ToolTip="Recommended for production. Empty-player shutdown is ignored and unexpected exits are retried indefinitely with a capped backoff."/>
-                                <TextBlock Text="Always-on never stops Rust because it has zero players. Manual and scheduled maintenance actions still work normally."
+                                <TextBlock Text="Always-on recovers a server after an unexpected exit only after HighPop started or reattached it. It never starts a stopped server merely because the manager opened; use Auto-start for that. Empty-player shutdown remains disabled."
                                            Foreground="{StaticResource TextMutedBrush}" FontSize="11"
                                            TextWrapping="Wrap" Margin="20,0,0,8"/>
                                 <CheckBox IsChecked="{Binding Server.WakeOnDemand}" Style="{StaticResource DarkCheckBox}"
@@ -1605,7 +1605,7 @@
                                             <TextBlock Text="{Binding RogueRustStatus}" Foreground="{StaticResource AccentGreenBrush}"/>
                                         </Border>
                                     </Grid>
-                                    <TextBlock Text="Installs the latest public RogueRust DLL from GitHub into RustDedicated_Data/Managed. HighPop verifies SHA-256 before replacing the current DLL and keeps a timestamped rollback copy. Oxide/uMod is required."
+                                    <TextBlock Text="Installs the same verified RogueRust DLL into the active framework's correct extension location: RustDedicated_Data/Managed for Oxide/uMod or carbon/extensions for Carbon. If both are detected, both copies are updated. A timestamped rollback copy is retained."
                                                FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                                TextWrapping="Wrap" Margin="0,0,0,12"/>
                                     <StackPanel Orientation="Horizontal">

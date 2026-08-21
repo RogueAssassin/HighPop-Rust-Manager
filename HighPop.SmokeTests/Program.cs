@@ -43,6 +43,14 @@ Check(server.RconAutoConnectDelaySeconds == 60
     "slow Rust startup and WebRCON timing defaults");
 Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
     "production profiles default to always-on recovery without empty-player shutdown");
+server.AutoStart = false;
+Check(!ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false),
+    "always-on alone never starts a stopped server when HighPop opens");
+server.AutoStart = true;
+Check(ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false)
+      && !ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: true),
+    "manager launch starts only AutoStart profiles that were not reattached");
+server.AutoStart = false;
 
 var scheduleReference = new DateTime(2026, 7, 24, 15, 30, 0);
 var onceSchedule = new ScheduledTask
@@ -119,6 +127,21 @@ try
     Directory.CreateDirectory(testRoot);
     server.InstallPath = Path.Combine(testRoot, "server");
     Directory.CreateDirectory(server.InstallPath);
+
+    var oxideManaged = Path.Combine(server.InstallPath, "RustDedicated_Data", "Managed");
+    Directory.CreateDirectory(oxideManaged);
+    File.Copy(Environment.ProcessPath!, Path.Combine(oxideManaged, "Oxide.Core.dll"));
+    var oxideTargets = ModManagerService.GetRogueRustInstallTargets(server.InstallPath);
+    Check(oxideTargets.Count == 1
+          && oxideTargets[0].Framework == "Oxide/uMod"
+          && oxideTargets[0].Directory == oxideManaged,
+        "RogueRust targets Oxide's managed directory");
+    Directory.CreateDirectory(Path.Combine(server.InstallPath, "carbon"));
+    var dualTargets = ModManagerService.GetRogueRustInstallTargets(server.InstallPath);
+    Check(dualTargets.Count == 2
+          && dualTargets.Any(target => target.Framework == "Carbon"
+              && target.Directory == Path.Combine(server.InstallPath, "carbon", "extensions")),
+        "RogueRust targets Carbon extensions and handles dual-framework detection");
 
     server.RustServerVariables =
     [

@@ -1485,9 +1485,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             ModStatusText = "Stop the Rust server before installing or updating RogueRust.";
             return;
         }
-        if (ModManagerService.GetInstalledOxideVersion(Server.InstallPath) == null)
+        if (ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Count == 0)
         {
-            ModStatusText = "RogueRust requires Oxide/uMod. Install Oxide first.";
+            ModStatusText = "RogueRust requires Oxide/uMod or Carbon. Install a mod framework first.";
             return;
         }
 
@@ -1497,8 +1497,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             var progress = new Progress<(int pct, string msg)>(x =>
                 WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
             var version = await _mods.InstallRogueRustAsync(Server.InstallPath, progress);
-            RogueRustStatus = $"Installed {version}";
-            AppendLog($"[Mods] ✅ RogueRust {version} installed and SHA-256 verified.", ConsoleMessageType.System);
+            var frameworks = string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath)
+                .Select(target => target.Framework));
+            RogueRustStatus = $"Installed {version} · {frameworks}";
+            AppendLog($"[Mods] ✅ RogueRust {version} installed for {frameworks} and SHA-256 verified.", ConsoleMessageType.System);
             AddActionLog($"RogueRust {version} installed or updated");
             RefreshInstalledPlugins();
         }
@@ -1540,7 +1542,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         DetectedModFramework = ModManagerService.GetDetectedFramework(Server.InstallPath);
         RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
-            ? $"Installed {version}"
+            ? $"Installed {version} · {string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Select(target => target.Framework))}"
             : "Not installed";
         InstalledPlugins = ModManagerService.GetInstalledPlugins(Server.InstallPath);
 
