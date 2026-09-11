@@ -161,6 +161,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             }
 
             variable.Enabled = true;
+            variable.Name = assignment.Name;
             variable.Value = assignment.Value;
             variable.LoadedFromServerConfig = true;
             variable.LoadedConfigValue = assignment.Value;
