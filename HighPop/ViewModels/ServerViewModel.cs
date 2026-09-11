@@ -216,11 +216,11 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public string StatusColor => Server.Status switch
     {
         ServerStatus.Running      => "#3FB950",
-        ServerStatus.Starting     => "#F05A28",
-        ServerStatus.Stopping     => "#F05A28",
+        ServerStatus.Starting     => "#22D3EE",
+        ServerStatus.Stopping     => "#A855F7",
         ServerStatus.Stopped      => "#8B949E",
-        ServerStatus.Installing   => "#F05A28",
-        ServerStatus.Updating     => "#F05A28",
+        ServerStatus.Installing   => "#22D3EE",
+        ServerStatus.Updating     => "#A855F7",
         ServerStatus.Error        => "#F85149",
         ServerStatus.NotInstalled => "#8B949E",
         _                         => "#8B949E",
@@ -230,6 +230,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public bool IsStopped    => Server.Status is ServerStatus.Stopped or ServerStatus.NotInstalled;
     public bool CanStart     => Server.Status is ServerStatus.Stopped or ServerStatus.Error or ServerStatus.NotInstalled;
     public bool CanStop      => Server.Status is ServerStatus.Running or ServerStatus.Starting;
+    public bool CanInstallServerFiles => !IsInstalling && !IsRunning;
     public bool HasRcon => Plugin?.HasRcon == true;
 
     public bool ShowVersionInfo => Plugin?.SteamAppId > 0;
@@ -607,7 +608,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         AddActionLog("Start requested");
         try
         {
-            if ((Server.UpdateOnStart || Server.AutoUpdate) && Plugin?.SteamAppId > 0)
+            if (Server.UpdateOnStart && Plugin?.SteamAppId > 0)
                 await InstallAsync();
 
             if (Server.BackupOnStart)
@@ -666,13 +667,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private async Task KillAsync()
+    private async Task ForceStopAsync()
     {
-        AddActionLog("Emergency process kill requested");
+        AddActionLog("Force Stop requested");
         try
         {
-            await _manager.KillAsync(Server);
-            AppendLog("[HighPop] Process killed.", ConsoleMessageType.System);
+            StopUpdateTimer();
+            await _manager.ForceStopAsync(Server);
+            AppendLog("[HighPop] Force Stop completed.", ConsoleMessageType.System);
             StopPerfMonitoring();
         }
         catch (Exception ex) { AppendLog("[ERR] " + ex.Message, ConsoleMessageType.Error); }
@@ -697,6 +699,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task InstallAsync()
     {
         if (Plugin == null) return;
+        if (IsRunning)
+        {
+            AppendLog(
+                "[HighPop] Install/Update is locked while Rust is running. Use Update to run the warned save → stop → update → start workflow, or stop the server first.",
+                ConsoleMessageType.Warning);
+            return;
+        }
         AddActionLog("Install/update requested");
 
         var expectedExecutable = Path.Combine(Server.InstallPath, Plugin.Executable);
@@ -751,7 +760,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task UpdateAsync()
     {
         AppendLog("[HighPop] " + Loc.StatusUpdating, ConsoleMessageType.System);
-        await InstallAsync();
+        if (IsRunning)
+            await RunPeriodicUpdateAsync(operatorRequested: true);
+        else
+            await InstallAsync();
     }
 
     // ── Console ─────────────────────────────────────────────────────────────
@@ -1320,7 +1332,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _updateTimer = null;
     }
 
-    private async Task RunPeriodicUpdateAsync()
+    private async Task RunPeriodicUpdateAsync(bool operatorRequested = false)
     {
         if (!await _periodicUpdateGate.WaitAsync(0)) return;
         try
@@ -1357,9 +1369,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
                 AppendLog($"[AutoUpdate] Rust update found: {installedBuild} → {latestBuild}.",
                     ConsoleMessageType.Warning);
-                await _manager.WarnPlayersAsync(Server, "Server restarting for an update in 1 minute");
-                await Task.Delay(60_000);
-                if (!Server.AutoUpdate || !IsRunning)
+                if (!await RunUpdateCountdownAsync(operatorRequested))
                 {
                     Server.AutoRestart = wasAutoRestart;
                     AppendLog("[AutoUpdate] Automatic update restart cancelled.",
@@ -1390,7 +1400,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     await _notifications.NotifyAsync(
                         $"🔄 {Server.DisplayName} updated & restarted",
                         Plugin?.GameName ?? "",
-                        "#F05A28");
+                        "#22D3EE");
                 }
                 else
                 {
@@ -1406,6 +1416,39 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             }
         }
         finally { _periodicUpdateGate.Release(); }
+    }
+
+    private async Task<bool> RunUpdateCountdownAsync(bool operatorRequested)
+    {
+        var checkpoints = ServerMaintenancePolicy.GetUpdateCountdownSeconds(
+            Server.AutoUpdateWarningMinutes);
+        for (var index = 0; index < checkpoints.Count; index++)
+        {
+            if (!IsRunning || (!operatorRequested && !Server.AutoUpdate)) return false;
+
+            var remaining = checkpoints[index];
+            var label = ServerMaintenancePolicy.FormatCountdown(remaining);
+            await _manager.WarnPlayersAsync(
+                Server,
+                $"Rust server update scheduled in {label}. The world will be saved before restart.");
+
+            var next = index + 1 < checkpoints.Count ? checkpoints[index + 1] : 0;
+            if (!await DelayUpdateCountdownAsync(remaining - next, operatorRequested)) return false;
+        }
+        return IsRunning && (operatorRequested || Server.AutoUpdate);
+    }
+
+    private async Task<bool> DelayUpdateCountdownAsync(int seconds, bool operatorRequested)
+    {
+        var remaining = seconds;
+        while (remaining > 0)
+        {
+            var slice = Math.Min(30, remaining);
+            await Task.Delay(TimeSpan.FromSeconds(slice));
+            remaining -= slice;
+            if (!IsRunning || (!operatorRequested && !Server.AutoUpdate)) return false;
+        }
+        return true;
     }
 
     // ── Mod manager ──────────────────────────────────────────────────────────
@@ -1758,7 +1801,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         if (_perfModel != null) return;
         _cpuSeries = new OxyPlot.Series.LineSeries
         {
-            Title = "CPU %", Color = OxyPlot.OxyColor.Parse("#F05A28"),
+            Title = "CPU %", Color = OxyPlot.OxyColor.Parse("#A855F7"),
             StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
         };
         _memSeries = new OxyPlot.Series.LineSeries
@@ -1798,7 +1841,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         };
         _netOutSeries = new OxyPlot.Series.LineSeries
         {
-            Title = "Upload KB/s", Color = OxyPlot.OxyColor.Parse("#F05A28"),
+            Title = "Upload KB/s", Color = OxyPlot.OxyColor.Parse("#A855F7"),
             StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
         };
         _playersSeries = new OxyPlot.Series.LineSeries
@@ -2774,6 +2817,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         OnPropertyChanged(nameof(IsStopped));
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanInstallServerFiles));
         OnPropertyChanged(nameof(StatusColor));
         OnPropertyChanged(nameof(UptimeText));
     }

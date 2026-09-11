@@ -180,7 +180,7 @@ public class NotificationService
         catch { }
     }
 
-    public async Task NotifyAsync(string title, string message, string color = "#F05A28")
+    public async Task NotifyAsync(string title, string message, string color = "#22D3EE")
     {
         var tasks = new List<Task>();
         if (_settings.DiscordEnabled && !string.IsNullOrWhiteSpace(_settings.DiscordWebhookUrl))
@@ -199,7 +199,7 @@ public class NotificationService
             ServerStatus.Running  when _settings.NotifyOnStart  => ($"✅ {server.DisplayName} started", "#3FB950"),
             ServerStatus.Stopped  when _settings.NotifyOnStop   => ($"⛔ {server.DisplayName} stopped", "#8B949E"),
             ServerStatus.Error    when _settings.NotifyOnCrash  => ($"💥 {server.DisplayName} crashed!", "#F85149"),
-            ServerStatus.Updating when _settings.NotifyOnUpdate => ($"🔄 {server.DisplayName} updating", "#F05A28"),
+            ServerStatus.Updating when _settings.NotifyOnUpdate => ($"🔄 {server.DisplayName} updating", "#A855F7"),
             _ => (null, null)
         };
 
@@ -324,7 +324,7 @@ public class NotificationService
         if (string.IsNullOrWhiteSpace(_settings.DiscordWebhookUrl)) return false;
         try
         {
-            await SendDiscordAsync("🧪 Test", "HighPop Discord notifications are working!", "#F05A28");
+            await SendDiscordAsync("🧪 Test", "HighPop Discord notifications are working!", "#22D3EE");
             return true;
         }
         catch { return false; }

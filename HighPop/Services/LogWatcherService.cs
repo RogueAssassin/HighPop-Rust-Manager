@@ -71,7 +71,7 @@ public class LogWatcherService
 
             case LogWatchAction.Notify:
                 await _notifications.NotifyAsync($"ℹ Log Watch — {server.DisplayName}",
-                    $"Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#F05A28");
+                    $"Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#A855F7");
                 break;
         }
 

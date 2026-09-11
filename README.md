@@ -21,21 +21,29 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 
 | Area | Capabilities |
 |---|---|
-| Rust installation | One-click SteamCMD bootstrap, install, validate, update, public-branch support, update-on-start |
-| Process control | Start, graceful stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
+| Rust installation | One-click SteamCMD bootstrap, stopped-server install/validate/update, public-branch support, update-on-start, and non-destructive live build checks |
+| Process control | Explicit Start, configurable save-and-quit Stop, save-backed Force Stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
 | High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, `server.cfg` variable synchronization, custom log directory, identity and conflict-safe ports |
 | Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
 | Mods and maps | Carbon and Oxide installation/detection, framework-aware verified RogueRust installation/update and diagnostic commands, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
 | Reliability | Explicit-start always-on recovery, separate launch-on-manager-start control, bounded crash-loop backoff, slow-start readiness grace, WebRCON retries, reasoned process-exit diagnostics, and non-destructive update checks |
 | Local telemetry | Opt-in versioned lifecycle/action/player-count JSONL events with per-server age and storage retention |
-| Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, serialized per server with visible results |
+| Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, plus configurable in-game update countdowns, serialized per server with visible results |
 | Monitoring | Persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |
 | Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, a local Discord bot with live boards and staff controls, webhooks, and SMTP alerts |
 | Windows controls | System tray, startup registration, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
 | Customization | Portable Rust presets, editable launch/config values, server templates, custom images, and replaceable brand assets |
 
 HighPop deliberately does not copy proprietary hosted databases or subscription services. VAC/VPN intelligence, globally shared ban data, and hosted web accounts require external data providers; the local manager remains usable without an account or recurring fee. See [ROADMAP.md](ROADMAP.md) for planned provider interfaces and deeper Rust telemetry.
+
+## Release branches
+
+- `main` contains production-ready releases and is the only branch that creates release packages.
+- `testing` contains audited integration and release-candidate work. Feature branches start from and merge back into `testing`.
+- Promotion uses a reviewed `testing` → `main` pull request after Windows CI and the manual Rust release matrix pass.
+
+The current integration findings and promotion checklist are maintained in [AUDIT.md](AUDIT.md).
 
 ## Install
 

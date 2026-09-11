@@ -6,7 +6,7 @@ public class ServerGroup
 {
     public string Id      { get; set; } = Guid.NewGuid().ToString();
     public string Name    { get; set; } = string.Empty;
-    public string Color   { get; set; } = "#F05A28";
+    public string Color   { get; set; } = "#A855F7";
     public List<string> ServerIds { get; set; } = [];
 }
 

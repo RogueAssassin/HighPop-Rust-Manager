@@ -616,17 +616,22 @@ public class ServerManagerService
 
         if (stopCmd != null && inst.Process?.HasExited == false)
         {
-            try { await inst.Process.StandardInput.WriteLineAsync(stopCmd); }
-            catch { }
+            await TrySendProcessCommandAsync(server.Id, inst, "server.save", "Saving Rust world before shutdown");
+            await Task.Delay(1000);
+            await TrySendProcessCommandAsync(server.Id, inst, stopCmd, "Requesting clean Rust shutdown");
             try
             {
-                using var gracefulStopCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var timeoutSeconds = ServerMaintenancePolicy.ClampGracefulStopTimeout(
+                    server.GracefulStopTimeoutSeconds);
+                using var gracefulStopCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
                 await inst.Process.WaitForExitAsync(gracefulStopCts.Token);
             }
             catch (OperationCanceledException)
             {
+                var timeoutSeconds = ServerMaintenancePolicy.ClampGracefulStopTimeout(
+                    server.GracefulStopTimeoutSeconds);
                 InjectLogLine(server.Id,
-                    "[HighPop] Rust did not exit within 30 seconds; forcing the process to close.",
+                    $"[HighPop] Rust did not exit within {timeoutSeconds} seconds; forcing the process to close.",
                     ConsoleMessageType.Warning);
             }
         }
@@ -686,13 +691,47 @@ public class ServerManagerService
     public bool IsRunning(string serverId)
         => _running.TryGetValue(serverId, out var inst) && inst.Process?.HasExited == false;
 
-    public Task KillAsync(GameServer server)
+    public async Task ForceStopAsync(GameServer server)
     {
         CancelRecovery(server.Id);
-        if (!_running.TryGetValue(server.Id, out var inst)) return KillOrphanedPidAsync(server);
+        var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try { await ForceStopCoreAsync(server); }
+        finally { gate.Release(); }
+    }
+
+    private async Task ForceStopCoreAsync(GameServer server)
+    {
+        if (!_running.TryGetValue(server.Id, out var inst))
+        {
+            await KillOrphanedPidAsync(server);
+            return;
+        }
         SetStatus(server, ServerStatus.Stopping);
         inst.IntentionalStop = true;
+        inst.StopReason = "Force Stop requested from HighPop";
         inst.DailyRestartCts.Cancel();
+        InjectLogLine(server.Id,
+            "[HighPop] Force Stop requested — saving the Rust world, requesting exit, then enforcing shutdown.",
+            ConsoleMessageType.Warning);
+
+        if (inst.Process?.HasExited == false)
+        {
+            await TrySendProcessCommandAsync(server.Id, inst, "server.save", "Force-saving Rust world");
+            await TrySendProcessCommandAsync(server.Id, inst, "quit", "Requesting immediate Rust exit");
+            try
+            {
+                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await inst.Process.WaitForExitAsync(exitCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                InjectLogLine(server.Id,
+                    "[HighPop] Rust did not exit after the force-save request; terminating the process tree.",
+                    ConsoleMessageType.Warning);
+            }
+        }
+
         JobObjectService.ReleaseJob(inst.JobHandle);
         inst.JobHandle = nint.Zero;
         _running.TryRemove(server.Id, out _);
@@ -702,7 +741,30 @@ public class ServerManagerService
         catch (InvalidOperationException) { /* process already dead — swallow */ }
         server.RunningPid = 0;
         SetStatus(server, ServerStatus.Stopped);
-        return Task.CompletedTask;
+    }
+
+    /// <summary>Compatibility alias for older call sites; Force Stop is the defined operation.</summary>
+    public Task KillAsync(GameServer server) => ForceStopAsync(server);
+
+    private async Task TrySendProcessCommandAsync(
+        string serverId,
+        ServerInstance instance,
+        string command,
+        string description)
+    {
+        if (instance.Process?.HasExited != false) return;
+        try
+        {
+            await instance.Process.StandardInput.WriteLineAsync(command);
+            await instance.Process.StandardInput.FlushAsync();
+            InjectLogLine(serverId, $"[HighPop] {description}.", ConsoleMessageType.System);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            InjectLogLine(serverId,
+                $"[HighPop] Could not send '{command}' through the process console: {ex.Message}",
+                ConsoleMessageType.Warning);
+        }
     }
 
     public void KillAll()

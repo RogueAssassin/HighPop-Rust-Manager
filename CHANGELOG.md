@@ -2,6 +2,10 @@
 
 ## 0.8.0
 
+- Established `main` as the production branch and `testing` as the integration/release-candidate branch, with CI running on both.
+- Reworked Stop into an explicit `server.save` → `quit` sequence with a configurable 15–600 second timeout, and reworked Force Stop to save, request immediate exit, then enforce process termination after five seconds.
+- Locked direct Install/Update while Rust is running and expanded safe live-update monitoring with configurable in-game countdown broadcasts before the save/stop/update/restart workflow.
+- Applied the graphite, violet, and cyan Rogue ecosystem identity to the shared application palette, headers, cards, navigation, selections, and lifecycle command deck.
 - Corrected lifecycle policy so `Always-on` protects only a server HighPop deliberately started or reattached; opening the manager no longer starts a stopped always-on profile unless `Auto-start` is separately enabled.
 - Added smoke coverage for the startup-policy boundary to prevent `KeepOnline` and `AutoStart` from becoming coupled again.
 - Extended the verified RogueRust installer to support both frameworks: Oxide/uMod installs to `RustDedicated_Data/Managed`, while Carbon installs to `carbon/extensions`.

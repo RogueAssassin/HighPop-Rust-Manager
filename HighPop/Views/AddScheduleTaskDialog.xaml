@@ -106,7 +106,7 @@
                     Background="#21262d" Foreground="#e6edf3" BorderThickness="1" BorderBrush="#30363d"
                     Cursor="Hand"/>
             <Button Content="Add task" Click="Add_Click" Padding="16,8"
-                    Background="#F05A28" Foreground="#fff" BorderThickness="0" Cursor="Hand"/>
+                    Background="{StaticResource BrandGradientBrush}" Foreground="#fff" BorderThickness="0" Cursor="Hand"/>
         </StackPanel>
     </StackPanel>
 </Window>

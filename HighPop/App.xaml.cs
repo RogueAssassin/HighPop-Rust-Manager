@@ -164,7 +164,9 @@ public partial class App : System.Windows.Application
                     var t = Task.Run(async () => {
                         try { await manager.StopAsync(serverVm.Server, "HighPop is closing"); } catch { }
                     });
-                    t.Wait(5000);
+                    var stopBudget = ServerMaintenancePolicy.ClampGracefulStopTimeout(
+                        serverVm.Server.GracefulStopTimeoutSeconds) + 5;
+                    t.Wait(TimeSpan.FromSeconds(stopBudget));
                 }
                 catch { }
             }

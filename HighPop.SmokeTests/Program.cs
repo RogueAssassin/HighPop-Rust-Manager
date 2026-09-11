@@ -117,6 +117,16 @@ Check(SteamCmdService.TryParseBranchBuildId(steamAppInfo, "public", out var publ
       && stagingBuild == "20490001",
     "SteamCMD branch build IDs are parsed before auto-update restart");
 
+Check(ServerMaintenancePolicy.ClampGracefulStopTimeout(1) == 15
+      && ServerMaintenancePolicy.ClampGracefulStopTimeout(120) == 120
+      && ServerMaintenancePolicy.ClampGracefulStopTimeout(5000) == 600,
+    "safe-stop deadlines remain within the supported 15–600 second range");
+var fiveMinuteUpdateCountdown = ServerMaintenancePolicy.GetUpdateCountdownSeconds(5);
+Check(fiveMinuteUpdateCountdown.SequenceEqual(new[] { 300, 180, 60, 30, 10 })
+      && ServerMaintenancePolicy.FormatCountdown(60) == "1 minute"
+      && ServerMaintenancePolicy.FormatCountdown(30) == "30 seconds",
+    "safe-update countdown emits deterministic in-game warning checkpoints");
+
 server.RconPassword = "short";
 Check(rust.ValidateBeforeStart(server)?.Contains("12 characters") == true,
     "weak RCON password rejected");

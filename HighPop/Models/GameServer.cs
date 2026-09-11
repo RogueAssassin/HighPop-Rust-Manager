@@ -39,6 +39,8 @@ public class GameServer
     public int  AutoRestartDelaySec    { get; set; } = 10;   // seconds before restart
     public bool AutoUpdate             { get; set; } = false;
     public int  AutoUpdateIntervalMin  { get; set; } = 30;   // minutes between update checks
+    /// <summary>Minutes of in-game notice before a detected Rust update is applied.</summary>
+    public int  AutoUpdateWarningMinutes { get; set; } = 5;
     public bool AutoStart              { get; set; } = false;
     public bool WakeOnDemand           { get; set; } = false;
     public bool WakeOnDemandPortTrigger { get; set; } = true;
@@ -47,6 +49,8 @@ public class GameServer
     public bool UpdateOnStart          { get; set; } = false;
     public bool BackupOnStart          { get; set; } = false;
     public bool BackupOnShutdown       { get; set; } = false;
+    /// <summary>Maximum wait for a normal save-and-quit operation before HighPop forces exit.</summary>
+    public int GracefulStopTimeoutSeconds { get; set; } = 120;
     public bool   DiscordAlertsEnabled    { get; set; } = true;
     /// <summary>Server-specific Discord webhook URL. Falls back to global setting when empty.</summary>
     public string DiscordWebhookUrl       { get; set; } = string.Empty;

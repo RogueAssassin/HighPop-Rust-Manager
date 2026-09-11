@@ -6,6 +6,6 @@ public class MachineDefinition
     public string Name    { get; set; } = "";
     public string Url     { get; set; } = ""; // e.g. http://192.168.1.50:8765
     public string Token   { get; set; } = "";
-    public string Color   { get; set; } = "#F05A28";
+    public string Color   { get; set; } = "#A855F7";
     public bool   Enabled { get; set; } = true;
 }

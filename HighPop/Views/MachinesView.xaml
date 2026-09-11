@@ -141,10 +141,10 @@
                                                                                     <Setter Property="Fill" Value="#D29922"/>
                                                                                 </DataTrigger>
                                                                                 <DataTrigger Binding="{Binding Status}" Value="Installing">
-                                                                                    <Setter Property="Fill" Value="#F05A28"/>
+                                                                                    <Setter Property="Fill" Value="#22D3EE"/>
                                                                                 </DataTrigger>
                                                                                 <DataTrigger Binding="{Binding Status}" Value="Updating">
-                                                                                    <Setter Property="Fill" Value="#F05A28"/>
+                                                                                    <Setter Property="Fill" Value="#A855F7"/>
                                                                                 </DataTrigger>
                                                                                 <DataTrigger Binding="{Binding Status}" Value="Error">
                                                                                     <Setter Property="Fill" Value="#F85149"/>

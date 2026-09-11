@@ -41,11 +41,11 @@ public partial class RemoteServerViewModel : ObservableObject, IDisposable
     public string StatusColor => Status switch
     {
         "Running"      => "#3FB950",
-        "Starting"     => "#F05A28",
-        "Stopping"     => "#F05A28",
+        "Starting"     => "#22D3EE",
+        "Stopping"     => "#A855F7",
         "Stopped"      => "#8B949E",
-        "Installing"   => "#F05A28",
-        "Updating"     => "#F05A28",
+        "Installing"   => "#22D3EE",
+        "Updating"     => "#A855F7",
         "Error"        => "#F85149",
         "NotInstalled" => "#8B949E",
         _              => "#8B949E",

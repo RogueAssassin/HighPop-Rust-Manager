@@ -39,7 +39,7 @@
 
             <!-- ══ TITLEBAR ══ -->
             <Border Grid.Row="0" Grid.ColumnSpan="2"
-                    Background="{StaticResource BgSurfaceBrush}"
+                    Background="{StaticResource BrandHeaderBrush}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
                     CornerRadius="0"
                     MouseLeftButtonDown="TitleBar_MouseDown">
@@ -101,7 +101,7 @@
 
             <!-- ══ SIDEBAR ══ -->
             <Border Grid.Row="1" Grid.Column="0"
-                    Background="{StaticResource BgSurfaceBrush}"
+                    Background="{StaticResource BrandHeaderBrush}"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                 <DockPanel>
                     <!-- Bottom buttons — compact icon row -->

@@ -613,7 +613,7 @@ public partial class MainViewModel : BaseViewModel
                 await _notifications.NotifyAsync(
                     $"⬆️ HighPop {latest} is available",
                     "A new version of HighPop Rust Manager has been released. Open HighPop to update.",
-                    "#F05A28");
+                    "#A855F7");
             }
             catch { }
         }

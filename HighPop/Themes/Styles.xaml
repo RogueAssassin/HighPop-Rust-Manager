@@ -41,7 +41,8 @@
     <!-- Button Base -->
     <Style x:Key="BaseButton" TargetType="Button">
         <Setter Property="Cursor" Value="Hand"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="16,8"/>
         <Setter Property="FontFamily" Value="Segoe UI"/>
         <Setter Property="FontSize" Value="13"/>
@@ -50,12 +51,15 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}"
-                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bd" Property="Opacity" Value="0.85"/>
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                            <Setter TargetName="bd" Property="Opacity" Value="0.92"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="bd" Property="Opacity" Value="0.7"/>
@@ -70,25 +74,29 @@
     </Style>
 
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-        <Setter Property="Background" Value="{StaticResource AccentBlueBrush}"/>
-        <Setter Property="Foreground" Value="#0D1117"/>
+        <Setter Property="Background" Value="{StaticResource BrandGradientBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AccentVioletBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
     <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-        <Setter Property="Background" Value="{StaticResource AccentGreenBrush}"/>
-        <Setter Property="Foreground" Value="#0D1117"/>
+        <Setter Property="Background" Value="#153C32"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AccentGreenBrush}"/>
+        <Setter Property="Foreground" Value="#B8FFD2"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
     <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-        <Setter Property="Background" Value="{StaticResource AccentRedBrush}"/>
-        <Setter Property="Foreground" Value="#ffffff"/>
+        <Setter Property="Background" Value="#421C2A"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AccentRedBrush}"/>
+        <Setter Property="Foreground" Value="#FFD5DD"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
     <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
         <Setter Property="Background" Value="{StaticResource BgSurface3Brush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
     </Style>
 
     <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
@@ -391,11 +399,11 @@
 
     <!-- Card border -->
     <Style x:Key="Card" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource BgSurfaceBrush}"/>
+        <Setter Property="Background" Value="{StaticResource BgSurface2Brush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="10"/>
-        <Setter Property="Padding" Value="18"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="Padding" Value="20"/>
     </Style>
 
     <Style x:Key="StatusPill" TargetType="Border">
