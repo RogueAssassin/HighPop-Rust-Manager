@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.8.0-F05A28">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.8.0-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -25,7 +25,7 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 | Process control | Start, graceful stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
 | High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, `server.cfg` variable synchronization, custom log directory, identity and conflict-safe ports |
 | Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
-| Mods and maps | Carbon and Oxide installation/detection, framework-aware verified RogueRust installation/update/readiness checks, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
+| Mods and maps | Carbon and Oxide installation/detection, framework-aware verified RogueRust installation/update and diagnostic commands, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
 | Reliability | Explicit-start always-on recovery, separate launch-on-manager-start control, bounded crash-loop backoff, slow-start readiness grace, WebRCON retries, reasoned process-exit diagnostics, and non-destructive update checks |
 | Local telemetry | Opt-in versioned lifecycle/action/player-count JSONL events with per-server age and storage retention |
@@ -94,6 +94,10 @@ The dedicated **Rust** tab separates Facepunch browser tags, community vanilla/m
 Rust custom variables are read from and saved to `server/<identity>/cfg/server.cfg`. Facepunch documents this as the startup configuration file for larger variable sets and notes that its values take priority over matching command-line values. HighPop loads active assignments already in that file, preserves comments and unrelated lines, and only rewrites changed or explicitly disabled rows.
 
 Upgrading from v0.3 is automatic: HighPop moves variables from its own managed `serverauto.cfg` block into `server.cfg` the next time the configuration is saved or Rust starts. A value already present in `server.cfg` wins. HighPop removes only its marked legacy block and leaves any other `serverauto.cfg` content alone.
+
+Before changing an existing `server.cfg`, HighPop saves its exact previous contents under `server/<identity>/cfg/.highpop-backups/`. The newest 20 snapshots are retained. To restore one, stop Rust, copy the selected snapshot over `server.cfg`, then use **Reload from file** before starting the server again.
+
+RogueRust installation is framework-aware and transactional. The downloaded `Oxide.Ext.RogueRust.dll` must match the release's `SHA256SUMS.txt` before any target changes. Oxide/uMod uses `RustDedicated_Data/Managed`; Carbon uses `carbon/extensions`. Existing DLLs receive `.bak-<operation>` rollback copies, with the newest 20 retained per target. If any target fails, HighPop restores every target already changed. For a manual restore, stop Rust, replace the installed DLL with the chosen `.bak-*` file, remove the backup suffix, and restart Rust. **Run diagnostics** sends `roguerust.version` and `roguerust.readiness`; review their responses in the Console tab. It does not yet calculate a pass/fail health result.
 
 When a previously unreleased project version reaches `main`, GitHub Actions creates its version tag and publishes five Windows x64 assets: the direct self-contained `.exe`, its SHA-256 file, the recommended portable ZIP, its SHA-256 file, and a JSON manifest containing sizes, hashes, and the source commit. Later commits with the same project version skip release publication. Authenticode signing is enabled automatically when the repository signing certificate secrets are configured.
 

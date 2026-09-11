@@ -32,36 +32,70 @@ HighPop releases are staged around stability and self-hostability. A stage is me
 - Verified RogueRust GitHub installation/update with version and readiness diagnostics
 - Clearer visual hierarchy, status pills, spacing, and managed-mod presentation
 
-## Stage 8 — v0.8 automation and remote portability (in progress)
+## Stage 8 — v0.8 safe policy and managed extensions (in progress)
 
 Delivered in the first v0.8 slice:
 
 - `Auto-start` and `Always-on` are independent: loading HighPop cannot start a stopped always-on profile
-- Framework-aware RogueRust deployment for Oxide/uMod and Carbon, including dual-install detection and verified rollback-safe replacement
+- Framework-aware RogueRust deployment for Oxide/uMod and Carbon, including verified transactional replacement and automatic rollback
+- Exact `server.cfg` rollback snapshots with bounded retention and documented recovery
+- Unified HighPop icon, banner, splash, and in-app wordmark aligned with the Rogue ecosystem
 
-Remaining v0.8 work:
+v0.8 release gates:
 
-- SFTP/FTPS file-transfer profiles for remote hosts
-- Import/export bundles with secrets excluded by default
-- Dry-run import validation, conflict reporting, and rollback snapshots
-- Scheduled off-machine backup replication without requiring a hosted HighPop account
-- Event-triggered automation for crash, player-count, update, backup, and readiness events
-- Maintenance windows and update deferral while players are online
-- Opt-in live map workspace fed by an authenticated RogueRust telemetry bridge; vanilla WebRCON does not expose trustworthy player coordinates
+- Windows build, smoke tests, and self-contained publish all pass at the final commit
+- Oxide-only, Carbon-only, and failed dual-target RogueRust scenarios are verified
+- All four `Auto-start` / `Always-on` combinations are verified across manager restart, explicit stop, crash, and PID reattachment
+- Clean-install and v0.6/v0.7 upgrade tests pass with no stale version or policy text in the portable package
 
-## Stage 9 — v0.9 provider interfaces
+## Stage 9 — v0.8.1 QoS baseline and lifecycle observability
 
-- Pluggable VPN/proxy and geolocation lookups with caching and clear privacy controls
-- Optional VAC/profile-risk sources that comply with provider terms
-- Federated ban-list adapter with signatures, audit history, and per-list trust controls
-- Prometheus/OpenTelemetry export and documented webhook event schemas
+- Model explicit desired states: stopped by operator, starting, online, recovering, maintenance, and faulted
+- Separate process-running, Rust-ready, WebRCON-ready, and fresh-player-sample health signals
+- Use bounded, jittered WebRCON reconnects and record every automatic recovery decision
+- Harden schedules for duplicate suppression, restart catch-up, time-zone/DST changes, and overlapping tasks
+- Add global/per-server limits and CPU, disk, and network throttles for backup, update, and replication work
+- Export a redacted support bundle covering lifecycle, scheduler health, ports, recent logs, and configuration state
 
-## Stage 10 — v1.0 service and experience
+Quality targets:
 
-- More languages and accessible high-contrast themes
-- First-run diagnostics for NAT, firewall, SteamCMD, WebRCON, and Rust+ ports
-- Preset marketplace based on signed plain JSON bundles
-- Headless Windows service mode with the desktop application acting as a client
-- Role-based operator audit views and reusable per-server dashboard layouts
+- Manual stops remain stopped until an explicit start trigger
+- Every changed config has a verified restorable predecessor
+- 99% of due scheduled actions begin within 30 seconds when the host and server gate are available
+- Unexpected exits are detected within 10 seconds without a hot restart loop
+- Downloads, backups, updates, log ingestion, and fleet polling do not block the UI thread
+
+## Stage 10 — v0.9 production-safe automation and portability
+
+- Maintenance windows, player-aware update deferral, countdown broadcasts, cancellation, and maximum deferral
+- Resumable update, backup, wipe, restore, framework-update, and config-deployment workflows with preflight and rollback
+- Event-triggered automation for crash, readiness, player thresholds, backup failure, update availability, and disk pressure
+- SFTP/FTPS transfer profiles, safe import/export bundles, dry-run conflict reporting, and off-machine backup replication
+- Backup verification and scheduled restore drills with recovery-point and recovery-time reporting
+- Notification deduplication, severity routing, quiet hours, and persistent-fault escalation
+- Opt-in live map workspace fed by an authenticated RogueRust telemetry bridge
+
+Release gate: a 72-hour fault-injection soak with manager/host restarts produces no data loss, duplicate scheduled action, or uncontrolled restart loop.
+
+## Stage 11 — v0.10 operator experience and accessibility
+
+- Validate fullscreen, multi-monitor work areas, and 100–200% DPI without clipped controls
+- Standardize dialogs, validation summaries, confirmations, keyboard navigation, focus order, and high-contrast states
+- Correlate lifecycle, RCON, scheduler, config, backup, update, and notification events in one operations timeline
+- Provide actionable single-server and fleet dashboards instead of raw metric overload
+- Benchmark and optimize large logs, long player lists, many schedules, and multi-server polling
+
+Release gate: Windows 10/11 display matrix passes, critical workflows work keyboard-only, and background operations cause no UI stall longer than 250 ms.
+
+## Stage 12 — v1.0 service-grade architecture and provider interfaces
+
+- Move lifecycle, scheduler, health, and recovery ownership into a headless Windows service with a reconnecting WPF client
+- Add authenticated local IPC, least-privilege service configuration, operator roles, and tamper-evident auditing
+- Add staged self-update, schema migration recovery, and automatic rollback to the last healthy manager build
+- Add pluggable VPN/proxy, geolocation, VAC/profile-risk, and signed federated ban-list providers with caching and privacy controls
+- Publish Prometheus/OpenTelemetry export and documented webhook event schemas
+- Add first-run NAT, firewall, SteamCMD, WebRCON, and Rust+ diagnostics
+
+Release gate: a seven-day multi-server soak survives desktop-client crashes and host reboot; a failed manager upgrade automatically returns to the last healthy build.
 
 Hosted vendor datasets and accounts will remain optional. Local Rust management must continue to work without an account, subscription, or recurring fee.

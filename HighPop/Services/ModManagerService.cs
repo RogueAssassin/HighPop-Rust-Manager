@@ -119,27 +119,112 @@ public sealed class ModManagerService
             .Select(line => line.Trim())
             .FirstOrDefault(line => line.EndsWith(dllAsset.Name, StringComparison.OrdinalIgnoreCase))?
             .Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        var actual = Convert.ToHexString(SHA256.HashData(bytes));
-        if (string.IsNullOrWhiteSpace(expected)
-            || !actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("RogueRust SHA-256 verification failed; the existing installation was not changed.");
-
-        for (var index = 0; index < targets.Count; index++)
-        {
-            var target = targets[index];
-            Directory.CreateDirectory(target.Directory);
-            var destination = target.DllPath;
-            if (File.Exists(destination))
-                File.Copy(destination, destination + $".bak-{DateTime.Now:yyyyMMdd-HHmmss}", overwrite: false);
-            var temporary = destination + ".highpop.tmp";
-            await File.WriteAllBytesAsync(temporary, bytes);
-            File.Move(temporary, destination, overwrite: true);
-            Report(progress, 70 + ((index + 1) * 25 / targets.Count),
-                $"Installed the verified DLL for {target.Framework}.");
-        }
+        await InstallVerifiedRogueRustFilesAsync(targets, bytes, expected, progress);
         var frameworks = string.Join(" and ", targets.Select(target => target.Framework));
         Report(progress, 100, $"RogueRust {tag} installed for {frameworks}. Restart Rust to load it.");
         return tag;
+    }
+
+    /// <summary>
+    /// Stages and verifies every target before replacing anything. If a later replacement fails,
+    /// every earlier target is restored to its exact pre-install state.
+    /// </summary>
+    internal static async Task InstallVerifiedRogueRustFilesAsync(
+        IReadOnlyList<RogueRustInstallTarget> targets,
+        byte[] bytes,
+        string? expectedSha256,
+        IProgress<(int pct, string msg)>? progress = null,
+        Action<int>? beforeReplaceForTest = null)
+    {
+        if (targets.Count == 0)
+            throw new InvalidOperationException("No RogueRust installation targets were supplied.");
+
+        var actual = Convert.ToHexString(SHA256.HashData(bytes));
+        if (string.IsNullOrWhiteSpace(expectedSha256)
+            || !actual.Equals(expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(
+                "RogueRust SHA-256 verification failed; the existing installation was not changed.");
+
+        if (targets.Select(target => Path.GetFullPath(target.DllPath))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Count() != targets.Count)
+            throw new InvalidOperationException("RogueRust installation targets must be unique.");
+
+        var operationId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}";
+        var changes = new List<RogueRustInstallChange>();
+        try
+        {
+            // Complete all fallible directory, staging, and backup work before committing a target.
+            foreach (var target in targets)
+            {
+                Directory.CreateDirectory(target.Directory);
+                var destination = target.DllPath;
+                var temporary = destination + $".highpop-{operationId}.tmp";
+                var backup = File.Exists(destination)
+                    ? destination + $".bak-{operationId}"
+                    : null;
+                var change = new RogueRustInstallChange(target, destination, temporary, backup);
+                changes.Add(change);
+                await File.WriteAllBytesAsync(temporary, bytes);
+                if (backup != null) File.Copy(destination, backup, overwrite: false);
+            }
+
+            for (var index = 0; index < changes.Count; index++)
+            {
+                beforeReplaceForTest?.Invoke(index);
+                var change = changes[index];
+                File.Move(change.TemporaryPath, change.DestinationPath, overwrite: true);
+                change.Committed = true;
+                Report(progress, 70 + ((index + 1) * 25 / changes.Count),
+                    $"Installed the verified DLL for {change.Target.Framework}.");
+            }
+
+            foreach (var change in changes)
+                PruneRogueRustBackups(change.DestinationPath, keep: 20);
+        }
+        catch (Exception installError)
+        {
+            var rollbackErrors = new List<Exception>();
+            foreach (var change in changes.Where(change => change.Committed).Reverse())
+            {
+                try
+                {
+                    if (change.BackupPath != null)
+                        File.Copy(change.BackupPath, change.DestinationPath, overwrite: true);
+                    else if (File.Exists(change.DestinationPath))
+                        File.Delete(change.DestinationPath);
+                }
+                catch (Exception rollbackError)
+                {
+                    rollbackErrors.Add(rollbackError);
+                }
+            }
+
+            foreach (var change in changes)
+            {
+                try { if (File.Exists(change.TemporaryPath)) File.Delete(change.TemporaryPath); }
+                catch { }
+            }
+
+            if (rollbackErrors.Count > 0)
+                throw new AggregateException(
+                    "RogueRust installation failed and one or more targets could not be restored.",
+                    new[] { installError }.Concat(rollbackErrors));
+            throw new InvalidOperationException(
+                "RogueRust installation failed; every changed target was restored.", installError);
+        }
+    }
+
+    private static void PruneRogueRustBackups(string destination, int keep)
+    {
+        var directory = Path.GetDirectoryName(destination);
+        if (directory == null || !Directory.Exists(directory)) return;
+        foreach (var old in new DirectoryInfo(directory)
+                     .GetFiles(Path.GetFileName(destination) + ".bak-*")
+                     .OrderByDescending(file => file.CreationTimeUtc)
+                     .Skip(keep))
+        {
+            try { old.Delete(); } catch { }
+        }
     }
 
     public static string? GetInstalledRogueRustVersion(string installPath)
@@ -195,8 +280,9 @@ public sealed class ModManagerService
     }
 
     public static bool IsCarbonInstalled(string installPath) =>
-        Directory.Exists(Path.Combine(installPath, "carbon"))
-        || Directory.Exists(Path.Combine(installPath, "Carbon.Common"))
+        File.Exists(Path.Combine(installPath, "carbon", "managed", "Carbon.Common.dll"))
+        || File.Exists(Path.Combine(installPath, "carbon", "managed", "Carbon.dll"))
+        || File.Exists(Path.Combine(installPath, "Carbon.Common", "Carbon.Common.dll"))
         || File.Exists(Path.Combine(installPath, "HarmonyMods", "Carbon.Loader.dll"));
 
     public static string GetDetectedFramework(string installPath)
@@ -252,6 +338,15 @@ public sealed class ModManagerService
             catch { }
         }
         return null;
+    }
+
+    private sealed record RogueRustInstallChange(
+        RogueRustInstallTarget Target,
+        string DestinationPath,
+        string TemporaryPath,
+        string? BackupPath)
+    {
+        public bool Committed { get; set; }
     }
 
     private static void AddPlugins(List<InstalledModPlugin> target, string framework, string directory)

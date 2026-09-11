@@ -1,12 +1,13 @@
 HighPop runtime assets
 ======================
 
-HighPop Rust Manager v0.7.0
+HighPop Rust Manager v0.8.0
 
 HighPop.exe is self-contained. This folder is the only external location HighPop uses:
 
-Production Rust profiles use the always-on policy by default. HighPop resumes them when the
-manager opens and retries unexpected exits with a capped backoff until an operator stops them.
+Production Rust profiles use the Always-on recovery policy by default. Always-on retries an
+unexpected exit only after HighPop deliberately started or reattached the server. It never starts
+a stopped server merely because the manager opened; enable Auto-start for that behavior.
 
 - data/       encrypted settings, databases, schedules, update staging, and opt-in telemetry
 - servers/    Rust dedicated server installations

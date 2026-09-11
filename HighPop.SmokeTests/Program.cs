@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using HighPop.Games;
 using HighPop.Models;
 using HighPop.Services;
@@ -43,14 +44,19 @@ Check(server.RconAutoConnectDelaySeconds == 60
     "slow Rust startup and WebRCON timing defaults");
 Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
     "production profiles default to always-on recovery without empty-player shutdown");
+foreach (var keepOnline in new[] { false, true })
+{
+    server.KeepOnline = keepOnline;
+    server.AutoStart = false;
+    Check(!ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false),
+        $"AutoStart off never launches a stopped profile (Always-on: {keepOnline})");
+    server.AutoStart = true;
+    Check(ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false)
+          && !ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: true),
+        $"AutoStart launches only profiles not already reattached (Always-on: {keepOnline})");
+}
 server.AutoStart = false;
-Check(!ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false),
-    "always-on alone never starts a stopped server when HighPop opens");
-server.AutoStart = true;
-Check(ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false)
-      && !ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: true),
-    "manager launch starts only AutoStart profiles that were not reattached");
-server.AutoStart = false;
+server.KeepOnline = true;
 
 var scheduleReference = new DateTime(2026, 7, 24, 15, 30, 0);
 var onceSchedule = new ScheduledTask
@@ -136,12 +142,74 @@ try
           && oxideTargets[0].Framework == "Oxide/uMod"
           && oxideTargets[0].Directory == oxideManaged,
         "RogueRust targets Oxide's managed directory");
-    Directory.CreateDirectory(Path.Combine(server.InstallPath, "carbon"));
+    var carbonManaged = Path.Combine(server.InstallPath, "carbon", "managed");
+    Directory.CreateDirectory(carbonManaged);
+    File.Copy(Environment.ProcessPath!, Path.Combine(carbonManaged, "Carbon.Common.dll"));
     var dualTargets = ModManagerService.GetRogueRustInstallTargets(server.InstallPath);
     Check(dualTargets.Count == 2
           && dualTargets.Any(target => target.Framework == "Carbon"
               && target.Directory == Path.Combine(server.InstallPath, "carbon", "extensions")),
         "RogueRust targets Carbon extensions and handles dual-framework detection");
+
+    var staleCarbonRoot = Path.Combine(testRoot, "stale-carbon");
+    Directory.CreateDirectory(Path.Combine(staleCarbonRoot, "carbon"));
+    Check(!ModManagerService.IsCarbonInstalled(staleCarbonRoot),
+        "an empty or stale carbon directory is not treated as an active framework");
+
+    var rogueRustBytes = "verified RogueRust test payload"u8.ToArray();
+    var rogueRustHash = Convert.ToHexString(SHA256.HashData(rogueRustBytes));
+    var originalDlls = dualTargets.ToDictionary(
+        target => target.Framework,
+        target => System.Text.Encoding.UTF8.GetBytes("original " + target.Framework));
+    foreach (var target in dualTargets)
+    {
+        Directory.CreateDirectory(target.Directory);
+        await File.WriteAllBytesAsync(target.DllPath, originalDlls[target.Framework]);
+    }
+
+    await ModManagerService.InstallVerifiedRogueRustFilesAsync(
+        dualTargets, rogueRustBytes, rogueRustHash);
+    Check(dualTargets.All(target => File.ReadAllBytes(target.DllPath).SequenceEqual(rogueRustBytes)),
+        "verified RogueRust payload is installed for every detected framework");
+    Check(dualTargets.All(target => Directory.GetFiles(
+            target.Directory, "Oxide.Ext.RogueRust.dll.bak-*").Any(path =>
+                File.ReadAllBytes(path).SequenceEqual(originalDlls[target.Framework]))),
+        "RogueRust replacement retains exact rollback copies for every target");
+
+    var checksumRejected = false;
+    try
+    {
+        await ModManagerService.InstallVerifiedRogueRustFilesAsync(
+            dualTargets, "tampered"u8.ToArray(), rogueRustHash);
+    }
+    catch (InvalidDataException) { checksumRejected = true; }
+    Check(checksumRejected
+          && dualTargets.All(target => File.ReadAllBytes(target.DllPath).SequenceEqual(rogueRustBytes)),
+        "RogueRust checksum failure leaves every installed target unchanged");
+
+    foreach (var target in dualTargets)
+        await File.WriteAllBytesAsync(target.DllPath, originalDlls[target.Framework]);
+    var rollbackReported = false;
+    try
+    {
+        await ModManagerService.InstallVerifiedRogueRustFilesAsync(
+            dualTargets, rogueRustBytes, rogueRustHash,
+            beforeReplaceForTest: index =>
+            {
+                if (index == 1) throw new IOException("Injected second-target failure");
+            });
+    }
+    catch (InvalidOperationException ex)
+    {
+        rollbackReported = ex.Message.Contains("restored", StringComparison.OrdinalIgnoreCase);
+    }
+    Check(rollbackReported
+          && dualTargets.All(target => File.ReadAllBytes(target.DllPath)
+              .SequenceEqual(originalDlls[target.Framework]))
+          && !dualTargets.SelectMany(target => Directory.GetFiles(
+                  target.Directory, "*.highpop-*.tmp"))
+              .Any(),
+        "a failed dual-framework install restores every target and removes staged files");
 
     server.RustServerVariables =
     [
@@ -163,11 +231,12 @@ try
     var serverConfigPath = RustPlugin.GetServerConfigPath(server);
     var serverAutoPath = RustPlugin.GetLegacyServerAutoPath(server);
     Directory.CreateDirectory(Path.GetDirectoryName(serverConfigPath)!);
-    await File.WriteAllTextAsync(serverConfigPath,
+    const string originalServerConfig =
         "# Owner comment is preserved\n" +
         "server.hostname \"Preserved\"\n" +
         "bear.population \"3\"\n" +
-        "boar.population \"7\"\n");
+        "boar.population \"7\"\n";
+    await File.WriteAllTextAsync(serverConfigPath, originalServerConfig);
     await File.WriteAllTextAsync(serverAutoPath,
         "server.writecfg \"true\"\n\n" +
         "// HighPop managed variables — begin\n" +
@@ -198,14 +267,26 @@ try
           && !serverAuto.Contains("wolf.population"),
         "legacy HighPop block is removed without replacing owner serverauto.cfg content");
 
-    var firstWrite = serverConfig;
-    RustPlugin.WriteManagedServerConfig(server);
-    Check(await File.ReadAllTextAsync(serverConfigPath) == firstWrite,
-        "server.cfg synchronization is idempotent");
     var configBackupDirectory = Path.Combine(Path.GetDirectoryName(serverConfigPath)!, ".highpop-backups");
-    Check(Directory.Exists(configBackupDirectory)
-          && Directory.GetFiles(configBackupDirectory, "server-*.cfg").Length > 0,
-        "server.cfg changes create automatic rollback copies");
+    var initialBackups = Directory.GetFiles(configBackupDirectory, "server-*.cfg");
+    Check(initialBackups.Any(path => File.ReadAllText(path) == originalServerConfig),
+        "server.cfg rollback copy exactly matches the pre-change file");
+
+    var firstWrite = serverConfig;
+    var backupCountBeforeNoOp = initialBackups.Length;
+    RustPlugin.WriteManagedServerConfig(server);
+    Check(await File.ReadAllTextAsync(serverConfigPath) == firstWrite
+          && Directory.GetFiles(configBackupDirectory, "server-*.cfg").Length
+              == backupCountBeforeNoOp,
+        "idempotent server.cfg synchronization does not create another rollback copy");
+
+    for (var index = 0; index < 24; index++)
+    {
+        server.RustServerVariables.First(v => v.Name == "bear.population").Value = (index + 10).ToString();
+        RustPlugin.WriteManagedServerConfig(server);
+    }
+    Check(Directory.GetFiles(configBackupDirectory, "server-*.cfg").Length == 20,
+        "server.cfg rollback retention is capped at 20 copies");
 
     loadedBoar = server.RustServerVariables.First(v => v.Name == "boar.population");
     loadedBoar.Enabled = false;

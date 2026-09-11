@@ -5,7 +5,8 @@
 - Corrected lifecycle policy so `Always-on` protects only a server HighPop deliberately started or reattached; opening the manager no longer starts a stopped always-on profile unless `Auto-start` is separately enabled.
 - Added smoke coverage for the startup-policy boundary to prevent `KeepOnline` and `AutoStart` from becoming coupled again.
 - Extended the verified RogueRust installer to support both frameworks: Oxide/uMod installs to `RustDedicated_Data/Managed`, while Carbon installs to `carbon/extensions`.
-- Added dual-framework target detection, per-target rollback copies, and clearer framework-aware status and install guidance.
+- Made dual-framework updates transactional with automatic full-operation rollback, exact per-target backup copies, bounded retention, stricter Carbon detection, and failure-path smoke coverage.
+- Replaced the legacy HighPop artwork with a cleaner Rogue ecosystem-aligned icon, banner, in-app wordmark, and splash system.
 - Carried forward the v0.7 custom-variable workspace and visual refresh as the foundation of the v0.8 automation and portability milestone.
 
 ## 0.7.0

@@ -232,7 +232,8 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         if (!File.Exists(path)) return;
         var backupDirectory = Path.Combine(Path.GetDirectoryName(path)!, ".highpop-backups");
         Directory.CreateDirectory(backupDirectory);
-        var backup = Path.Combine(backupDirectory, $"server-{DateTime.Now:yyyyMMdd-HHmmss-fff}.cfg");
+        var backup = Path.Combine(backupDirectory,
+            $"server-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.cfg");
         File.Copy(path, backup, overwrite: false);
 
         foreach (var old in new DirectoryInfo(backupDirectory)

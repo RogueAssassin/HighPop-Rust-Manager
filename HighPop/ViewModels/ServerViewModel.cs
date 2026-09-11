@@ -1517,12 +1517,12 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (!IsRunning)
         {
-            ModStatusText = "Start Rust before running RogueRust diagnostics.";
+            ModStatusText = "Start Rust before sending RogueRust diagnostics.";
             return;
         }
         await _manager.SendCommandAsync(Server.Id, "roguerust.version");
         await _manager.SendCommandAsync(Server.Id, "roguerust.readiness");
-        ModStatusText = "RogueRust version and readiness commands sent. Review the Console tab.";
+        ModStatusText = "RogueRust version and readiness commands sent. Review their responses in the Console tab.";
         AddActionLog("Requested RogueRust readiness diagnostics");
     }
 

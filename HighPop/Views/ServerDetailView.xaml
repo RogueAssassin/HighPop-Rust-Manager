@@ -1605,14 +1605,14 @@
                                             <TextBlock Text="{Binding RogueRustStatus}" Foreground="{StaticResource AccentGreenBrush}"/>
                                         </Border>
                                     </Grid>
-                                    <TextBlock Text="Installs the same verified RogueRust DLL into the active framework's correct extension location: RustDedicated_Data/Managed for Oxide/uMod or carbon/extensions for Carbon. If both are detected, both copies are updated. A timestamped rollback copy is retained."
+                                    <TextBlock Text="Installs the same verified RogueRust DLL into the active framework's correct extension location: RustDedicated_Data/Managed for Oxide/uMod or carbon/extensions for Carbon. If both are detected, both copies update as one transaction; any failure restores all changed targets. The newest 20 rollback copies are retained per target."
                                                FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                                TextWrapping="Wrap" Margin="0,0,0,12"/>
                                     <StackPanel Orientation="Horizontal">
                                         <Button Content="⬇ Install / Update RogueRust" Style="{StaticResource PrimaryButton}"
                                                 Command="{Binding InstallRogueRustCommand}" Margin="0,0,8,0"
                                                 IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
-                                        <Button Content="✓ Run readiness check" Style="{StaticResource GhostButton}"
+                                        <Button Content="✓ Run diagnostics" Style="{StaticResource GhostButton}"
                                                 Command="{Binding CheckRogueRustHealthCommand}"/>
                                     </StackPanel>
                                 </StackPanel>
