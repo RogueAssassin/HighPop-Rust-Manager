@@ -8,7 +8,7 @@ Production branch: `main`
 
 The v0.8 push is suitable for continued testing, not immediate production promotion. The audited head was cleanly mergeable and both Windows build-and-test jobs passed. The new `testing` branch preserves that candidate while `main` remains on the published v0.6 production line.
 
-This audit hardened the highest-risk operator paths: normal Stop now explicitly saves then quits with a bounded configurable timeout; Force Stop saves, requests immediate exit, and enforces termination; live Install/Update is locked; safe update detection uses build IDs and configurable player countdowns; application exit honors the same stop budget; and CI now runs on `testing`.
+This audit hardened the highest-risk operator paths: normal Stop explicitly saves then quits with a bounded configurable timeout; Force Stop saves, requests immediate exit, and enforces termination; live Install/Update is locked; safe update detection uses build IDs and configurable player countdowns; and CI runs on `testing`. The latest baseline pass also de-duplicates `server.cfg`, makes the file's last active assignment authoritative, keeps every running Rust process alive on manager exit, and verifies PID/start-time/executable identity before reattachment.
 
 ## Findings
 
@@ -18,6 +18,11 @@ This audit hardened the highest-risk operator paths: normal Stop now explicitly 
 | P0 | Force Stop | The previous skull action killed the process tree without first requesting a Rust save. | Corrected: Force Stop issues `server.save`, then `quit`, waits five seconds, and kills only if still alive. |
 | P0 | Safe Stop | Stop sent only `quit`, used a fixed 30-second timeout, and application exit reduced that to five seconds. | Corrected: explicit save/quit sequence, per-server 15–600 second timeout, and matching exit budget. |
 | P0 | Live update | Direct Install/Update could run against files used by a live Rust process. | Corrected: direct install is locked while running; the managed update path checks build IDs and performs warned maintenance. |
+| P0 | Config duplication | Reload retained duplicate persisted rows and save left duplicate active assignments in `server.cfg`. | Corrected: reload collapses names case-insensitively and uses the last active file value; save comments older duplicates and leaves one authoritative assignment. |
+| P0 | Manager exit | Full exit stopped non-Always-on servers and the process-exit hook killed the remainder, losing the requested running state. | Corrected: close-to-tray is the recommended full-fidelity path; explicit exit detaches every live Rust process and persists verified reattachment identity. |
+| P1 | Reattached control | Redirected process stdin cannot be recovered after a manager restart. | Corrected for Rust commands and shutdown: command dispatch falls back to authenticated WebRCON. Console lines emitted while fully detached remain unavailable. |
+| P1 | Windows startup | Startup used a legacy per-user Run value. | Corrected: settings now create a per-user ONLOGON Task Scheduler entry that launches `--background`; the old Run value is migrated away after success. |
+| P1 | UI command surface | A large tab surface made missed bindings and legacy dialogs easy to overlook. | Corrected baseline: CI parses every XAML view, checks direct command bindings and code-behind handlers, and the close dialog now uses the shared brand system. Runtime/DPI testing remains required. |
 | P1 | Lifecycle tests | Smoke tests validate policies and parsing but do not exercise a disposable child process through start, save, quit, timeout, force-stop, and racing requests. | Required before production promotion. |
 | P1 | Operation model | UI, scheduler, health monitor, log watcher, Discord, and REST initiate lifecycle work through several orchestration paths. The manager gate serializes process operations, but there is no persisted desired-state/operation journal. | v0.8.1 lifecycle coordinator. |
 | P1 | Web API | The embedded API can bind to all interfaces, creates a broad firewall rule, serves permissive CORS headers, and has no TLS termination of its own. | Keep disabled by default; harden in v0.9 before map/remote expansion. |
@@ -33,7 +38,7 @@ This audit hardened the highest-risk operator paths: normal Stop now explicitly 
 
 - Windows .NET 10 restore, build, smoke tests, self-contained publish, and portable-output checks pass on `testing`.
 - Disposable-process lifecycle tests cover duplicate Start, Stop save/quit, timeout escalation, Force Stop, update failure, and concurrent requests.
-- Manual Rust matrix covers stopped/running/starting states, manager exit, PID reattachment, Auto-start × Always-on combinations, and Oxide/Carbon/both.
+- Manual Rust matrix covers stopped/running/starting states, tray close, explicit manager exit, verified PID reattachment, reattached WebRCON Stop/Force Stop, Windows logon task, Auto-start × Always-on combinations, and Oxide/Carbon/both.
 - Clean install plus v0.6 and v0.7 profile upgrades preserve server data and secrets.
 - Safe updater is tested with players online, an unavailable Steam service, insufficient disk, locked files, and a failed restart.
 - No unresolved P0 finding; every accepted P1 risk is called out in release notes with a rollback procedure.

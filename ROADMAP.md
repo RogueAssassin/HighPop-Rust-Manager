@@ -9,17 +9,20 @@ Delivered on `testing`:
 - Independent Auto-start and Always-on policies; a manual stop remains authoritative
 - Framework-aware, SHA-256 verified, transactional RogueRust deployment for Oxide/uMod and Carbon
 - Comment-preserving `server.cfg` synchronization with exact rollback snapshots and bounded retention
+- Case-insensitive `server.cfg` de-duplication with last-active-value precedence and one authoritative saved assignment
 - Explicit Start, Safe Stop, Force Stop, Restart, and Install/Update command deck
 - Safe Stop using `server.save` then `quit`, with a configurable 15–600 second deadline
 - Safe live-update detection using installed/current Rust build IDs and configurable in-game countdown messages
 - Graphite, violet, cyan, and metallic Rogue ecosystem theme applied through shared application resources
 - CI coverage for both `testing` and `main`; release packaging remains `main`-only
+- Full-fidelity close-to-tray, explicit process detachment, verified PID/start-time/path reattachment, WebRCON command fallback, and a per-user Windows logon task
 
 Promotion work:
 
 - Add disposable-process lifecycle and concurrency tests
 - Complete clean-install and v0.6/v0.7 profile migration testing
 - Run the Auto-start × Always-on × manager-restart/PID-reattach matrix
+- Verify tray close, explicit exit/reopen, reattached save/stop, and Windows sign-in recovery on a real Rust process
 - Validate Windows 10/11 at 100%, 125%, 150%, and 200% DPI
 
 ## v0.8.1 — Deterministic lifecycle coordinator
@@ -78,7 +81,7 @@ Performance targets: delta rather than full-state updates, coalesced UI renderin
 
 ## v1.0 — Service-grade HighPop
 
-- Move lifecycle, scheduling, health, update, and recovery ownership into a headless Windows service
+- Move lifecycle, scheduling, health, update, and recovery ownership from the current tray/background host into a true headless Windows service
 - Use authenticated local IPC with least privilege, operator roles, and tamper-evident audit records
 - Add staged HighPop self-update with schema migration recovery and automatic rollback
 - Publish Prometheus/OpenTelemetry metrics and versioned webhook schemas

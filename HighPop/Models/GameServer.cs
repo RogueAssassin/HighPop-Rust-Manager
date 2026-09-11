@@ -114,6 +114,10 @@ public class GameServer
     /// server after HighPop itself was closed and reopened. 0 = not running (or not tracked).
     /// </summary>
     public int RunningPid { get; set; }
+    /// <summary>UTC process start time used to reject a recycled PID during reattachment.</summary>
+    public DateTime? RunningProcessStartedUtc { get; set; }
+    /// <summary>Resolved executable path used to verify that a persisted PID is this server.</summary>
+    public string RunningExecutablePath { get; set; } = string.Empty;
 
     [JsonIgnore]
     public ServerStatus Status { get; set; } = ServerStatus.NotInstalled;

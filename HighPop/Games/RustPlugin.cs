@@ -112,18 +112,31 @@ public class RustPlugin : GamePluginBase, IWipePlugin
     public static int LoadServerConfigVariables(GameServer server)
     {
         server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+        CollapseDuplicateVariableRows(server.RustServerVariables);
+
+        var path = GetServerConfigPath(server);
+        if (!File.Exists(path))
+        {
+            foreach (var variable in server.RustServerVariables)
+            {
+                variable.LoadedFromServerConfig = false;
+                variable.LoadedConfigValue = string.Empty;
+            }
+            return 0;
+        }
+
+        var assignments = ParseAssignments(File.ReadAllLines(path))
+            .GroupBy(assignment => assignment.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Last())
+            .ToList();
+        var legacyManagedBlockExists = HasManagedBlock(
+            GetLegacyServerAutoPath(server), LegacyManagedCfgStart);
+
         foreach (var variable in server.RustServerVariables)
         {
             variable.LoadedFromServerConfig = false;
             variable.LoadedConfigValue = string.Empty;
         }
-
-        var path = GetServerConfigPath(server);
-        if (!File.Exists(path)) return 0;
-
-        var assignments = ParseAssignments(File.ReadAllLines(path)).ToList();
-        var legacyManagedBlockExists = HasManagedBlock(
-            GetLegacyServerAutoPath(server), LegacyManagedCfgStart);
 
         // After the v0.3 legacy block is gone, server.cfg is the source of truth. During the
         // one-time migration, retain saved enabled rows so they can move across safely.
@@ -133,9 +146,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
                 variable.Enabled = false;
         }
 
-        foreach (var assignment in assignments
-                     .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
-                     .Select(group => group.Last()))
+        foreach (var assignment in assignments)
         {
             var variable = server.RustServerVariables.FirstOrDefault(item =>
                 string.Equals(item.Name, assignment.Name, StringComparison.OrdinalIgnoreCase));
@@ -155,10 +166,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             variable.LoadedConfigValue = assignment.Value;
         }
 
-        return assignments
-            .Select(a => a.Name)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count();
+        return assignments.Count;
     }
 
     /// <summary>
@@ -184,23 +192,37 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             .GroupBy(v => v.Name.Trim(), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Last(),
                 StringComparer.OrdinalIgnoreCase);
-        var existingActiveNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+        var assignmentIndexes = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
         for (var index = 0; index < lines.Count; index++)
         {
-            if (!TryParseAssignment(lines[index], out var name, out var currentValue)
-                || !variables.TryGetValue(name, out var variable))
-                continue;
+            if (!TryParseAssignment(lines[index], out var name, out _)
+                || !variables.ContainsKey(name)) continue;
+            if (!assignmentIndexes.TryGetValue(name, out var indexes))
+                assignmentIndexes[name] = indexes = [];
+            indexes.Add(index);
+        }
+
+        var existingActiveNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in assignmentIndexes)
+        {
+            var variable = variables[entry.Key];
+            var authoritativeIndex = entry.Value[^1];
+
+            // Rust uses the last active assignment. Keep that position authoritative and turn
+            // older duplicates into comments so the file remains understandable and auditable.
+            foreach (var duplicateIndex in entry.Value.Take(entry.Value.Count - 1))
+                lines[duplicateIndex] = $"# Duplicate removed by HighPop: {lines[duplicateIndex].Trim()}";
 
             if (!variable.Enabled)
             {
-                lines[index] = $"# Disabled by HighPop: {lines[index].Trim()}";
+                lines[authoritativeIndex] = $"# Disabled by HighPop: {lines[authoritativeIndex].Trim()}";
                 continue;
             }
 
-            existingActiveNames.Add(name);
+            existingActiveNames.Add(entry.Key);
+            _ = TryParseAssignment(lines[authoritativeIndex], out _, out var currentValue);
             if (!string.Equals(currentValue, variable.Value, StringComparison.Ordinal))
-                lines[index] = FormatAssignment(variable);
+                lines[authoritativeIndex] = FormatAssignment(variable);
         }
 
         var append = variables.Values
@@ -225,6 +247,18 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         }
         LoadServerConfigVariables(server);
         return migrated;
+    }
+
+    private static void CollapseDuplicateVariableRows(
+        System.Collections.ObjectModel.ObservableCollection<RustServerVariable> variables)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = variables.Count - 1; index >= 0; index--)
+        {
+            var name = variables[index].Name?.Trim() ?? string.Empty;
+            if (name.Length > 0 && seen.Add(name)) continue;
+            variables.RemoveAt(index);
+        }
     }
 
     private static void CreateServerConfigBackup(string path)
@@ -299,6 +333,11 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         if ((server.RustServerVariables ?? []).Any(v =>
                 v.Enabled && !SafeVariableName.IsMatch(v.Name?.Trim() ?? string.Empty)))
             return "Enabled server.cfg variable names may only contain letters, numbers, dots, and underscores.";
+        if ((server.RustServerVariables ?? [])
+            .Where(v => !string.IsNullOrWhiteSpace(v.Name))
+            .GroupBy(v => v.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Any(group => group.Count() > 1))
+            return "Each server.cfg variable may appear only once in the Rust workspace.";
         return null;
     }
 

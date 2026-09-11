@@ -86,7 +86,6 @@ public class ServerManagerService
         _config  = config;
         _network = network;
         _telemetry = telemetry;
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => KillAll();
     }
 
     public ServerInstance? GetInstance(string serverId)
@@ -143,7 +142,7 @@ public class ServerManagerService
             var p = Process.GetProcessById(server.RunningPid);
             if (p.HasExited)
             {
-                server.RunningPid = 0;
+                ClearRunningIdentity(server);
                 return false;
             }
 
@@ -152,8 +151,28 @@ public class ServerManagerService
             if (!string.IsNullOrEmpty(exeName) && !string.Equals(p.ProcessName, exeName, StringComparison.OrdinalIgnoreCase))
             {
                 // PID was recycled by an unrelated process — not actually our server.
-                server.RunningPid = 0;
+                ClearRunningIdentity(server);
                 return false;
+            }
+
+            if (server.RunningProcessStartedUtc is { } expectedStart
+                && Math.Abs((p.StartTime.ToUniversalTime() - expectedStart).TotalSeconds) > 2)
+            {
+                ClearRunningIdentity(server);
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(server.RunningExecutablePath))
+            {
+                var actualPath = p.MainModule?.FileName;
+                if (string.IsNullOrWhiteSpace(actualPath)
+                    || !string.Equals(Path.GetFullPath(actualPath),
+                        Path.GetFullPath(server.RunningExecutablePath),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    ClearRunningIdentity(server);
+                    return false;
+                }
             }
 
             var inst = new ServerInstance(server) { Process = p, StartTime = SafeStartTime(p) };
@@ -164,11 +183,12 @@ public class ServerManagerService
                 if (!IsCurrentInstance(server.Id, inst)) return;
                 _network.UnregisterServer(server.Id);
                 RecordProcessExit(server, inst, SafeExitCode(p), inst.IntentionalStop);
-                server.RunningPid = 0;
+                ClearRunningIdentity(server);
                 RemoveInstanceIfCurrent(server.Id, inst);
                 SetStatus(server, inst.IntentionalStop ? ServerStatus.Stopped : ServerStatus.Error);
             };
             _running[server.Id] = inst;
+            RememberRunningIdentity(server, p);
             _network.RegisterServer(server.Id, p.Id);
             SetStatus(server, ServerStatus.Running);
             var msg = new ConsoleMessage { Text = $"[HighPop] Reattached to running process (PID {p.Id}) after HighPop restart.", Type = ConsoleMessageType.Info };
@@ -178,7 +198,7 @@ public class ServerManagerService
         }
         catch
         {
-            server.RunningPid = 0;
+            ClearRunningIdentity(server);
             return false;
         }
     }
@@ -410,7 +430,7 @@ public class ServerManagerService
                 _network.UnregisterServer(server.Id);
                 var exitCode = SafeExitCode(proc);
                 RecordProcessExit(server, inst, exitCode, inst.IntentionalStop);
-                server.RunningPid = 0;
+                ClearRunningIdentity(server);
 
                 if (inst.IntentionalStop)
                 {
@@ -514,7 +534,7 @@ public class ServerManagerService
         inst.Process   = proc;
         inst.StartTime = DateTime.Now;
         server.LastStarted = DateTime.Now;
-        server.RunningPid  = proc.Id;
+        RememberRunningIdentity(server, proc);
 
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
@@ -581,7 +601,7 @@ public class ServerManagerService
         catch
         {
             _running.TryRemove(server.Id, out _);
-            server.RunningPid = 0;
+            ClearRunningIdentity(server);
             SetStatus(server, ServerStatus.Error);
             throw;
         }
@@ -616,9 +636,9 @@ public class ServerManagerService
 
         if (stopCmd != null && inst.Process?.HasExited == false)
         {
-            await TrySendProcessCommandAsync(server.Id, inst, "server.save", "Saving Rust world before shutdown");
+            await TrySendServerCommandAsync(server, inst, "server.save", "Saving Rust world before shutdown");
             await Task.Delay(1000);
-            await TrySendProcessCommandAsync(server.Id, inst, stopCmd, "Requesting clean Rust shutdown");
+            await TrySendServerCommandAsync(server, inst, stopCmd, "Requesting clean Rust shutdown");
             try
             {
                 var timeoutSeconds = ServerMaintenancePolicy.ClampGracefulStopTimeout(
@@ -643,7 +663,7 @@ public class ServerManagerService
         if (inst.Process?.HasExited == false)
             inst.Process.Kill(entireProcessTree: true);
 
-        server.RunningPid = 0;
+        ClearRunningIdentity(server);
         SetStatus(server, ServerStatus.Stopped);
     }
 
@@ -664,7 +684,7 @@ public class ServerManagerService
             }
             catch { /* already gone */ }
         }
-        server.RunningPid = 0;
+        ClearRunningIdentity(server);
         if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
         SetStatus(server, ServerStatus.Stopped);
         return Task.CompletedTask;
@@ -673,8 +693,7 @@ public class ServerManagerService
     public async Task SendCommandAsync(string serverId, string command)
     {
         if (!_running.TryGetValue(serverId, out var inst)) return;
-        if (inst.Process != null)
-            await inst.Process.StandardInput.WriteLineAsync(command);
+        await TrySendServerCommandAsync(inst.Server, inst, command, $"Sent '{command}'");
     }
 
     public void SendCommand(string serverId, string command)
@@ -717,8 +736,8 @@ public class ServerManagerService
 
         if (inst.Process?.HasExited == false)
         {
-            await TrySendProcessCommandAsync(server.Id, inst, "server.save", "Force-saving Rust world");
-            await TrySendProcessCommandAsync(server.Id, inst, "quit", "Requesting immediate Rust exit");
+            await TrySendServerCommandAsync(server, inst, "server.save", "Force-saving Rust world");
+            await TrySendServerCommandAsync(server, inst, "quit", "Requesting immediate Rust exit");
             try
             {
                 using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -739,35 +758,77 @@ public class ServerManagerService
         if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
         try { inst.Process?.Kill(entireProcessTree: true); }
         catch (InvalidOperationException) { /* process already dead — swallow */ }
-        server.RunningPid = 0;
+        ClearRunningIdentity(server);
         SetStatus(server, ServerStatus.Stopped);
     }
 
     /// <summary>Compatibility alias for older call sites; Force Stop is the defined operation.</summary>
     public Task KillAsync(GameServer server) => ForceStopAsync(server);
 
-    private async Task TrySendProcessCommandAsync(
-        string serverId,
+    private async Task<bool> TrySendProcessCommandAsync(
         ServerInstance instance,
-        string command,
-        string description)
+        string command)
     {
-        if (instance.Process?.HasExited != false) return;
+        if (instance.Process?.HasExited != false) return false;
         try
         {
             await instance.Process.StandardInput.WriteLineAsync(command);
             await instance.Process.StandardInput.FlushAsync();
-            InjectLogLine(serverId, $"[HighPop] {description}.", ConsoleMessageType.System);
+            return true;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or NotSupportedException)
         {
-            InjectLogLine(serverId,
-                $"[HighPop] Could not send '{command}' through the process console: {ex.Message}",
-                ConsoleMessageType.Warning);
+            return false;
         }
     }
 
-    public void KillAll()
+    private async Task<bool> TrySendServerCommandAsync(
+        GameServer server,
+        ServerInstance instance,
+        string command,
+        string description)
+    {
+        if (await TrySendProcessCommandAsync(instance, command))
+        {
+            InjectLogLine(server.Id, $"[HighPop] {description}.", ConsoleMessageType.System);
+            return true;
+        }
+
+        // StandardInput cannot be reacquired after the manager process exits. A verified
+        // reattachment therefore uses Rust WebRCON for commands and graceful shutdown.
+        if (server.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase)
+            && server.RconPort > 0
+            && !string.IsNullOrWhiteSpace(server.RconPassword))
+        {
+            try
+            {
+                using var rcon = new RconService();
+                var host = server.ServerIp is "0.0.0.0" or "::" or "[::]"
+                    ? "127.0.0.1"
+                    : server.ServerIp;
+                if (await rcon.ConnectAsync(host, server.RconPort, server.RconPassword))
+                {
+                    await rcon.SendCommandAsync(command);
+                    InjectLogLine(server.Id,
+                        $"[HighPop] {description} via WebRCON.", ConsoleMessageType.System);
+                    return true;
+                }
+            }
+            catch { }
+        }
+
+        InjectLogLine(server.Id,
+            $"[HighPop] Could not send '{command}' through the process console or WebRCON.",
+            ConsoleMessageType.Warning);
+        return false;
+    }
+
+    /// <summary>
+    /// Releases HighPop-owned monitoring resources while leaving every live Rust process alone.
+    /// The persisted process identity is retained so the next manager instance can verify and
+    /// reattach. Explicit Stop and Force Stop remain the only operations that terminate Rust.
+    /// </summary>
+    public void DetachAllForManagerExit()
     {
         foreach (var id in _recoveryGenerations.Keys)
             CancelRecovery(id);
@@ -781,18 +842,29 @@ public class ServerManagerService
                 JobObjectService.ReleaseJob(instance.JobHandle);
                 instance.JobHandle = nint.Zero;
 
-                // An always-on Rust process is deliberately detached from HighPop so closing
-                // or updating the manager does not create game-server downtime. RunningPid is
-                // retained and TryReattach restores management on the next launch.
-                if (instance.Server.KeepOnline && instance.Process?.HasExited == false)
-                    continue;
-
-                instance.Process?.Kill(entireProcessTree: true);
-                instance.Server.RunningPid = 0;
+                if (instance.Process?.HasExited == false)
+                    RememberRunningIdentity(instance.Server, instance.Process);
+                else
+                    ClearRunningIdentity(instance.Server);
             }
             catch { }
         }
         _running.Clear();
+    }
+
+    private static void RememberRunningIdentity(GameServer server, Process process)
+    {
+        server.RunningPid = process.Id;
+        server.RunningProcessStartedUtc = SafeStartTime(process)?.ToUniversalTime();
+        try { server.RunningExecutablePath = process.MainModule?.FileName ?? string.Empty; }
+        catch { server.RunningExecutablePath = string.Empty; }
+    }
+
+    private static void ClearRunningIdentity(GameServer server)
+    {
+        server.RunningPid = 0;
+        server.RunningProcessStartedUtc = null;
+        server.RunningExecutablePath = string.Empty;
     }
 
     private void CancelRecovery(string serverId)

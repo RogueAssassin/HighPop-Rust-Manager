@@ -200,6 +200,7 @@ public partial class MainViewModel : BaseViewModel
 
         manager.StatusChanged += (id, status) =>
         {
+            GameServer? server = null;
             WpfApplication.Current?.Dispatcher?.Invoke(() =>
             {
                 OnPropertyChanged(nameof(RunningCount));
@@ -207,9 +208,11 @@ public partial class MainViewModel : BaseViewModel
                 OnPropertyChanged(nameof(HasRunningServers));
                 OnPropertyChanged(nameof(CanInstallUpdate));
                 _tray.SetStatus(RunningCount, TotalServers);
+                server = Servers.FirstOrDefault(v => v.Server.Id == id)?.Server;
+                if (server != null)
+                    Save();
             });
 
-            var server = Servers.FirstOrDefault(v => v.Server.Id == id)?.Server;
             if (server != null)
             {
                 if (status == ServerStatus.Running)

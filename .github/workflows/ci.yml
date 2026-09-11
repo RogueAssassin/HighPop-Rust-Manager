@@ -27,6 +27,10 @@ jobs:
       - name: Restore
         run: dotnet restore HighPop.sln
 
+      - name: Audit XAML command surface
+        shell: pwsh
+        run: ./scripts/Test-UiSurface.ps1
+
       - name: Build
         run: dotnet build HighPop.sln -c Release --no-restore
 

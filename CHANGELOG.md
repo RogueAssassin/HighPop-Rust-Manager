@@ -2,6 +2,11 @@
 
 ## 0.8.0
 
+- Fixed duplicate Rust custom-variable rows: reload now takes the latest active `server.cfg` assignment case-insensitively, and save retains only one active assignment while preserving older duplicates as audit comments.
+- Reworked close/reopen continuity: close-to-tray retains full management, explicit manager exit detaches without stopping Rust, and reattachment verifies PID, start time, and executable path before restoring monitoring.
+- Added WebRCON fallback for commands sent to a reattached Rust process, whose original redirected console cannot be recovered by Windows.
+- Replaced the legacy Windows Run entry with a per-user Task Scheduler logon task that launches HighPop directly in background mode.
+- Restyled the close/exit dialog with the shared HighPop brand palette and clear background-versus-exit behavior.
 - Established `main` as the production branch and `testing` as the integration/release-candidate branch, with CI running on both.
 - Reworked Stop into an explicit `server.save` → `quit` sequence with a configurable 15–600 second timeout, and reworked Force Stop to save, request immediate exit, then enforce process termination after five seconds.
 - Locked direct Install/Update while Rust is running and expanded safe live-update monitoring with configurable in-game countdown broadcasts before the save/stop/update/restart workflow.

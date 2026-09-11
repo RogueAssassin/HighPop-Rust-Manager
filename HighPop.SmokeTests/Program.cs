@@ -57,6 +57,9 @@ foreach (var keepOnline in new[] { false, true })
 }
 server.AutoStart = false;
 server.KeepOnline = true;
+Check(WindowsStartupTaskService.BuildTaskAction(@"C:\Program Files\HighPop\HighPop.exe")
+          == "\"C:\\Program Files\\HighPop\\HighPop.exe\" --background",
+    "Windows logon task safely quotes the executable and starts in background mode");
 
 var scheduleReference = new DateTime(2026, 7, 24, 15, 30, 0);
 var onceSchedule = new ScheduledTask
@@ -262,6 +265,41 @@ try
           && loadedBoar is { Enabled: true, Value: "7" },
         "server.cfg variables are loaded into the Rust workspace");
 
+    server.RustServerVariables.Add(new RustServerVariable
+    {
+        Enabled = true,
+        Name = "BEAR.POPULATION",
+        Value = "999",
+        Description = "Persisted duplicate",
+    });
+    await File.WriteAllTextAsync(serverConfigPath,
+        originalServerConfig +
+        "bear.population \"11\"\n" +
+        "BEAR.POPULATION \"12\"\n");
+    loadedVariables = RustPlugin.LoadServerConfigVariables(server);
+    var bearRows = server.RustServerVariables
+        .Where(v => v.Name.Equals("bear.population", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    Check(loadedVariables == 3
+          && bearRows.Count == 1
+          && bearRows[0] is { Enabled: true, Value: "12", LoadedConfigValue: "12" },
+        "server.cfg reload collapses duplicate rows and uses the latest active assignment");
+
+    bearRows[0].Value = "2";
+    RustPlugin.WriteManagedServerConfig(server);
+    var deduplicatedConfig = await File.ReadAllLinesAsync(serverConfigPath);
+    Check(deduplicatedConfig.Count(line =>
+              line.TrimStart().StartsWith("bear.population ", StringComparison.OrdinalIgnoreCase)) == 1
+          && deduplicatedConfig.Any(line => line == "BEAR.POPULATION \"2\"")
+          && deduplicatedConfig.Count(line => line.Contains("Duplicate removed by HighPop:",
+              StringComparison.Ordinal)) == 2,
+        "server.cfg save leaves one authoritative active assignment and comments older duplicates");
+
+    // Restore the original fixture so the rollback/idempotence assertions below remain exact.
+    await File.WriteAllTextAsync(serverConfigPath, originalServerConfig);
+    RustPlugin.LoadServerConfigVariables(server);
+    loadedBear = server.RustServerVariables.First(v =>
+        v.Name.Equals("bear.population", StringComparison.OrdinalIgnoreCase));
     loadedBear.Value = "2";
     await rust.PreStartAsync(server);
     var serverConfig = await File.ReadAllTextAsync(serverConfigPath);
@@ -314,6 +352,16 @@ try
     });
     Check(rust.ValidateBeforeStart(server)?.Contains("variable names") == true,
         "unsafe server.cfg variable names are rejected");
+    server.RustServerVariables.RemoveAt(server.RustServerVariables.Count - 1);
+
+    server.RustServerVariables.Add(new RustServerVariable
+    {
+        Enabled = true,
+        Name = "BEAR.POPULATION",
+        Value = "10",
+    });
+    Check(rust.ValidateBeforeStart(server)?.Contains("only once") == true,
+        "duplicate server.cfg variable rows are rejected case-insensitively");
     server.RustServerVariables.RemoveAt(server.RustServerVariables.Count - 1);
 
     var customLogs = Path.Combine(testRoot, "custom-logs");

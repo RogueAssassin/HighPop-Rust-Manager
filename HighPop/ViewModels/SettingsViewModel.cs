@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Win32;
 using HighPop.Services;
 
 namespace HighPop.ViewModels;
@@ -89,30 +88,6 @@ public partial class SettingsViewModel : BaseViewModel
     [ObservableProperty] private Services.HealthCheckAction _healthCheckAction;
     public Services.HealthCheckAction[] HealthCheckActions { get; } = Enum.GetValues<Services.HealthCheckAction>();
 
-    private const string RunKey  = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-    private const string AppName = "HighPop";
-
-    private static bool GetStartWithWindows()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey, false);
-        return key?.GetValue(AppName) != null;
-    }
-
-    private static void SetStartWithWindows(bool enable)
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey, true)!;
-        if (enable)
-        {
-            var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
-                      ?? System.IO.Path.Combine(AppContext.BaseDirectory, "HighPop.exe");
-            key.SetValue(AppName, $"\"{exe}\"");
-        }
-        else
-        {
-            key.DeleteValue(AppName, throwOnMissingValue: false);
-        }
-    }
-
     public SettingsViewModel(NotificationService notifications, ConfigService config,
                              SteamCmdService steamCmd, DiscordBotService bot, WebApiService webApi,
                              UPnPService upnp)
@@ -181,7 +156,7 @@ public partial class SettingsViewModel : BaseViewModel
         HealthCheckEnabled        = _config.HealthCheckEnabled;
         HealthCheckFailThreshold  = _config.HealthCheckFailThreshold;
         HealthCheckAction         = _config.HealthCheckAction;
-        StartWithWindows         = GetStartWithWindows();
+        StartWithWindows         = WindowsStartupTaskService.IsEnabled();
     }
 
     [RelayCommand]
@@ -284,7 +259,13 @@ public partial class SettingsViewModel : BaseViewModel
             OnPropertyChanged(nameof(WebApiStatusIsWarning));
         }
 
-        SetStartWithWindows(StartWithWindows);
+        if (!WindowsStartupTaskService.SetEnabled(StartWithWindows, out var startupTaskError))
+        {
+            WpfMsgBox.Show(
+                $"Settings were saved, but the Windows startup task could not be updated:\n\n{startupTaskError}",
+                "HighPop startup task", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
 
         WpfMsgBox.Show("Settings saved.", "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Information);
     }

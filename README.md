@@ -32,7 +32,7 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 | Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, plus configurable in-game update countdowns, serialized per server with visible results |
 | Monitoring | Persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |
 | Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, a local Discord bot with live boards and staff controls, webhooks, and SMTP alerts |
-| Windows controls | System tray, startup registration, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
+| Windows controls | System tray, per-user logon task, verified close/reopen process reattachment, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
 | Customization | Portable Rust presets, editable launch/config values, server templates, custom images, and replaceable brand assets |
 
 HighPop deliberately does not copy proprietary hosted databases or subscription services. VAC/VPN intelligence, globally shared ban data, and hosted web accounts require external data providers; the local manager remains usable without an account or recurring fee. See [ROADMAP.md](ROADMAP.md) for planned provider interfaces and deeper Rust telemetry.
@@ -99,7 +99,9 @@ The dedicated **Rust** tab separates Facepunch browser tags, community vanilla/m
 
 ## Stage 4 configuration and releases
 
-Rust custom variables are read from and saved to `server/<identity>/cfg/server.cfg`. Facepunch documents this as the startup configuration file for larger variable sets and notes that its values take priority over matching command-line values. HighPop loads active assignments already in that file, preserves comments and unrelated lines, and only rewrites changed or explicitly disabled rows.
+Rust custom variables are read from and saved to `server/<identity>/cfg/server.cfg`. Facepunch documents this as the startup configuration file for larger variable sets and notes that its values take priority over matching command-line values. HighPop loads active assignments already in that file, collapses duplicate names case-insensitively using the last active value, preserves comments and unrelated lines, and saves one authoritative active assignment per variable.
+
+Closing the main window offers a recommended background/tray mode, which retains live monitoring, schedules, console capture, and process handles. An explicit manager exit leaves running Rust servers online and persists their PID, start time, and executable path; HighPop verifies all available identity fields before reattaching when reopened. Since Windows cannot restore redirected stdin from a previous manager process, reattached Rust commands use WebRCON. The Windows startup option creates a current-user logon task that launches HighPop in background mode.
 
 Upgrading from v0.3 is automatic: HighPop moves variables from its own managed `serverauto.cfg` block into `server.cfg` the next time the configuration is saved or Rust starts. A value already present in `server.cfg` wins. HighPop removes only its marked legacy block and leaves any other `serverauto.cfg` content alone.
 
