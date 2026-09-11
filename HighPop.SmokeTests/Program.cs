@@ -249,13 +249,14 @@ try
         "server.hostname \"Preserved\"\n" +
         "bear.population \"3\"\n" +
         "boar.population \"7\"\n";
-    await File.WriteAllTextAsync(serverConfigPath, originalServerConfig);
-    await File.WriteAllTextAsync(serverAutoPath,
+    const string originalServerAuto =
         "server.writecfg \"true\"\n\n" +
         "// HighPop managed variables — begin\n" +
         "bear.population \"9\"\n" +
         "wolf.population \"4\"\n" +
-        "// HighPop managed variables — end\n");
+        "// HighPop managed variables — end\n";
+    await File.WriteAllTextAsync(serverConfigPath, originalServerConfig);
+    await File.WriteAllTextAsync(serverAutoPath, originalServerAuto);
 
     var loadedVariables = RustPlugin.LoadServerConfigVariables(server);
     var loadedBear = server.RustServerVariables.First(v => v.Name == "bear.population");
@@ -297,6 +298,7 @@ try
 
     // Restore the original fixture so the rollback/idempotence assertions below remain exact.
     await File.WriteAllTextAsync(serverConfigPath, originalServerConfig);
+    await File.WriteAllTextAsync(serverAutoPath, originalServerAuto);
     RustPlugin.LoadServerConfigVariables(server);
     loadedBear = server.RustServerVariables.First(v =>
         v.Name.Equals("bear.population", StringComparison.OrdinalIgnoreCase));
