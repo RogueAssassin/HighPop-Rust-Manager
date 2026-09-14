@@ -41,7 +41,7 @@
                              Foreground="{StaticResource TextSecondaryBrush}"/>
                     <CheckBox IsChecked="{Binding StartWithWindows}" Style="{StaticResource DarkCheckBox}"
                               Content="Start HighPop automatically with Windows" Margin="0,14,0,0"/>
-                    <TextBlock Text="Adds HighPop to Windows startup (current user only, no UAC prompt)."
+                    <TextBlock Text="Creates a current-user Windows logon task and starts HighPop directly in background/tray mode."
                                FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"/>
                     <CheckBox IsChecked="{Binding OptimizeRamBeforeStart}" Style="{StaticResource DarkCheckBox}"
                               Content="Optimize system RAM before starting a server" Margin="0,14,0,0"/>

@@ -141,8 +141,8 @@ public partial class App : System.Windows.Application
 
         ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
 
-        // Graceful shutdown: non-production profiles stop with HighPop. Always-on Rust
-        // processes remain alive and are reattached when the manager opens again.
+        // A full manager exit detaches from live Rust processes. Stop/Force Stop are the only
+        // operations that terminate a server; reopening HighPop verifies and reattaches by PID.
         Exit += OnApplicationExit;
     }
 
@@ -153,24 +153,8 @@ public partial class App : System.Windows.Application
             var mainVm  = Services.GetRequiredService<MainViewModel>();
             var manager = Services.GetRequiredService<ServerManagerService>();
 
+            manager.DetachAllForManagerExit();
             mainVm.Save();
-
-            foreach (var serverVm in mainVm.Servers)
-            {
-                if (!serverVm.IsRunning) continue;
-                if (serverVm.Server.KeepOnline) continue;
-                try
-                {
-                    var t = Task.Run(async () => {
-                        try { await manager.StopAsync(serverVm.Server, "HighPop is closing"); } catch { }
-                    });
-                    t.Wait(5000);
-                }
-                catch { }
-            }
-
-            // Final safety net: kill anything still alive
-            manager.KillAll();
         }
         catch { }
     }
@@ -180,6 +164,7 @@ public partial class App : System.Windows.Application
         s.AddSingleton<ConfigService>();
         s.AddSingleton<SteamCmdService>();
         s.AddSingleton<RustTelemetryService>();
+        s.AddSingleton<ServerLifecycleCoordinator>();
         s.AddSingleton<ServerManagerService>();
         s.AddSingleton<BackupService>();
         s.AddSingleton<NotificationService>();
@@ -206,6 +191,7 @@ public partial class App : System.Windows.Application
         s.AddSingleton<CrashPredictionService>();
         s.AddSingleton<LogWatcherService>();
         s.AddSingleton<ServerHealthService>();
+        s.AddSingleton<SupportBundleService>();
         s.AddSingleton<WakeOnDemandService>();
         s.AddSingleton<MainViewModel>();
         s.AddSingleton<SettingsViewModel>();

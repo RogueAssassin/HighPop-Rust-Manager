@@ -12,7 +12,7 @@
         </Grid.RowDefinitions>
 
         <!-- ══ HEADER ══ -->
-        <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}"
+        <Border Grid.Row="0" Background="{StaticResource BrandHeaderBrush}"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,14,24,10">
             <StackPanel>
                 <!-- Server name row -->
@@ -33,18 +33,23 @@
                                    FontFamily="Consolas"/>
                     </StackPanel>
                 </StackPanel>
-                <!-- Action buttons row -->
+                <TextBlock Text="{Binding LifecycleDetailText}" FontSize="11"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="20,0,0,8"
+                           TextTrimming="CharacterEllipsis"/>
+                <!-- Lifecycle command deck -->
                 <StackPanel Orientation="Horizontal">
-                    <Button Content="{Binding Loc.BtnStart}" Style="{StaticResource SuccessButton}" Margin="0,0,4,0"
+                    <Button Content="▶  Start" Style="{StaticResource SuccessButton}" Margin="0,0,6,0"
                             Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"/>
-                    <Button Content="{Binding Loc.BtnStop}" Style="{StaticResource DangerButton}" Margin="0,0,4,0"
+                    <Button Content="■  Stop safely" Style="{StaticResource PrimaryButton}" Margin="0,0,6,0"
                             Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}"/>
-                    <Button Content="💀" Style="{StaticResource DangerButton}" Margin="0,0,4,0" Width="36" Padding="0"
-                            Command="{Binding KillCommand}" IsEnabled="{Binding CanStop}" ToolTip="Kill process immediately"/>
-                    <Button Content="↺" Style="{StaticResource GhostButton}" Margin="0,0,4,0" Width="36" Padding="0"
+                    <Button Content="Force Stop" Style="{StaticResource DangerButton}" Margin="0,0,6,0"
+                            Command="{Binding ForceStopCommand}" IsEnabled="{Binding CanStop}"
+                            ToolTip="Sends server.save and quit, waits five seconds, then terminates the process tree if Rust has not exited."/>
+                    <Button Content="↻  Restart" Style="{StaticResource GhostButton}" Margin="0,0,6,0"
                             Command="{Binding RestartCommand}" IsEnabled="{Binding CanStop}" ToolTip="Restart"/>
-                    <Button Content="{Binding Loc.BtnInstall}" Style="{StaticResource GhostButton}" Margin="0,0,4,0"
-                            Command="{Binding InstallCommand}" IsEnabled="{Binding IsInstalling, Converter={StaticResource InvBool}}"/>
+                    <Button Content="↓  Install / Update" Style="{StaticResource GhostButton}" Margin="0,0,6,0"
+                            Command="{Binding InstallCommand}" IsEnabled="{Binding CanInstallServerFiles}"
+                            ToolTip="Pulls and validates the latest Rust Dedicated Server files. Stop Rust before using this button."/>
                     <Button Content="📁" Style="{StaticResource GhostButton}" Margin="0,0,4,0" Width="36" Padding="0"
                             Command="{Binding OpenInstallFolderCommand}" ToolTip="Open install folder"/>
                     <Button Content="🎮" Style="{StaticResource GhostButton}" Margin="0,0,4,0" Width="36" Padding="0"
@@ -160,17 +165,19 @@
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="TabItem">
-                                <Border x:Name="bd" Background="Transparent"
+                                <Border x:Name="bd" Background="Transparent" CornerRadius="7,7,0,0"
                                         BorderBrush="Transparent" BorderThickness="0,0,0,2"
                                         Padding="{TemplateBinding Padding}">
                                     <ContentPresenter ContentSource="Header"/>
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource BgSurface2Brush}"/>
                                         <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
                                         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="bd" Property="Background" Value="{StaticResource BgSurface2Brush}"/>
                                         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                                     </Trigger>
                                 </ControlTemplate.Triggers>
@@ -906,7 +913,7 @@
                                 <CheckBox IsChecked="{Binding Server.KeepOnline}" Style="{StaticResource DarkCheckBox}"
                                           Content="Always-on: keep this server online" Margin="0,0,0,5"
                                           ToolTip="Recommended for production. Empty-player shutdown is ignored and unexpected exits are retried indefinitely with a capped backoff."/>
-                                <TextBlock Text="Always-on never stops Rust because it has zero players. Manual and scheduled maintenance actions still work normally."
+                                <TextBlock Text="Always-on recovers a server after an unexpected exit only after HighPop started or reattached it. It never starts a stopped server merely because the manager opened; use Auto-start for that. Empty-player shutdown remains disabled."
                                            Foreground="{StaticResource TextMutedBrush}" FontSize="11"
                                            TextWrapping="Wrap" Margin="20,0,0,8"/>
                                 <CheckBox IsChecked="{Binding Server.WakeOnDemand}" Style="{StaticResource DarkCheckBox}"
@@ -995,15 +1002,32 @@
                                 <CheckBox IsChecked="{Binding Server.UpdateOnStart}" Style="{StaticResource DarkCheckBox}"
                                           Content="Check for a Rust update before each start" Margin="0,0,0,8"/>
                                 <CheckBox IsChecked="{Binding Server.AutoUpdate}" Style="{StaticResource DarkCheckBox}"
-                                          Content="Check for Rust updates periodically" Margin="0,0,0,5"/>
-                                <StackPanel Orientation="Horizontal" Margin="20,0,0,12">
-                                    <TextBlock Text="Every" VerticalAlignment="Center"
-                                               Foreground="{StaticResource TextMutedBrush}" Margin="0,0,8,0"/>
-                                    <TextBox Text="{Binding Server.AutoUpdateIntervalMin, UpdateSourceTrigger=PropertyChanged}"
-                                             Style="{StaticResource DarkTextBox}" Width="80" TextAlignment="Center"/>
-                                    <TextBlock Text="minutes" VerticalAlignment="Center"
-                                               Foreground="{StaticResource TextMutedBrush}" Margin="6,0,0,0"/>
-                                </StackPanel>
+                                          Content="Safe live update monitoring" Margin="0,0,0,5"
+                                          ToolTip="Checks Steam build IDs without modifying a running server. When an update exists, HighPop warns players, saves, stops, validates, updates, and restarts."/>
+                                <Grid Margin="20,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Check every (minutes)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Text="{Binding Server.AutoUpdateIntervalMin, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Player warning (minutes)" Style="{StaticResource FieldLabel}"/>
+                                        <TextBox Text="{Binding Server.AutoUpdateWarningMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="Safe Stop timeout" Style="{StaticResource FieldLabel}"/>
+                                <DockPanel Margin="0,0,0,12">
+                                    <TextBlock Text="seconds (15–600)" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextMutedBrush}" Margin="8,0,0,0"/>
+                                    <TextBox Text="{Binding Server.GracefulStopTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource DarkTextBox}" TextAlignment="Center"/>
+                                </DockPanel>
                                 <CheckBox IsChecked="{Binding Server.BackupOnStart}" Style="{StaticResource DarkCheckBox}"
                                           Content="Create a backup before each start" Margin="0,0,0,8"/>
                                 <CheckBox IsChecked="{Binding Server.BackupOnShutdown}" Style="{StaticResource DarkCheckBox}"
@@ -1124,6 +1148,21 @@
                                 <TextBlock Text="{Binding RustVariableStatus}" FontSize="10"
                                            Foreground="{StaticResource AccentOrangeBrush}" TextWrapping="Wrap"
                                            Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding RustVariableFilter, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource DarkTextBox}"
+                                             ToolTip="Filter by variable name or purpose"/>
+                                    <Border Grid.Column="1" Style="{StaticResource StatusPill}" Margin="8,0,0,0">
+                                        <TextBlock Foreground="{StaticResource AccentOrangeBrush}">
+                                            <Run Text="{Binding RustVariablePendingCount, Mode=OneWay}"/>
+                                            <Run Text=" pending"/>
+                                        </TextBlock>
+                                    </Border>
+                                </Grid>
                                 <Grid Margin="10,0,40,4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
@@ -1136,7 +1175,7 @@
                                     <TextBlock Grid.Column="2" Text="Value" Style="{StaticResource FieldLabel}"/>
                                     <TextBlock Grid.Column="3" Text="Purpose" Style="{StaticResource FieldLabel}"/>
                                 </Grid>
-                                <ItemsControl ItemsSource="{Binding Server.RustServerVariables}">
+                                <ItemsControl ItemsSource="{Binding FilteredRustServerVariables}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="5"
@@ -1172,6 +1211,9 @@
                                             Command="{Binding AddRustServerVariableCommand}" Margin="0,0,8,0"/>
                                     <Button Content="💾 Save to server.cfg" Style="{StaticResource PrimaryButton}"
                                             Command="{Binding SaveServerConfigVariablesCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="⚡ Save + apply live" Style="{StaticResource SuccessButton}"
+                                            Command="{Binding ApplyRustVariablesLiveCommand}" Margin="0,0,8,0"
+                                            ToolTip="Writes server.cfg, then sends changed enabled values to the running Rust console. Disabled variables require a restart."/>
                                     <Button Content="↻ Reload from file" Style="{StaticResource GhostButton}"
                                             Command="{Binding ReloadServerConfigVariablesCommand}" Margin="0,0,8,0"/>
                                     <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
@@ -1558,6 +1600,45 @@
                                             Command="{Binding OpenCarbonPluginFolderCommand}"/>
                                 </StackPanel>
                             </StackPanel>
+                        </Border>
+
+                        <!-- RogueRust extension -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                                Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Background="{StaticResource AccentOrangeBrush}" CornerRadius="3"/>
+                                <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="RogueRust Extension" FontSize="15" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="RogueAssassin/Oxide.Ext.RogueRust"
+                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                                        </StackPanel>
+                                        <Border Grid.Column="1" Style="{StaticResource StatusPill}">
+                                            <TextBlock Text="{Binding RogueRustStatus}" Foreground="{StaticResource AccentGreenBrush}"/>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="Installs the same verified RogueRust DLL into the active framework's correct extension location: RustDedicated_Data/Managed for Oxide/uMod or carbon/extensions for Carbon. If both are detected, both copies update as one transaction; any failure restores all changed targets. The newest 20 rollback copies are retained per target."
+                                               FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="⬇ Install / Update RogueRust" Style="{StaticResource PrimaryButton}"
+                                                Command="{Binding InstallRogueRustCommand}" Margin="0,0,8,0"
+                                                IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
+                                        <Button Content="✓ Run diagnostics" Style="{StaticResource GhostButton}"
+                                                Command="{Binding CheckRogueRustHealthCommand}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
                         </Border>
 
                         <Border Style="{StaticResource Card}" Margin="0,0,0,16">
@@ -2330,8 +2411,8 @@
                                       SelectedItem="{Binding FileBrowser.SelectedItem}"
                                       Background="{StaticResource BgDeepBrush}" BorderThickness="0">
                                 <ListView.Resources>
-                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#4A2A1E"/>
-                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#30231F"/>
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#29214A"/>
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#1C2034"/>
                                     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF"/>
                                     <Style TargetType="ListViewItem">
                                         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>

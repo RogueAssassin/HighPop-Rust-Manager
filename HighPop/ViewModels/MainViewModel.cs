@@ -200,6 +200,7 @@ public partial class MainViewModel : BaseViewModel
 
         manager.StatusChanged += (id, status) =>
         {
+            GameServer? server = null;
             WpfApplication.Current?.Dispatcher?.Invoke(() =>
             {
                 OnPropertyChanged(nameof(RunningCount));
@@ -207,9 +208,11 @@ public partial class MainViewModel : BaseViewModel
                 OnPropertyChanged(nameof(HasRunningServers));
                 OnPropertyChanged(nameof(CanInstallUpdate));
                 _tray.SetStatus(RunningCount, TotalServers);
+                server = Servers.FirstOrDefault(v => v.Server.Id == id)?.Server;
+                if (server != null)
+                    Save();
             });
 
-            var server = Servers.FirstOrDefault(v => v.Server.Id == id)?.Server;
             if (server != null)
             {
                 if (status == ServerStatus.Running)
@@ -251,9 +254,9 @@ public partial class MainViewModel : BaseViewModel
         _bot.GetServers    = () =>
             WpfApplication.Current?.Dispatcher?.Invoke(() =>
                 Servers.Select(v => v.Server).ToList()) ?? [];
-        _bot.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartCommand.ExecuteAsync(null)        : Task.CompletedTask; });
-        _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopCommand.ExecuteAsync(null)         : Task.CompletedTask; });
-        _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartCommand.ExecuteAsync(null)      : Task.CompletedTask; });
+        _bot.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.Discord, "Discord start request") : Task.CompletedTask; });
+        _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.Discord, "Discord stop request") : Task.CompletedTask; });
+        _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.Discord, "Discord restart request") : Task.CompletedTask; });
         _bot.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)       : Task.CompletedTask; });
         _bot.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.CreateBackupCommand.ExecuteAsync(null) : Task.CompletedTask; });
         _bot.SendCmd       = (id, cmd) => DispatchCommandAndWait(() =>
@@ -326,9 +329,9 @@ public partial class MainViewModel : BaseViewModel
                 ? action()
                 : dispatcher.InvokeAsync(action).Task.Unwrap();
         }
-        _webApi.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartCommand.ExecuteAsync(null)         : Task.CompletedTask; });
-        _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopCommand.ExecuteAsync(null)          : Task.CompletedTask; });
-        _webApi.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartCommand.ExecuteAsync(null)       : Task.CompletedTask; });
+        _webApi.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.WebApi, "Web API start request") : Task.CompletedTask; });
+        _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.WebApi, "Web API stop request") : Task.CompletedTask; });
+        _webApi.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.WebApi, "Web API restart request") : Task.CompletedTask; });
         _webApi.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)        : Task.CompletedTask; });
         _webApi.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.CreateBackupCommand.ExecuteAsync(null)  : Task.CompletedTask; });
         _webApi.SendCmd       = async (id, cmd) => await manager.SendCommandAsync(id, cmd);
@@ -531,10 +534,14 @@ public partial class MainViewModel : BaseViewModel
             var vm = MakeVm(srv);
             vm.ServerNumber = num++;
             Servers.Add(vm);
-            // Always-on profiles resume whenever HighPop launches, even if an older profile
-            // was saved before AutoStart was enabled.
-            if ((srv.AutoStart || srv.KeepOnline) && !reattached)
-                _ = WpfApplication.Current?.Dispatcher?.InvokeAsync(() => vm.StartCommand.ExecuteAsync(null))
+            // KeepOnline protects an already-running/reattached process; it must never
+            // turn opening the manager into an implicit server start. v0.8.1 desired Running
+            // is different: it proves an earlier explicit start and may resume recovery.
+            if (!reattached && ServerLifecycleRules.CanRecover(srv))
+                _manager.QueueAlwaysOnRecovery(srv, "manager launch found persisted running intent");
+            else if (ServerStartupPolicy.ShouldStartOnManagerLaunch(srv, reattached))
+                _ = WpfApplication.Current?.Dispatcher?.InvokeAsync(() =>
+                        vm.StartManagedAsync(LifecycleInitiator.AutoStart, "Auto-start on manager launch"))
                         .Task.ContinueWith(t => Console.WriteLine($"[HighPop] AutoStart failed for {srv.DisplayName}: {t.Exception?.InnerException?.Message}"),
                             TaskContinuationOptions.OnlyOnFaulted);
         }
@@ -613,7 +620,7 @@ public partial class MainViewModel : BaseViewModel
                 await _notifications.NotifyAsync(
                     $"⬆️ HighPop {latest} is available",
                     "A new version of HighPop Rust Manager has been released. Open HighPop to update.",
-                    "#F05A28");
+                    "#A855F7");
             }
             catch { }
         }
@@ -916,15 +923,14 @@ public partial class MainViewModel : BaseViewModel
             RustTelemetryEnabled = src.RustTelemetryEnabled,
             RustTelemetryRetentionDays = src.RustTelemetryRetentionDays,
             RustTelemetryMaxMegabytes = src.RustTelemetryMaxMegabytes,
-            RustServerVariables  = src.RustServerVariables
+            RustServerVariables  = new ObservableCollection<RustServerVariable>(src.RustServerVariables
                 .Select(variable => new RustServerVariable
                 {
                     Enabled = variable.Enabled,
                     Name = variable.Name,
                     Value = variable.Value,
                     Description = variable.Description,
-                })
-                .ToList(),
+                })),
             Status               = ServerStatus.NotInstalled,
             GameSpecificSettings = new Dictionary<string, string>(src.GameSpecificSettings),
         };

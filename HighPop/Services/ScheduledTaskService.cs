@@ -1,5 +1,6 @@
 using Newtonsoft.Json;
 using System.Collections.Concurrent;
+using HighPop.Models;
 
 namespace HighPop.Services;
 
@@ -225,15 +226,33 @@ public class ScheduledTaskService : IDisposable
                 case ScheduledActionType.Restart:
                     if (_manager.IsRunning(server.Id))
                     {
+                        var warningGeneration = server.LifecycleGeneration;
                         await _manager.WarnPlayersAsync(server, "Server restarting in 1 minute");
                         await Task.Delay(60_000);
+                        if (!ServerLifecycleRules.IsCurrent(server, warningGeneration)
+                            || server.DesiredState != ServerDesiredState.Running)
+                        {
+                            task.LastResult = "Cancelled — a newer lifecycle request superseded the countdown";
+                            PublishTaskExecuted(task, task.LastResult);
+                            return;
+                        }
                         await _manager.SendCommandAsync(server.Id, "server.save");
                         await Task.Delay(1000);
-                        await _manager.StopAsync(server, $"Scheduled task \"{task.ActionText}\"");
+                        await _manager.StopAsync(server, $"Scheduled task \"{task.ActionText}\"",
+                            LifecycleInitiator.Scheduler);
+                        var stoppedGeneration = server.LifecycleGeneration;
                         if (server.BackupOnShutdown) await _backup.CreateBackupAsync(server);
                         await Task.Delay(3000);
+                        if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
+                            || server.DesiredState != ServerDesiredState.Stopped)
+                        {
+                            task.LastResult = "Cancelled — a newer lifecycle request superseded the restart";
+                            PublishTaskExecuted(task, task.LastResult);
+                            return;
+                        }
                     }
-                    await _manager.StartAsync(server);
+                    await _manager.StartAsync(server, LifecycleInitiator.Scheduler,
+                        $"Scheduled task \"{task.ActionText}\"");
                     break;
                 case ScheduledActionType.Stop:
                     if (!_manager.IsRunning(server.Id))
@@ -242,7 +261,8 @@ public class ScheduledTaskService : IDisposable
                         PublishTaskExecuted(task, task.LastResult);
                         return;
                     }
-                    await _manager.StopAsync(server, $"Scheduled task \"{task.ActionText}\"");
+                    await _manager.StopAsync(server, $"Scheduled task \"{task.ActionText}\"",
+                        LifecycleInitiator.Scheduler);
                     if (server.BackupOnShutdown) await _backup.CreateBackupAsync(server);
                     break;
                 case ScheduledActionType.Start:
@@ -252,7 +272,8 @@ public class ScheduledTaskService : IDisposable
                         PublishTaskExecuted(task, task.LastResult);
                         return;
                     }
-                    await _manager.StartAsync(server);
+                    await _manager.StartAsync(server, LifecycleInitiator.Scheduler,
+                        $"Scheduled task \"{task.ActionText}\"");
                     break;
                 case ScheduledActionType.Backup:
                     if (!_manager.IsRunning(server.Id) &&
@@ -365,11 +386,22 @@ public class ScheduledTaskService : IDisposable
         // Warn players and stop the server (skip warning if already stopped)
         if (_manager.IsRunning(server.Id))
         {
+            var warningGeneration = server.LifecycleGeneration;
             await _manager.WarnPlayersAsync(server, "Server wiping in 2 minutes — all world data will be reset");
             await Task.Delay(120_000);
-            await _manager.StopAsync(server, fullWipe ? "Scheduled full wipe" : "Scheduled map wipe");
+            if (!ServerLifecycleRules.IsCurrent(server, warningGeneration)
+                || server.DesiredState != ServerDesiredState.Running)
+            {
+                _manager.InjectLogLine(server.Id,
+                    "[Wipe] Cancelled because a newer lifecycle request superseded the countdown.",
+                    Models.ConsoleMessageType.Warning);
+                return true;
+            }
+            await _manager.StopAsync(server, fullWipe ? "Scheduled full wipe" : "Scheduled map wipe",
+                LifecycleInitiator.Scheduler);
             await Task.Delay(3000);
         }
+        var stoppedGeneration = server.LifecycleGeneration;
 
         // Wipes are destructive. A successful restorable backup is a hard precondition,
         // even when the server's normal backup toggle is off.
@@ -431,7 +463,16 @@ public class ScheduledTaskService : IDisposable
             "#D29922");
 
         await Task.Delay(2000);
-        await _manager.StartAsync(server);
+        if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
+            || server.DesiredState != ServerDesiredState.Stopped)
+        {
+            _manager.InjectLogLine(server.Id,
+                "[Wipe] Automatic restart cancelled because a newer lifecycle request superseded it.",
+                Models.ConsoleMessageType.Warning);
+            return true;
+        }
+        await _manager.StartAsync(server, LifecycleInitiator.Scheduler,
+            fullWipe ? "Restart after scheduled full wipe" : "Restart after scheduled map wipe");
         return true;
     }
 

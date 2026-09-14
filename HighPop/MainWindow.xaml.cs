@@ -29,6 +29,14 @@ public partial class MainWindow : Window
 
     private void MainWindow_Loaded(object? sender, RoutedEventArgs e)
     {
+        if (Environment.GetCommandLineArgs().Any(arg =>
+                arg.Equals("--background", StringComparison.OrdinalIgnoreCase)))
+        {
+            Hide();
+            WindowState = WindowState.Minimized;
+            return;
+        }
+
         var config = App.Services.GetRequiredService<Services.ConfigService>();
         if (config.HasSeenOnboarding) return;
 

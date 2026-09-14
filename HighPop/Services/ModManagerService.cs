@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
 using HighPop.Games;
 
@@ -18,6 +19,11 @@ public sealed class InstalledModPlugin
     public string StateText => IsEnabled ? "Enabled" : "Disabled";
 }
 
+public sealed record RogueRustInstallTarget(string Framework, string Directory)
+{
+    public string DllPath => Path.Combine(Directory, "Oxide.Ext.RogueRust.dll");
+}
+
 /// <summary>Installs and manages the two supported Rust server frameworks: Oxide/uMod and Carbon.</summary>
 public sealed class ModManagerService
 {
@@ -25,6 +31,8 @@ public sealed class ModManagerService
     private const string OxideDownloadUrl = "https://umod.org/games/rust/download";
     private const string CarbonLatestReleaseApi =
         "https://api.github.com/repos/CarbonCommunity/Carbon/releases/latest";
+    private const string RogueRustLatestReleaseApi =
+        "https://api.github.com/repos/RogueAssassin/Oxide.Ext.RogueRust/releases/latest";
 
     public async Task InstallOxideAsync(
         IGamePlugin plugin,
@@ -73,6 +81,191 @@ public sealed class ModManagerService
         Report(progress, 100, "Carbon installed. Restart Rust to load the framework.");
     }
 
+    public async Task<string> InstallRogueRustAsync(
+        string installPath,
+        IProgress<(int pct, string msg)>? progress = null)
+    {
+        EnsureRustInstalled(installPath);
+        var targets = GetRogueRustInstallTargets(installPath);
+        if (targets.Count == 0)
+            throw new InvalidOperationException("Install Oxide/uMod or Carbon before installing the RogueRust extension.");
+
+        Report(progress, 0, "Resolving the latest RogueRust release from GitHub...");
+        using var request = new HttpRequestMessage(HttpMethod.Get, RogueRustLatestReleaseApi);
+        request.Headers.UserAgent.ParseAdd("HighPop-Rust-Manager/0.8");
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        using var release = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var tag = release.RootElement.GetProperty("tag_name").GetString()
+            ?? throw new InvalidOperationException("RogueRust release did not provide a version tag.");
+        var assets = release.RootElement.GetProperty("assets").EnumerateArray()
+            .Select(item => new
+            {
+                Name = item.GetProperty("name").GetString() ?? string.Empty,
+                Url = item.GetProperty("browser_download_url").GetString() ?? string.Empty,
+            })
+            .ToList();
+        var dllAsset = assets.FirstOrDefault(item =>
+            item.Name.Equals("Oxide.Ext.RogueRust.dll", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("The latest RogueRust release has no Oxide.Ext.RogueRust.dll asset.");
+        var sumsAsset = assets.FirstOrDefault(item =>
+            item.Name.Equals("SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("The RogueRust release has no SHA256SUMS.txt verification asset.");
+
+        Report(progress, 20, $"Downloading RogueRust {tag}...");
+        var bytes = await Http.GetByteArrayAsync(dllAsset.Url);
+        var sums = await Http.GetStringAsync(sumsAsset.Url);
+        var expected = sums.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .FirstOrDefault(line => line.EndsWith(dllAsset.Name, StringComparison.OrdinalIgnoreCase))?
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        await InstallVerifiedRogueRustFilesAsync(targets, bytes, expected, progress);
+        var frameworks = string.Join(" and ", targets.Select(target => target.Framework));
+        Report(progress, 100, $"RogueRust {tag} installed for {frameworks}. Restart Rust to load it.");
+        return tag;
+    }
+
+    /// <summary>
+    /// Stages and verifies every target before replacing anything. If a later replacement fails,
+    /// every earlier target is restored to its exact pre-install state.
+    /// </summary>
+    internal static async Task InstallVerifiedRogueRustFilesAsync(
+        IReadOnlyList<RogueRustInstallTarget> targets,
+        byte[] bytes,
+        string? expectedSha256,
+        IProgress<(int pct, string msg)>? progress = null,
+        Action<int>? beforeReplaceForTest = null)
+    {
+        if (targets.Count == 0)
+            throw new InvalidOperationException("No RogueRust installation targets were supplied.");
+
+        var actual = Convert.ToHexString(SHA256.HashData(bytes));
+        if (string.IsNullOrWhiteSpace(expectedSha256)
+            || !actual.Equals(expectedSha256.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(
+                "RogueRust SHA-256 verification failed; the existing installation was not changed.");
+
+        if (targets.Select(target => Path.GetFullPath(target.DllPath))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Count() != targets.Count)
+            throw new InvalidOperationException("RogueRust installation targets must be unique.");
+
+        var operationId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}";
+        var changes = new List<RogueRustInstallChange>();
+        try
+        {
+            // Complete all fallible directory, staging, and backup work before committing a target.
+            foreach (var target in targets)
+            {
+                Directory.CreateDirectory(target.Directory);
+                var destination = target.DllPath;
+                var temporary = destination + $".highpop-{operationId}.tmp";
+                var backup = File.Exists(destination)
+                    ? destination + $".bak-{operationId}"
+                    : null;
+                var change = new RogueRustInstallChange(target, destination, temporary, backup);
+                changes.Add(change);
+                await File.WriteAllBytesAsync(temporary, bytes);
+                if (backup != null) File.Copy(destination, backup, overwrite: false);
+            }
+
+            for (var index = 0; index < changes.Count; index++)
+            {
+                beforeReplaceForTest?.Invoke(index);
+                var change = changes[index];
+                File.Move(change.TemporaryPath, change.DestinationPath, overwrite: true);
+                change.Committed = true;
+                Report(progress, 70 + ((index + 1) * 25 / changes.Count),
+                    $"Installed the verified DLL for {change.Target.Framework}.");
+            }
+
+            foreach (var change in changes)
+                PruneRogueRustBackups(change.DestinationPath, keep: 20);
+        }
+        catch (Exception installError)
+        {
+            var rollbackErrors = new List<Exception>();
+            foreach (var change in changes.Where(change => change.Committed).Reverse())
+            {
+                try
+                {
+                    if (change.BackupPath != null)
+                        File.Copy(change.BackupPath, change.DestinationPath, overwrite: true);
+                    else if (File.Exists(change.DestinationPath))
+                        File.Delete(change.DestinationPath);
+                }
+                catch (Exception rollbackError)
+                {
+                    rollbackErrors.Add(rollbackError);
+                }
+            }
+
+            foreach (var change in changes)
+            {
+                try { if (File.Exists(change.TemporaryPath)) File.Delete(change.TemporaryPath); }
+                catch { }
+            }
+
+            if (rollbackErrors.Count > 0)
+                throw new AggregateException(
+                    "RogueRust installation failed and one or more targets could not be restored.",
+                    new[] { installError }.Concat(rollbackErrors));
+            throw new InvalidOperationException(
+                "RogueRust installation failed; every changed target was restored.", installError);
+        }
+    }
+
+    private static void PruneRogueRustBackups(string destination, int keep)
+    {
+        var directory = Path.GetDirectoryName(destination);
+        if (directory == null || !Directory.Exists(directory)) return;
+        foreach (var old in new DirectoryInfo(directory)
+                     .GetFiles(Path.GetFileName(destination) + ".bak-*")
+                     .OrderByDescending(file => file.CreationTimeUtc)
+                     .Skip(keep))
+        {
+            try { old.Delete(); } catch { }
+        }
+    }
+
+    public static string? GetInstalledRogueRustVersion(string installPath)
+    {
+        var dll = GetRogueRustInstallTargets(installPath)
+            .Select(target => target.DllPath)
+            .FirstOrDefault(File.Exists);
+        if (dll == null)
+        {
+            // Preserve detection if a framework was removed after RogueRust was installed.
+            dll = new[]
+            {
+                Path.Combine(installPath, "RustDedicated_Data", "Managed", "Oxide.Ext.RogueRust.dll"),
+                Path.Combine(installPath, "carbon", "extensions", "Oxide.Ext.RogueRust.dll"),
+            }.FirstOrDefault(File.Exists);
+        }
+        if (!File.Exists(dll)) return null;
+        try
+        {
+            var info = FileVersionInfo.GetVersionInfo(dll);
+            return info.ProductVersion ?? info.FileVersion ?? "Installed";
+        }
+        catch { return "Installed"; }
+    }
+
+    /// <summary>
+    /// Resolves every active framework target. Carbon loads extension DLLs from
+    /// carbon/extensions; Oxide/uMod loads compatible extension assemblies from
+    /// RustDedicated_Data/Managed. If both frameworks are detected, both copies are
+    /// updated so HighPop never silently installs into the wrong loader.
+    /// </summary>
+    public static List<RogueRustInstallTarget> GetRogueRustInstallTargets(string installPath)
+    {
+        var targets = new List<RogueRustInstallTarget>();
+        if (GetInstalledOxideVersion(installPath) != null)
+            targets.Add(new("Oxide/uMod", Path.Combine(installPath, "RustDedicated_Data", "Managed")));
+        if (IsCarbonInstalled(installPath))
+            targets.Add(new("Carbon", Path.Combine(installPath, "carbon", "extensions")));
+        return targets;
+    }
+
     public static string? GetInstalledOxideVersion(string installPath)
     {
         var dll = Path.Combine(installPath, "RustDedicated_Data", "Managed", "Oxide.Core.dll");
@@ -87,8 +280,9 @@ public sealed class ModManagerService
     }
 
     public static bool IsCarbonInstalled(string installPath) =>
-        Directory.Exists(Path.Combine(installPath, "carbon"))
-        || Directory.Exists(Path.Combine(installPath, "Carbon.Common"))
+        File.Exists(Path.Combine(installPath, "carbon", "managed", "Carbon.Common.dll"))
+        || File.Exists(Path.Combine(installPath, "carbon", "managed", "Carbon.dll"))
+        || File.Exists(Path.Combine(installPath, "Carbon.Common", "Carbon.Common.dll"))
         || File.Exists(Path.Combine(installPath, "HarmonyMods", "Carbon.Loader.dll"));
 
     public static string GetDetectedFramework(string installPath)
@@ -144,6 +338,15 @@ public sealed class ModManagerService
             catch { }
         }
         return null;
+    }
+
+    private sealed record RogueRustInstallChange(
+        RogueRustInstallTarget Target,
+        string DestinationPath,
+        string TemporaryPath,
+        string? BackupPath)
+    {
+        public bool Committed { get; set; }
     }
 
     private static void AddPlugins(List<InstalledModPlugin> target, string framework, string directory)

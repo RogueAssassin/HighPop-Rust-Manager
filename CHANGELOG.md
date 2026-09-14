@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.8.1
+
+- Added a deterministic lifecycle coordinator with separate persisted desired state and observed phase, monotonic generations, operation IDs, initiators, reasons, and transition timestamps.
+- Made explicit Stop persist stopped intent before process shutdown and invalidate older queued Start, restart, update, wipe, health, scheduler, Discord, REST, wake-on-demand, and log-rule work.
+- Preserved explicit running intent across manager restarts while keeping legacy profiles stopped unless Auto-start is independently enabled.
+- Routed Auto-start, Always-on recovery, scheduler, health checks, log rules, wake-on-demand, Discord, REST, update workflows, and UI controls through lifecycle-labelled operations.
+- Added visible lifecycle detail and distinct Starting, process-running, Rust-ready, WebRCON-ready, Recovering, Maintenance, Degraded, and Faulted phases.
+- Added smoke coverage for legacy migration, verified reattachment, persisted-running recovery, manual-stop precedence, and stale generation rejection.
+- Added lifecycle deadlines, runtime cancellation for superseded starts, and a bounded 32-entry durable operation-result journal.
+- Separated process, Rust-ready, WebRCON-ready, and player-sample health timestamps and exposed them in a local Support health summary.
+- Replaced fixed WebRCON retry polling with bounded exponential reconnect delays and jitter, cancelled when newer lifecycle intent wins.
+- Added a redacted ZIP support bundle containing an explicit-safe profile summary, lifecycle history, health signals, environment details, and bounded recent logs.
+
+## 0.8.0
+
+- Fixed duplicate Rust custom-variable rows: reload now takes the latest active `server.cfg` assignment case-insensitively, and save retains only one active assignment while preserving older duplicates as audit comments.
+- Reworked close/reopen continuity: close-to-tray retains full management, explicit manager exit detaches without stopping Rust, and reattachment verifies PID, start time, and executable path before restoring monitoring.
+- Added WebRCON fallback for commands sent to a reattached Rust process, whose original redirected console cannot be recovered by Windows.
+- Replaced the legacy Windows Run entry with a per-user Task Scheduler logon task that launches HighPop directly in background mode.
+- Restyled the close/exit dialog with the shared HighPop brand palette and clear background-versus-exit behavior.
+- Established `main` as the production branch and `testing` as the integration/release-candidate branch, with CI running on both.
+- Reworked Stop into an explicit `server.save` → `quit` sequence with a configurable 15–600 second timeout, and reworked Force Stop to save, request immediate exit, then enforce process termination after five seconds.
+- Locked direct Install/Update while Rust is running and expanded safe live-update monitoring with configurable in-game countdown broadcasts before the save/stop/update/restart workflow.
+- Applied the graphite, violet, and cyan Rogue ecosystem identity to the shared application palette, headers, cards, navigation, selections, and lifecycle command deck.
+- Corrected lifecycle policy so `Always-on` protects only a server HighPop deliberately started or reattached; opening the manager no longer starts a stopped always-on profile unless `Auto-start` is separately enabled.
+- Added smoke coverage for the startup-policy boundary to prevent `KeepOnline` and `AutoStart` from becoming coupled again.
+- Extended the verified RogueRust installer to support both frameworks: Oxide/uMod installs to `RustDedicated_Data/Managed`, while Carbon installs to `carbon/extensions`.
+- Made dual-framework updates transactional with automatic full-operation rollback, exact per-target backup copies, bounded retention, stricter Carbon detection, and failure-path smoke coverage.
+- Replaced the legacy HighPop artwork with a cleaner Rogue ecosystem-aligned icon, banner, in-app wordmark, and splash system.
+- Carried forward the v0.7 custom-variable workspace and visual refresh as the foundation of the v0.8 automation and portability milestone.
+
+## 0.7.0
+
+- Rebuilt Rust custom variables as an observable workspace so add/remove/edit operations update immediately instead of relying on a full view refresh.
+- Added variable filtering, pending-change counts, automatic timestamped `server.cfg` rollback copies, and a Save + apply-live action for running Rust servers.
+- Added first-class RogueRust extension installation/update from the latest public GitHub release, including SHA-256 verification and rollback copies of replaced DLLs.
+- Added RogueRust installed-version detection and one-click `roguerust.version` / `roguerust.readiness` diagnostics.
+- Refined cards, spacing, status pills, hierarchy, and the Mods workspace while retaining HighPop's lightweight native WPF design.
+- Updated the roadmap after comparing HighPop with AMP, GameServerApp, LinuxGSM, and Pterodactyl workflows.
+
 ## 0.6.0
 
 - Added an always-on production policy, enabled by default, that resumes Rust with HighPop and never shuts it down merely because the player count is zero.

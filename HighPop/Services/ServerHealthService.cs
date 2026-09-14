@@ -148,9 +148,15 @@ public class ServerHealthService : IDisposable
         {
             msg += " Restarting automatically.";
             await _notifications.NotifyAsync($"🔄 Health Check — {server.DisplayName}", msg, "#D29922");
-            await _manager.StopAsync(server, "Health check detected an unresponsive WebRCON listener");
+            await _manager.StopAsync(server, "Health check detected an unresponsive WebRCON listener",
+                LifecycleInitiator.HealthCheck);
+            var stoppedGeneration = server.LifecycleGeneration;
             await Task.Delay(3000);
-            await _manager.StartAsync(server);
+            if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
+                || server.DesiredState != ServerDesiredState.Stopped)
+                return;
+            await _manager.StartAsync(server, LifecycleInitiator.HealthCheck,
+                "Health check recovery restart");
         }
         else
         {

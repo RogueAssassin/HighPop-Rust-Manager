@@ -150,7 +150,8 @@ public sealed class WakeOnDemandService : IDisposable
         }
         catch { }
 
-        try { await _manager.StartAsync(server); }
+        try { await _manager.StartAsync(server, LifecycleInitiator.WakeOnDemand,
+            "Incoming connection triggered wake-on-demand"); }
         catch { }
     }
 
@@ -226,7 +227,8 @@ public sealed class WakeOnDemandService : IDisposable
                         _idleWatchers.Remove(server.Id);
                         _idleShutdownTimes[server.Id] = DateTime.UtcNow;
                     }
-                    try { await _manager.StopAsync(server, "Empty-server idle timeout elapsed"); } catch { }
+                    try { await _manager.StopAsync(server, "Empty-server idle timeout elapsed",
+                        LifecycleInitiator.WakeOnDemand); } catch { }
                     if (server.BackupOnShutdown)
                     {
                         try { await _backup.CreateBackupAsync(server); ServerBackedUp?.Invoke(server.Id); } catch { }

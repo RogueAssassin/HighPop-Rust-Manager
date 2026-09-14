@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.6.0-F05A28">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.8.1-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -17,25 +17,33 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
-## Included in v0.6
+## Included in v0.8.1 testing
 
 | Area | Capabilities |
 |---|---|
-| Rust installation | One-click SteamCMD bootstrap, install, validate, update, public-branch support, update-on-start |
-| Process control | Start, graceful stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
+| Rust installation | One-click SteamCMD bootstrap, stopped-server install/validate/update, public-branch support, update-on-start, and non-destructive live build checks |
+| Process control | Explicit Start, configurable save-and-quit Stop, save-backed Force Stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
 | High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, `server.cfg` variable synchronization, custom log directory, identity and conflict-safe ports |
 | Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
-| Mods and maps | Carbon and Oxide installation/detection, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
+| Mods and maps | Carbon and Oxide installation/detection, framework-aware verified RogueRust installation/update and diagnostic commands, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
-| Reliability | Always-on uptime policy, bounded crash-loop backoff, slow-start readiness grace, WebRCON retries, reasoned process-exit diagnostics, and non-destructive update checks |
+| Reliability | Explicit-start always-on recovery, separate launch-on-manager-start control, durable operation journal, lifecycle cancellation/deadlines, bounded jittered WebRCON recovery, independent readiness signals, redacted support bundles, reasoned process-exit diagnostics, and non-destructive update checks |
 | Local telemetry | Opt-in versioned lifecycle/action/player-count JSONL events with per-server age and storage retention |
-| Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, serialized per server with visible results |
+| Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, plus configurable in-game update countdowns, serialized per server with visible results |
 | Monitoring | Persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |
 | Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, a local Discord bot with live boards and staff controls, webhooks, and SMTP alerts |
-| Windows controls | System tray, startup registration, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
+| Windows controls | System tray, per-user logon task, verified close/reopen process reattachment, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
 | Customization | Portable Rust presets, editable launch/config values, server templates, custom images, and replaceable brand assets |
 
 HighPop deliberately does not copy proprietary hosted databases or subscription services. VAC/VPN intelligence, globally shared ban data, and hosted web accounts require external data providers; the local manager remains usable without an account or recurring fee. See [ROADMAP.md](ROADMAP.md) for planned provider interfaces and deeper Rust telemetry.
+
+## Release branches
+
+- `main` contains production-ready releases and is the only branch that creates release packages.
+- `testing` contains audited integration and release-candidate work. Feature branches start from and merge back into `testing`.
+- Promotion uses a reviewed `testing` → `main` pull request after Windows CI and the manual Rust release matrix pass.
+
+The current integration findings and promotion checklist are maintained in [AUDIT.md](AUDIT.md).
 
 ## Install
 
@@ -91,9 +99,15 @@ The dedicated **Rust** tab separates Facepunch browser tags, community vanilla/m
 
 ## Stage 4 configuration and releases
 
-Rust custom variables are read from and saved to `server/<identity>/cfg/server.cfg`. Facepunch documents this as the startup configuration file for larger variable sets and notes that its values take priority over matching command-line values. HighPop loads active assignments already in that file, preserves comments and unrelated lines, and only rewrites changed or explicitly disabled rows.
+Rust custom variables are read from and saved to `server/<identity>/cfg/server.cfg`. Facepunch documents this as the startup configuration file for larger variable sets and notes that its values take priority over matching command-line values. HighPop loads active assignments already in that file, collapses duplicate names case-insensitively using the last active value, preserves comments and unrelated lines, and saves one authoritative active assignment per variable.
+
+Closing the main window offers a recommended background/tray mode, which retains live monitoring, schedules, console capture, and process handles. An explicit manager exit leaves running Rust servers online and persists their PID, start time, and executable path; HighPop verifies all available identity fields before reattaching when reopened. Since Windows cannot restore redirected stdin from a previous manager process, reattached Rust commands use WebRCON. The Windows startup option creates a current-user logon task that launches HighPop in background mode.
 
 Upgrading from v0.3 is automatic: HighPop moves variables from its own managed `serverauto.cfg` block into `server.cfg` the next time the configuration is saved or Rust starts. A value already present in `server.cfg` wins. HighPop removes only its marked legacy block and leaves any other `serverauto.cfg` content alone.
+
+Before changing an existing `server.cfg`, HighPop saves its exact previous contents under `server/<identity>/cfg/.highpop-backups/`. The newest 20 snapshots are retained. To restore one, stop Rust, copy the selected snapshot over `server.cfg`, then use **Reload from file** before starting the server again.
+
+RogueRust installation is framework-aware and transactional. The downloaded `Oxide.Ext.RogueRust.dll` must match the release's `SHA256SUMS.txt` before any target changes. Oxide/uMod uses `RustDedicated_Data/Managed`; Carbon uses `carbon/extensions`. Existing DLLs receive `.bak-<operation>` rollback copies, with the newest 20 retained per target. If any target fails, HighPop restores every target already changed. For a manual restore, stop Rust, replace the installed DLL with the chosen `.bak-*` file, remove the backup suffix, and restart Rust. **Run diagnostics** sends `roguerust.version` and `roguerust.readiness`; review their responses in the Console tab. It does not yet calculate a pass/fail health result.
 
 When a previously unreleased project version reaches `main`, GitHub Actions creates its version tag and publishes five Windows x64 assets: the direct self-contained `.exe`, its SHA-256 file, the recommended portable ZIP, its SHA-256 file, and a JSON manifest containing sizes, hashes, and the source commit. Later commits with the same project version skip release publication. Authenticode signing is enabled automatically when the repository signing certificate secrets are configured.
 

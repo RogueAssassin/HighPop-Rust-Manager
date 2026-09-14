@@ -59,7 +59,7 @@
                                             <Setter Property="Foreground" Value="#D29922"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Type}" Value="System">
-                                            <Setter Property="Foreground" Value="#F05A28"/>
+                                            <Setter Property="Foreground" Value="#22D3EE"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Type}" Value="Input">
                                             <Setter Property="Foreground" Value="#3FB950"/>

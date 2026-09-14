@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using HighPop.Games;
 using HighPop.Models;
 using HighPop.Services;
@@ -29,6 +30,12 @@ var server = new GameServer
     MaxPlayers = 500,
     GameSpecificSettings = rust.GetDefaultSettings(),
 };
+var variableNotifications = 0;
+server.RustServerVariables[0].PropertyChanged += (_, _) => variableNotifications++;
+server.RustServerVariables[0].Enabled = true;
+Check(variableNotifications == 1 && server.RustServerVariables[0].HasUnsavedChanges,
+    "Rust variable rows notify the workspace immediately when edited");
+server.RustServerVariables[0].Enabled = false;
 Check(server.GameSpecificSettings["steamBranch"] == "public",
     "normal Rust profiles default to the public SteamCMD branch");
 Check(server.RconAutoConnectDelaySeconds == 60
@@ -37,6 +44,96 @@ Check(server.RconAutoConnectDelaySeconds == 60
     "slow Rust startup and WebRCON timing defaults");
 Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
     "production profiles default to always-on recovery without empty-player shutdown");
+foreach (var keepOnline in new[] { false, true })
+{
+    server.KeepOnline = keepOnline;
+    server.AutoStart = false;
+    Check(!ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false),
+        $"AutoStart off never launches a stopped profile (Always-on: {keepOnline})");
+    server.AutoStart = true;
+    Check(ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: false)
+          && !ServerStartupPolicy.ShouldStartOnManagerLaunch(server, reattached: true),
+        $"AutoStart launches only profiles not already reattached (Always-on: {keepOnline})");
+}
+server.AutoStart = false;
+server.KeepOnline = true;
+
+var lifecycleServer = new GameServer
+{
+    Id = Guid.NewGuid().ToString(),
+    KeepOnline = true,
+    AutoRestart = true,
+    DesiredState = ServerDesiredState.Unspecified,
+    LifecyclePhase = ServerLifecyclePhase.Unknown,
+};
+ServerLifecycleRules.InitializeAfterLoad(lifecycleServer, reattached: false);
+Check(lifecycleServer.DesiredState == ServerDesiredState.Stopped
+      && lifecycleServer.LifecyclePhase == ServerLifecyclePhase.StoppedByOperator
+      && !ServerLifecycleRules.CanRecover(lifecycleServer),
+    "unattached profiles migrate to durable stopped intent and cannot recover implicitly");
+
+lifecycleServer.DesiredState = ServerDesiredState.Running;
+lifecycleServer.LifecyclePhase = ServerLifecyclePhase.Online;
+lifecycleServer.RunningPid = 0;
+ServerLifecycleRules.InitializeAfterLoad(lifecycleServer, reattached: false);
+Check(lifecycleServer.DesiredState == ServerDesiredState.Running
+      && lifecycleServer.LifecyclePhase == ServerLifecyclePhase.Recovering
+      && ServerLifecycleRules.CanRecover(lifecycleServer),
+    "persisted running intent survives a stale process identity and resumes recovery");
+
+lifecycleServer.RunningPid = 1234;
+ServerLifecycleRules.InitializeAfterLoad(lifecycleServer, reattached: true);
+Check(lifecycleServer.DesiredState == ServerDesiredState.Running
+      && lifecycleServer.LifecyclePhase == ServerLifecyclePhase.Online
+      && ServerLifecycleRules.CanRecover(lifecycleServer),
+    "verified process reattachment establishes desired running state");
+
+lifecycleServer.LifecycleGeneration = 7;
+Check(ServerLifecycleRules.IsCurrent(lifecycleServer, 7)
+      && !ServerLifecycleRules.IsCurrent(lifecycleServer, 6),
+    "lifecycle generations reject callbacks from superseded operations");
+lifecycleServer.DesiredState = ServerDesiredState.Stopped;
+Check(!ServerLifecycleRules.CanRecover(lifecycleServer),
+    "manual stopped intent overrides Always-on and Auto-restart");
+
+Check(ServerLifecycleRules.DefaultDeadline(lifecycleServer, ServerLifecyclePhase.Stopping)
+          >= TimeSpan.FromSeconds(lifecycleServer.GracefulStopTimeoutSeconds)
+      && ServerLifecycleRules.StatusForPhase(ServerLifecyclePhase.Faulted)
+          == LifecycleOperationStatus.Failed
+      && ServerLifecycleRules.StatusForPhase(ServerLifecyclePhase.RconReady)
+          == LifecycleOperationStatus.Succeeded,
+    "lifecycle operation deadlines and terminal results are deterministic");
+var firstRconDelay = RconReconnectPolicy.GetDelay(1, 1.0);
+var lateRconDelay = RconReconnectPolicy.GetDelay(20, 1.2);
+Check(firstRconDelay == TimeSpan.FromSeconds(5)
+      && lateRconDelay <= TimeSpan.FromSeconds(54),
+    "WebRCON reconnect backoff starts promptly and remains bounded with jitter");
+var diagnosticText = "password=rust-secret token:api-secret "
+    + "https://discord.com/api/webhooks/123/secret "
+    + "ws://127.0.0.1:28016/rcon-secret dpapi:YWJjZA==";
+var redactedDiagnosticText = SupportBundleService.Redact(diagnosticText);
+Check(!redactedDiagnosticText.Contains("rust-secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("api-secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("/123/secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("rcon-secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("YWJjZA", StringComparison.Ordinal),
+    "support bundle redacts passwords, tokens, webhooks, WebRCON credentials, and DPAPI values");
+
+var signalServer = new GameServer { DisplayName = "Signal Test" };
+var signalInstance = new ServerInstance(signalServer);
+signalInstance.MarkProcessObserved();
+signalInstance.TryMarkReady("Rust startup log");
+signalInstance.TryMarkReady("WebRCON connected");
+signalInstance.MarkPlayerSample();
+Check(signalInstance.ProcessObservedUtc.HasValue
+      && signalInstance.RustReadyUtc.HasValue
+      && signalInstance.RconReadyUtc.HasValue
+      && signalInstance.LastPlayerSampleUtc.HasValue,
+    "process, Rust, WebRCON, and player freshness signals are tracked independently");
+
+Check(WindowsStartupTaskService.BuildTaskAction(@"C:\Program Files\HighPop\HighPop.exe")
+          == "\"C:\\Program Files\\HighPop\\HighPop.exe\" --background",
+    "Windows logon task safely quotes the executable and starts in background mode");
 
 var scheduleReference = new DateTime(2026, 7, 24, 15, 30, 0);
 var onceSchedule = new ScheduledTask
@@ -97,6 +194,16 @@ Check(SteamCmdService.TryParseBranchBuildId(steamAppInfo, "public", out var publ
       && stagingBuild == "20490001",
     "SteamCMD branch build IDs are parsed before auto-update restart");
 
+Check(ServerMaintenancePolicy.ClampGracefulStopTimeout(1) == 15
+      && ServerMaintenancePolicy.ClampGracefulStopTimeout(120) == 120
+      && ServerMaintenancePolicy.ClampGracefulStopTimeout(5000) == 600,
+    "safe-stop deadlines remain within the supported 15–600 second range");
+var fiveMinuteUpdateCountdown = ServerMaintenancePolicy.GetUpdateCountdownSeconds(5);
+Check(fiveMinuteUpdateCountdown.SequenceEqual(new[] { 300, 180, 60, 30, 10 })
+      && ServerMaintenancePolicy.FormatCountdown(60) == "1 minute"
+      && ServerMaintenancePolicy.FormatCountdown(30) == "30 seconds",
+    "safe-update countdown emits deterministic in-game warning checkpoints");
+
 server.RconPassword = "short";
 Check(rust.ValidateBeforeStart(server)?.Contains("12 characters") == true,
     "weak RCON password rejected");
@@ -113,6 +220,83 @@ try
     Directory.CreateDirectory(testRoot);
     server.InstallPath = Path.Combine(testRoot, "server");
     Directory.CreateDirectory(server.InstallPath);
+
+    var oxideManaged = Path.Combine(server.InstallPath, "RustDedicated_Data", "Managed");
+    Directory.CreateDirectory(oxideManaged);
+    File.Copy(Environment.ProcessPath!, Path.Combine(oxideManaged, "Oxide.Core.dll"));
+    var oxideTargets = ModManagerService.GetRogueRustInstallTargets(server.InstallPath);
+    Check(oxideTargets.Count == 1
+          && oxideTargets[0].Framework == "Oxide/uMod"
+          && oxideTargets[0].Directory == oxideManaged,
+        "RogueRust targets Oxide's managed directory");
+    var carbonManaged = Path.Combine(server.InstallPath, "carbon", "managed");
+    Directory.CreateDirectory(carbonManaged);
+    File.Copy(Environment.ProcessPath!, Path.Combine(carbonManaged, "Carbon.Common.dll"));
+    var dualTargets = ModManagerService.GetRogueRustInstallTargets(server.InstallPath);
+    Check(dualTargets.Count == 2
+          && dualTargets.Any(target => target.Framework == "Carbon"
+              && target.Directory == Path.Combine(server.InstallPath, "carbon", "extensions")),
+        "RogueRust targets Carbon extensions and handles dual-framework detection");
+
+    var staleCarbonRoot = Path.Combine(testRoot, "stale-carbon");
+    Directory.CreateDirectory(Path.Combine(staleCarbonRoot, "carbon"));
+    Check(!ModManagerService.IsCarbonInstalled(staleCarbonRoot),
+        "an empty or stale carbon directory is not treated as an active framework");
+
+    var rogueRustBytes = "verified RogueRust test payload"u8.ToArray();
+    var rogueRustHash = Convert.ToHexString(SHA256.HashData(rogueRustBytes));
+    var originalDlls = dualTargets.ToDictionary(
+        target => target.Framework,
+        target => System.Text.Encoding.UTF8.GetBytes("original " + target.Framework));
+    foreach (var target in dualTargets)
+    {
+        Directory.CreateDirectory(target.Directory);
+        await File.WriteAllBytesAsync(target.DllPath, originalDlls[target.Framework]);
+    }
+
+    await ModManagerService.InstallVerifiedRogueRustFilesAsync(
+        dualTargets, rogueRustBytes, rogueRustHash);
+    Check(dualTargets.All(target => File.ReadAllBytes(target.DllPath).SequenceEqual(rogueRustBytes)),
+        "verified RogueRust payload is installed for every detected framework");
+    Check(dualTargets.All(target => Directory.GetFiles(
+            target.Directory, "Oxide.Ext.RogueRust.dll.bak-*").Any(path =>
+                File.ReadAllBytes(path).SequenceEqual(originalDlls[target.Framework]))),
+        "RogueRust replacement retains exact rollback copies for every target");
+
+    var checksumRejected = false;
+    try
+    {
+        await ModManagerService.InstallVerifiedRogueRustFilesAsync(
+            dualTargets, "tampered"u8.ToArray(), rogueRustHash);
+    }
+    catch (InvalidDataException) { checksumRejected = true; }
+    Check(checksumRejected
+          && dualTargets.All(target => File.ReadAllBytes(target.DllPath).SequenceEqual(rogueRustBytes)),
+        "RogueRust checksum failure leaves every installed target unchanged");
+
+    foreach (var target in dualTargets)
+        await File.WriteAllBytesAsync(target.DllPath, originalDlls[target.Framework]);
+    var rollbackReported = false;
+    try
+    {
+        await ModManagerService.InstallVerifiedRogueRustFilesAsync(
+            dualTargets, rogueRustBytes, rogueRustHash,
+            beforeReplaceForTest: index =>
+            {
+                if (index == 1) throw new IOException("Injected second-target failure");
+            });
+    }
+    catch (InvalidOperationException ex)
+    {
+        rollbackReported = ex.Message.Contains("restored", StringComparison.OrdinalIgnoreCase);
+    }
+    Check(rollbackReported
+          && dualTargets.All(target => File.ReadAllBytes(target.DllPath)
+              .SequenceEqual(originalDlls[target.Framework]))
+          && !dualTargets.SelectMany(target => Directory.GetFiles(
+                  target.Directory, "*.highpop-*.tmp"))
+              .Any(),
+        "a failed dual-framework install restores every target and removes staged files");
 
     server.RustServerVariables =
     [
@@ -134,17 +318,19 @@ try
     var serverConfigPath = RustPlugin.GetServerConfigPath(server);
     var serverAutoPath = RustPlugin.GetLegacyServerAutoPath(server);
     Directory.CreateDirectory(Path.GetDirectoryName(serverConfigPath)!);
-    await File.WriteAllTextAsync(serverConfigPath,
+    const string originalServerConfig =
         "# Owner comment is preserved\n" +
         "server.hostname \"Preserved\"\n" +
         "bear.population \"3\"\n" +
-        "boar.population \"7\"\n");
-    await File.WriteAllTextAsync(serverAutoPath,
+        "boar.population \"7\"\n";
+    const string originalServerAuto =
         "server.writecfg \"true\"\n\n" +
         "// HighPop managed variables — begin\n" +
         "bear.population \"9\"\n" +
         "wolf.population \"4\"\n" +
-        "// HighPop managed variables — end\n");
+        "// HighPop managed variables — end\n";
+    await File.WriteAllTextAsync(serverConfigPath, originalServerConfig);
+    await File.WriteAllTextAsync(serverAutoPath, originalServerAuto);
 
     var loadedVariables = RustPlugin.LoadServerConfigVariables(server);
     var loadedBear = server.RustServerVariables.First(v => v.Name == "bear.population");
@@ -154,6 +340,42 @@ try
           && loadedBoar is { Enabled: true, Value: "7" },
         "server.cfg variables are loaded into the Rust workspace");
 
+    server.RustServerVariables.Add(new RustServerVariable
+    {
+        Enabled = true,
+        Name = "BEAR.POPULATION",
+        Value = "999",
+        Description = "Persisted duplicate",
+    });
+    await File.WriteAllTextAsync(serverConfigPath,
+        originalServerConfig +
+        "bear.population \"11\"\n" +
+        "BEAR.POPULATION \"12\"\n");
+    loadedVariables = RustPlugin.LoadServerConfigVariables(server);
+    var bearRows = server.RustServerVariables
+        .Where(v => v.Name.Equals("bear.population", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    Check(loadedVariables == 3
+          && bearRows.Count == 1
+          && bearRows[0] is { Enabled: true, Value: "12", LoadedConfigValue: "12" },
+        "server.cfg reload collapses duplicate rows and uses the latest active assignment");
+
+    bearRows[0].Value = "2";
+    RustPlugin.WriteManagedServerConfig(server);
+    var deduplicatedConfig = await File.ReadAllLinesAsync(serverConfigPath);
+    Check(deduplicatedConfig.Count(line =>
+              line.TrimStart().StartsWith("bear.population ", StringComparison.OrdinalIgnoreCase)) == 1
+          && deduplicatedConfig.Any(line => line == "BEAR.POPULATION \"2\"")
+          && deduplicatedConfig.Count(line => line.Contains("Duplicate removed by HighPop:",
+              StringComparison.Ordinal)) == 2,
+        "server.cfg save leaves one authoritative active assignment and comments older duplicates");
+
+    // Restore the original fixture so the rollback/idempotence assertions below remain exact.
+    await File.WriteAllTextAsync(serverConfigPath, originalServerConfig);
+    await File.WriteAllTextAsync(serverAutoPath, originalServerAuto);
+    RustPlugin.LoadServerConfigVariables(server);
+    loadedBear = server.RustServerVariables.First(v =>
+        v.Name.Equals("bear.population", StringComparison.OrdinalIgnoreCase));
     loadedBear.Value = "2";
     await rust.PreStartAsync(server);
     var serverConfig = await File.ReadAllTextAsync(serverConfigPath);
@@ -169,10 +391,26 @@ try
           && !serverAuto.Contains("wolf.population"),
         "legacy HighPop block is removed without replacing owner serverauto.cfg content");
 
+    var configBackupDirectory = Path.Combine(Path.GetDirectoryName(serverConfigPath)!, ".highpop-backups");
+    var initialBackups = Directory.GetFiles(configBackupDirectory, "server-*.cfg");
+    Check(initialBackups.Any(path => File.ReadAllText(path) == originalServerConfig),
+        "server.cfg rollback copy exactly matches the pre-change file");
+
     var firstWrite = serverConfig;
+    var backupCountBeforeNoOp = initialBackups.Length;
     RustPlugin.WriteManagedServerConfig(server);
-    Check(await File.ReadAllTextAsync(serverConfigPath) == firstWrite,
-        "server.cfg synchronization is idempotent");
+    Check(await File.ReadAllTextAsync(serverConfigPath) == firstWrite
+          && Directory.GetFiles(configBackupDirectory, "server-*.cfg").Length
+              == backupCountBeforeNoOp,
+        "idempotent server.cfg synchronization does not create another rollback copy");
+
+    for (var index = 0; index < 24; index++)
+    {
+        server.RustServerVariables.First(v => v.Name == "bear.population").Value = (index + 10).ToString();
+        RustPlugin.WriteManagedServerConfig(server);
+    }
+    Check(Directory.GetFiles(configBackupDirectory, "server-*.cfg").Length == 20,
+        "server.cfg rollback retention is capped at 20 copies");
 
     loadedBoar = server.RustServerVariables.First(v => v.Name == "boar.population");
     loadedBoar.Enabled = false;
@@ -190,6 +428,16 @@ try
     });
     Check(rust.ValidateBeforeStart(server)?.Contains("variable names") == true,
         "unsafe server.cfg variable names are rejected");
+    server.RustServerVariables.RemoveAt(server.RustServerVariables.Count - 1);
+
+    server.RustServerVariables.Add(new RustServerVariable
+    {
+        Enabled = true,
+        Name = "BEAR.POPULATION",
+        Value = "10",
+    });
+    Check(rust.ValidateBeforeStart(server)?.Contains("only once") == true,
+        "duplicate server.cfg variable rows are rejected case-insensitively");
     server.RustServerVariables.RemoveAt(server.RustServerVariables.Count - 1);
 
     var customLogs = Path.Combine(testRoot, "custom-logs");

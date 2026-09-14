@@ -53,15 +53,22 @@ public class LogWatcherService
             case LogWatchAction.Restart:
                 await _notifications.NotifyAsync($"⚠ Log Watch — {server.DisplayName}",
                     $"Restarting server. Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#D29922");
-                await _manager.StopAsync(server, $"Log watcher restart triggered by \"{rule.Keyword}\"");
+                await _manager.StopAsync(server, $"Log watcher restart triggered by \"{rule.Keyword}\"",
+                    LifecycleInitiator.LogRule);
+                var stoppedGeneration = server.LifecycleGeneration;
                 await Task.Delay(3000);
-                await _manager.StartAsync(server);
+                if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
+                    || server.DesiredState != ServerDesiredState.Stopped)
+                    break;
+                await _manager.StartAsync(server, LifecycleInitiator.LogRule,
+                    $"Log watcher restart triggered by \"{rule.Keyword}\"");
                 break;
 
             case LogWatchAction.Stop:
                 await _notifications.NotifyAsync($"⚠ Log Watch — {server.DisplayName}",
                     $"Stopping server. Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#DA3633");
-                await _manager.StopAsync(server, $"Log watcher stop triggered by \"{rule.Keyword}\"");
+                await _manager.StopAsync(server, $"Log watcher stop triggered by \"{rule.Keyword}\"",
+                    LifecycleInitiator.LogRule);
                 break;
 
             case LogWatchAction.SendRcon:
@@ -71,7 +78,7 @@ public class LogWatcherService
 
             case LogWatchAction.Notify:
                 await _notifications.NotifyAsync($"ℹ Log Watch — {server.DisplayName}",
-                    $"Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#F05A28");
+                    $"Keyword: `{rule.Keyword}`\nLine: `{line.Trim()}`", "#A855F7");
                 break;
         }
 

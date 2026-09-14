@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace HighPop.Models;
 
@@ -37,6 +39,8 @@ public class GameServer
     public int  AutoRestartDelaySec    { get; set; } = 10;   // seconds before restart
     public bool AutoUpdate             { get; set; } = false;
     public int  AutoUpdateIntervalMin  { get; set; } = 30;   // minutes between update checks
+    /// <summary>Minutes of in-game notice before a detected Rust update is applied.</summary>
+    public int  AutoUpdateWarningMinutes { get; set; } = 5;
     public bool AutoStart              { get; set; } = false;
     public bool WakeOnDemand           { get; set; } = false;
     public bool WakeOnDemandPortTrigger { get; set; } = true;
@@ -45,6 +49,8 @@ public class GameServer
     public bool UpdateOnStart          { get; set; } = false;
     public bool BackupOnStart          { get; set; } = false;
     public bool BackupOnShutdown       { get; set; } = false;
+    /// <summary>Maximum wait for a normal save-and-quit operation before HighPop forces exit.</summary>
+    public int GracefulStopTimeoutSeconds { get; set; } = 120;
     public bool   DiscordAlertsEnabled    { get; set; } = true;
     /// <summary>Server-specific Discord webhook URL. Falls back to global setting when empty.</summary>
     public string DiscordWebhookUrl       { get; set; } = string.Empty;
@@ -89,13 +95,27 @@ public class GameServer
     public bool RustTelemetryEnabled { get; set; } = false;
     public int RustTelemetryRetentionDays { get; set; } = 14;
     public int RustTelemetryMaxMegabytes { get; set; } = 256;
-    public List<RustServerVariable> RustServerVariables { get; set; } = RustServerVariable.CreateDefaults();
+    public ObservableCollection<RustServerVariable> RustServerVariables { get; set; } = RustServerVariable.CreateDefaults();
     public Dictionary<string, string> GameSpecificSettings { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime? LastStarted { get; set; }
     public DateTime? LastExitAt { get; set; }
     public int? LastExitCode { get; set; }
     public string LastExitReason { get; set; } = string.Empty;
+    /// <summary>
+    /// Durable operator intent. This is deliberately separate from Status/LifecyclePhase so a
+    /// transient process or RCON failure can never turn an explicit Stop into an implicit Start.
+    /// </summary>
+    public ServerDesiredState DesiredState { get; set; } = ServerDesiredState.Unspecified;
+    /// <summary>Last observed lifecycle phase, persisted so recovery decisions remain explainable.</summary>
+    public ServerLifecyclePhase LifecyclePhase { get; set; } = ServerLifecyclePhase.Unknown;
+    /// <summary>Monotonic token used to invalidate callbacks from superseded lifecycle operations.</summary>
+    public long LifecycleGeneration { get; set; }
+    public string LastLifecycleOperationId { get; set; } = string.Empty;
+    public string LastLifecycleReason { get; set; } = string.Empty;
+    public LifecycleInitiator LastLifecycleInitiator { get; set; } = LifecycleInitiator.Unknown;
+    public DateTime? LastLifecycleTransitionUtc { get; set; }
+    public List<LifecycleOperationRecord> LifecycleOperationHistory { get; set; } = [];
     public string GroupId { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
     /// <summary>Saved console command shortcuts shown as one-click buttons in the Console tab.</summary>
@@ -108,6 +128,10 @@ public class GameServer
     /// server after HighPop itself was closed and reopened. 0 = not running (or not tracked).
     /// </summary>
     public int RunningPid { get; set; }
+    /// <summary>UTC process start time used to reject a recycled PID during reattachment.</summary>
+    public DateTime? RunningProcessStartedUtc { get; set; }
+    /// <summary>Resolved executable path used to verify that a persisted PID is this server.</summary>
+    public string RunningExecutablePath { get; set; } = string.Empty;
 
     [JsonIgnore]
     public ServerStatus Status { get; set; } = ServerStatus.NotInstalled;
@@ -122,12 +146,17 @@ public class GameServer
     public TimeSpan Uptime { get; set; }
 }
 
-public class RustServerVariable
+public class RustServerVariable : ObservableObject
 {
-    public bool Enabled { get; set; }
-    public string Name  { get; set; } = string.Empty;
-    public string Value { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
+    private bool _enabled;
+    private string _name = string.Empty;
+    private string _value = string.Empty;
+    private string _description = string.Empty;
+
+    public bool Enabled { get => _enabled; set => SetProperty(ref _enabled, value); }
+    public string Name { get => _name; set => SetProperty(ref _name, value); }
+    public string Value { get => _value; set => SetProperty(ref _value, value); }
+    public string Description { get => _description; set => SetProperty(ref _description, value); }
 
     [JsonIgnore]
     public bool LoadedFromServerConfig { get; set; }
@@ -135,7 +164,11 @@ public class RustServerVariable
     [JsonIgnore]
     public string LoadedConfigValue { get; set; } = string.Empty;
 
-    public static List<RustServerVariable> CreateDefaults() =>
+    public bool HasUnsavedChanges => LoadedFromServerConfig
+        ? !Enabled || !string.Equals(Value, LoadedConfigValue, StringComparison.Ordinal)
+        : Enabled;
+
+    public static ObservableCollection<RustServerVariable> CreateDefaults() =>
     [
         new() { Name = "bear.population", Value = "2", Description = "Target bear population multiplier." },
         new() { Name = "wolf.population", Value = "2", Description = "Target wolf population multiplier." },

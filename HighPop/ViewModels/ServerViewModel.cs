@@ -59,6 +59,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private string _modStatusText   = string.Empty;
     [ObservableProperty] private bool   _modBusy;
     [ObservableProperty] private string _detectedModFramework = "Not scanned";
+    [ObservableProperty] private string _rogueRustStatus = "Not installed";
     [ObservableProperty] private List<InstalledModPlugin> _installedPlugins = [];
 
     // Config editor
@@ -133,6 +134,17 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ? _telemetry.GetServerDirectory(Server)
         : string.Empty;
     [ObservableProperty] private string _rustVariableStatus = "server.cfg has not been read yet.";
+    [ObservableProperty] private int _rustVariablePendingCount;
+    [ObservableProperty] private string _rustVariableFilter = string.Empty;
+    public IEnumerable<RustServerVariable> FilteredRustServerVariables =>
+        string.IsNullOrWhiteSpace(RustVariableFilter)
+            ? Server.RustServerVariables
+            : Server.RustServerVariables.Where(variable =>
+                variable.Name.Contains(RustVariableFilter, StringComparison.OrdinalIgnoreCase)
+                || variable.Description.Contains(RustVariableFilter, StringComparison.OrdinalIgnoreCase));
+    partial void OnRustVariableFilterChanged(string value) =>
+        OnPropertyChanged(nameof(FilteredRustServerVariables));
+    private readonly HashSet<RustServerVariable> _trackedRustVariables = [];
     private bool _syncingRustTags;
 
     // Scheduled tasks
@@ -201,23 +213,50 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     internal Action? BatchSelectionChanged { get; set; }
     partial void OnIsBatchSelectedChanged(bool _) => BatchSelectionChanged?.Invoke();
 
-    public string StatusColor => Server.Status switch
+    public string LifecycleDetailText
+    {
+        get
+        {
+            var phase = Server.LifecyclePhase switch
+            {
+                ServerLifecyclePhase.StoppedByOperator => "Stopped by operator",
+                ServerLifecyclePhase.ProcessRunning => "Process running",
+                ServerLifecyclePhase.RustReady => "Rust ready",
+                ServerLifecyclePhase.RconReady => "WebRCON ready",
+                _ => Server.LifecyclePhase.ToString(),
+            };
+            return string.IsNullOrWhiteSpace(Server.LastLifecycleReason)
+                ? phase
+                : $"{phase} · {Server.LastLifecycleReason}";
+        }
+    }
+
+    public string StatusColor => Server.LifecyclePhase switch
+    {
+        ServerLifecyclePhase.Online or ServerLifecyclePhase.RconReady or ServerLifecyclePhase.RustReady => "#3FB950",
+        ServerLifecyclePhase.Starting or ServerLifecyclePhase.ProcessRunning => "#22D3EE",
+        ServerLifecyclePhase.Stopping or ServerLifecyclePhase.Maintenance => "#A855F7",
+        ServerLifecyclePhase.Recovering or ServerLifecyclePhase.Degraded => "#D29922",
+        ServerLifecyclePhase.Faulted => "#F85149",
+        _ => Server.Status switch
     {
         ServerStatus.Running      => "#3FB950",
-        ServerStatus.Starting     => "#F05A28",
-        ServerStatus.Stopping     => "#F05A28",
+        ServerStatus.Starting     => "#22D3EE",
+        ServerStatus.Stopping     => "#A855F7",
         ServerStatus.Stopped      => "#8B949E",
-        ServerStatus.Installing   => "#F05A28",
-        ServerStatus.Updating     => "#F05A28",
+        ServerStatus.Installing   => "#22D3EE",
+        ServerStatus.Updating     => "#A855F7",
         ServerStatus.Error        => "#F85149",
         ServerStatus.NotInstalled => "#8B949E",
         _                         => "#8B949E",
+        },
     };
 
     public bool IsRunning    => Server.Status == ServerStatus.Running;
     public bool IsStopped    => Server.Status is ServerStatus.Stopped or ServerStatus.NotInstalled;
     public bool CanStart     => Server.Status is ServerStatus.Stopped or ServerStatus.Error or ServerStatus.NotInstalled;
     public bool CanStop      => Server.Status is ServerStatus.Running or ServerStatus.Starting;
+    public bool CanInstallServerFiles => !IsInstalling && !IsRunning;
     public bool HasRcon => Plugin?.HasRcon == true;
 
     public bool ShowVersionInfo => Plugin?.SteamAppId > 0;
@@ -422,6 +461,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _presets       = presets;
         _telemetry     = telemetry;
         Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+        Server.RustServerVariables.CollectionChanged += (_, _) => TrackRustVariableChanges();
         if (IsRust)
         {
             try
@@ -436,6 +476,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 RustVariableStatus = $"Could not read server.cfg: {ex.Message}";
             }
         }
+        TrackRustVariableChanges();
         AvailablePresets = _presets.GetPresetsForGame(server.GameId);
         SelectedPreset   = AvailablePresets.FirstOrDefault();
         InitializeRustBrowserTags();
@@ -445,6 +486,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
         _manager.LogReceived      += OnLogReceived;
         _manager.StatusChanged    += OnStatusChanged;
+        _manager.LifecycleChanged += OnLifecycleChanged;
         _manager.CrashLimitReached += OnCrashLimitReached;
         _manager.PortsReassigned  += OnPortsReassigned;
         _steamCmd.OutputReceived  += OnSteamOutput;
@@ -588,12 +630,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     // ── Start / Stop / Restart ──────────────────────────────────────────────
 
     [RelayCommand]
-    private async Task StartAsync()
+    private Task StartAsync() => StartManagedAsync(LifecycleInitiator.Operator, "Requested from the manager UI");
+
+    public async Task StartManagedAsync(LifecycleInitiator initiator, string reason)
     {
         AddActionLog("Start requested");
         try
         {
-            if ((Server.UpdateOnStart || Server.AutoUpdate) && Plugin?.SteamAppId > 0)
+            if (Server.UpdateOnStart && Plugin?.SteamAppId > 0)
                 await InstallAsync();
 
             if (Server.BackupOnStart)
@@ -608,7 +652,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 catch (Exception ex) { AppendLog($"[HighPop] Backup before start failed: {ex.Message}", ConsoleMessageType.Warning); }
             }
 
-            await _manager.StartAsync(Server);
+            await _manager.StartAsync(Server, initiator, reason);
             // StartPerfMonitoring() and StartUpdateTimer() are called from OnStatusChanged(Running)
         }
         catch (FileNotFoundException ex)
@@ -627,13 +671,15 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private async Task StopAsync()
+    private Task StopAsync() => StopManagedAsync(LifecycleInitiator.Operator, "Requested from the manager UI");
+
+    public async Task StopManagedAsync(LifecycleInitiator initiator, string reason)
     {
         AddActionLog("Stop requested");
         try
         {
             StopUpdateTimer();
-            await _manager.StopAsync(Server, "Requested from the manager UI");
+            await _manager.StopAsync(Server, reason, initiator);
             // StopPerfMonitoring() called from OnStatusChanged(Stopped)
 
             if (Server.BackupOnShutdown)
@@ -652,13 +698,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private async Task KillAsync()
+    private async Task ForceStopAsync()
     {
-        AddActionLog("Emergency process kill requested");
+        AddActionLog("Force Stop requested");
         try
         {
-            await _manager.KillAsync(Server);
-            AppendLog("[HighPop] Process killed.", ConsoleMessageType.System);
+            StopUpdateTimer();
+            await _manager.ForceStopAsync(Server);
+            AppendLog("[HighPop] Force Stop completed.", ConsoleMessageType.System);
             StopPerfMonitoring();
         }
         catch (Exception ex) { AppendLog("[ERR] " + ex.Message, ConsoleMessageType.Error); }
@@ -668,13 +715,24 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void ShowWindow() => _manager.ShowWindow(Server);
 
     [RelayCommand]
-    private async Task RestartAsync()
+    private Task RestartAsync() => RestartManagedAsync(
+        LifecycleInitiator.Operator, "Requested from the manager UI");
+
+    public async Task RestartManagedAsync(LifecycleInitiator initiator, string reason)
     {
         AddActionLog("Restart requested");
         AppendLog("[HighPop] " + Loc.StatusStopping, ConsoleMessageType.System);
-        await StopAsync();
+        await StopManagedAsync(initiator, reason);
+        var stoppedGeneration = Server.LifecycleGeneration;
         await Task.Delay(3000);
-        await StartAsync();
+        if (!ServerLifecycleRules.IsCurrent(Server, stoppedGeneration)
+            || Server.DesiredState != ServerDesiredState.Stopped)
+        {
+            AppendLog("[HighPop] Restart cancelled because a newer lifecycle request superseded it.",
+                ConsoleMessageType.Warning);
+            return;
+        }
+        await StartManagedAsync(initiator, reason);
     }
 
     // ── Install / Update ────────────────────────────────────────────────────
@@ -683,6 +741,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task InstallAsync()
     {
         if (Plugin == null) return;
+        if (IsRunning)
+        {
+            AppendLog(
+                "[HighPop] Install/Update is locked while Rust is running. Use Update to run the warned save → stop → update → start workflow, or stop the server first.",
+                ConsoleMessageType.Warning);
+            return;
+        }
         AddActionLog("Install/update requested");
 
         var expectedExecutable = Path.Combine(Server.InstallPath, Plugin.Executable);
@@ -737,7 +802,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task UpdateAsync()
     {
         AppendLog("[HighPop] " + Loc.StatusUpdating, ConsoleMessageType.System);
-        await InstallAsync();
+        if (IsRunning)
+            await RunPeriodicUpdateAsync(operatorRequested: true);
+        else
+            await InstallAsync();
     }
 
     // ── Console ─────────────────────────────────────────────────────────────
@@ -838,9 +906,11 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private async Task ConnectRconAsync() => await ConnectRconCoreAsync(automatic: false);
 
-    private async Task<bool> ConnectRconCoreAsync(bool automatic)
+    private async Task<bool> ConnectRconCoreAsync(
+        bool automatic,
+        CancellationToken cancellationToken = default)
     {
-        await _rconLock.WaitAsync();
+        await _rconLock.WaitAsync(cancellationToken);
         try
         {
             _rcon?.Dispose();
@@ -850,7 +920,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 ? "127.0.0.1"
                 : Server.ServerIp;
             var port = Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1;
-            var ok = await _rcon.ConnectAsync(ip, port, Server.RconPassword);
+            var ok = await _rcon.ConnectAsync(ip, port, Server.RconPassword, cancellationToken);
 
             WpfApplication.Current?.Dispatcher?.Invoke(() =>
             {
@@ -887,6 +957,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         var cts = new CancellationTokenSource();
         _rconAutoConnectCts = cts;
         var token = cts.Token;
+        var lifecycleGeneration = Server.LifecycleGeneration;
         WpfApplication.Current?.Dispatcher?.Invoke(() =>
             RconStatusText = "Waiting for Rust WebRCON...");
         _ = Task.Run(async () =>
@@ -904,15 +975,27 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     RconStatusText = $"Waiting {initialDelay.TotalSeconds:0}s before WebRCON...");
                 await Task.Delay(initialDelay, token);
 
+                var failedAttempt = 0;
                 while (DateTime.UtcNow < deadline && IsRunning && !token.IsCancellationRequested)
                 {
+                    if (!ServerLifecycleRules.IsCurrent(Server, lifecycleGeneration)
+                        || Server.DesiredState != ServerDesiredState.Running)
+                        return;
                     if (RconConnected) return;
-                    if (await ConnectRconCoreAsync(automatic: true))
+                    if (await ConnectRconCoreAsync(automatic: true, token))
                     {
                         await FetchOnlinePlayersAsync();
                         return;
                     }
-                    await Task.Delay(10_000, token);
+                    failedAttempt++;
+                    var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
+                    var retryDelay = RconReconnectPolicy.GetDelay(failedAttempt, jitter);
+                    var remaining = deadline - DateTime.UtcNow;
+                    if (remaining <= TimeSpan.Zero) break;
+                    if (retryDelay > remaining) retryDelay = remaining;
+                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                        RconStatusText = $"WebRCON retry {failedAttempt + 1} in {retryDelay.TotalSeconds:0}s");
+                    await Task.Delay(retryDelay, token);
                 }
                 if (!token.IsCancellationRequested)
                 {
@@ -1121,6 +1204,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             var count = RustPlugin.LoadServerConfigVariables(Server);
+            TrackRustVariableChanges();
             OnPropertyChanged(nameof(Server));
             RustVariableStatus = File.Exists(ServerConfigPath)
                 ? $"Reloaded {count} active variable(s) from server.cfg."
@@ -1135,7 +1219,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private void SaveServerConfigVariables()
+    private void SaveServerConfigVariables() => TrySaveServerConfigVariables();
+
+    private bool TrySaveServerConfigVariables()
     {
         var validation = RustPlugin.ValidateServerVariables(Server);
         if (validation != null)
@@ -1143,12 +1229,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             RustVariableStatus = validation;
             WpfMsgBox.Show(validation, "Invalid server.cfg variable",
                 WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
-            return;
+            return false;
         }
 
         try
         {
             var migrated = RustPlugin.WriteManagedServerConfig(Server);
+            TrackRustVariableChanges();
             OnPropertyChanged(nameof(Server));
             RustVariableStatus = migrated > 0
                 ? $"Saved server.cfg and migrated {migrated} legacy variable(s) from serverauto.cfg."
@@ -1156,12 +1243,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             AddActionLog(migrated > 0
                 ? $"Saved server.cfg and migrated {migrated} legacy serverauto.cfg variable(s)"
                 : "Saved Rust custom variables to server.cfg");
+            return true;
         }
         catch (Exception ex)
         {
             RustVariableStatus = $"Could not save server.cfg: {ex.Message}";
             WpfMsgBox.Show(RustVariableStatus, "server.cfg save failed",
                 WpfMsgBoxButton.OK, WpfMsgBoxImage.Error);
+            return false;
         }
     }
 
@@ -1178,6 +1267,50 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         OnPropertyChanged(nameof(Server));
         RustVariableStatus = "Unsaved variable row added.";
         AddActionLog("Added a server.cfg variable row");
+    }
+
+    [RelayCommand]
+    private async Task ApplyRustVariablesLiveAsync()
+    {
+        var validation = RustPlugin.ValidateServerVariables(Server);
+        if (validation != null)
+        {
+            RustVariableStatus = validation;
+            return;
+        }
+
+        var changed = Server.RustServerVariables
+            .Where(variable => variable.Enabled && variable.HasUnsavedChanges)
+            .Select(variable => (variable.Name, variable.Value))
+            .ToList();
+        if (!TrySaveServerConfigVariables()) return;
+        if (!IsRunning)
+        {
+            RustVariableStatus += " Rust is stopped, so the saved values will apply at next start.";
+            return;
+        }
+
+        foreach (var (name, value) in changed)
+            await _manager.SendCommandAsync(Server.Id, $"{name} \"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"");
+
+        RustVariableStatus = changed.Count == 0
+            ? "server.cfg is already synchronized; there were no live changes to send."
+            : $"Saved server.cfg and applied {changed.Count} changed value(s) to the running Rust console.";
+        AddActionLog($"Applied {changed.Count} server.cfg variable change(s) live");
+    }
+
+    private void TrackRustVariableChanges()
+    {
+        foreach (var variable in Server.RustServerVariables.Where(v => _trackedRustVariables.Add(v)))
+            variable.PropertyChanged += (_, _) => RefreshRustVariableState();
+        RefreshRustVariableState();
+        OnPropertyChanged(nameof(FilteredRustServerVariables));
+    }
+
+    private void RefreshRustVariableState()
+    {
+        RustVariablePendingCount = Server.RustServerVariables.Count(variable => variable.HasUnsavedChanges);
+        OnPropertyChanged(nameof(FilteredRustServerVariables));
     }
 
     [RelayCommand]
@@ -1256,7 +1389,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _updateTimer = null;
     }
 
-    private async Task RunPeriodicUpdateAsync()
+    private async Task RunPeriodicUpdateAsync(bool operatorRequested = false)
     {
         if (!await _periodicUpdateGate.WaitAsync(0)) return;
         try
@@ -1293,19 +1426,29 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
                 AppendLog($"[AutoUpdate] Rust update found: {installedBuild} → {latestBuild}.",
                     ConsoleMessageType.Warning);
-                await _manager.WarnPlayersAsync(Server, "Server restarting for an update in 1 minute");
-                await Task.Delay(60_000);
-                if (!Server.AutoUpdate || !IsRunning)
+                var countdownGeneration = Server.LifecycleGeneration;
+                if (!await RunUpdateCountdownAsync(operatorRequested))
                 {
                     Server.AutoRestart = wasAutoRestart;
                     AppendLog("[AutoUpdate] Automatic update restart cancelled.",
                         ConsoleMessageType.System);
                     return;
                 }
+                if (!ServerLifecycleRules.IsCurrent(Server, countdownGeneration)
+                    || Server.DesiredState != ServerDesiredState.Running)
+                {
+                    Server.AutoRestart = wasAutoRestart;
+                    AppendLog(
+                        "[AutoUpdate] Update cancelled because a newer lifecycle request superseded the countdown.",
+                        ConsoleMessageType.Warning);
+                    return;
+                }
                 // Temporarily disable AutoRestart only for the actual stop → update → start
                 // cycle, not during the one-minute player warning.
                 Server.AutoRestart = false;
-                await _manager.StopAsync(Server, "Automatic SteamCMD update cycle");
+                await _manager.StopAsync(Server, "Automatic SteamCMD update cycle",
+                    LifecycleInitiator.UpdateWorkflow);
+                var stoppedGeneration = Server.LifecycleGeneration;
                 // StopPerfMonitoring called by OnStatusChanged
 
                 await InstallAsync(); // runs SteamCMD update
@@ -1318,7 +1461,16 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
                 // Even if SteamCMD failed, restart the existing installation so a failed
                 // maintenance attempt does not leave a previously live server offline.
-                await _manager.StartAsync(Server);
+                if (!ServerLifecycleRules.IsCurrent(Server, stoppedGeneration)
+                    || Server.DesiredState != ServerDesiredState.Stopped)
+                {
+                    AppendLog(
+                        "[AutoUpdate] Restart cancelled because a newer lifecycle request superseded the update cycle.",
+                        ConsoleMessageType.Warning);
+                    return;
+                }
+                await _manager.StartAsync(Server, LifecycleInitiator.UpdateWorkflow,
+                    "Restart after SteamCMD update cycle");
                 // StartPerfMonitoring + StartUpdateTimer called by OnStatusChanged(Running)
                 if (updateConfirmed)
                 {
@@ -1326,7 +1478,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     await _notifications.NotifyAsync(
                         $"🔄 {Server.DisplayName} updated & restarted",
                         Plugin?.GameName ?? "",
-                        "#F05A28");
+                        "#22D3EE");
                 }
                 else
                 {
@@ -1342,6 +1494,39 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             }
         }
         finally { _periodicUpdateGate.Release(); }
+    }
+
+    private async Task<bool> RunUpdateCountdownAsync(bool operatorRequested)
+    {
+        var checkpoints = ServerMaintenancePolicy.GetUpdateCountdownSeconds(
+            Server.AutoUpdateWarningMinutes);
+        for (var index = 0; index < checkpoints.Count; index++)
+        {
+            if (!IsRunning || (!operatorRequested && !Server.AutoUpdate)) return false;
+
+            var remaining = checkpoints[index];
+            var label = ServerMaintenancePolicy.FormatCountdown(remaining);
+            await _manager.WarnPlayersAsync(
+                Server,
+                $"Rust server update scheduled in {label}. The world will be saved before restart.");
+
+            var next = index + 1 < checkpoints.Count ? checkpoints[index + 1] : 0;
+            if (!await DelayUpdateCountdownAsync(remaining - next, operatorRequested)) return false;
+        }
+        return IsRunning && (operatorRequested || Server.AutoUpdate);
+    }
+
+    private async Task<bool> DelayUpdateCountdownAsync(int seconds, bool operatorRequested)
+    {
+        var remaining = seconds;
+        while (remaining > 0)
+        {
+            var slice = Math.Min(30, remaining);
+            await Task.Delay(TimeSpan.FromSeconds(slice));
+            remaining -= slice;
+            if (!IsRunning || (!operatorRequested && !Server.AutoUpdate)) return false;
+        }
+        return true;
     }
 
     // ── Mod manager ──────────────────────────────────────────────────────────
@@ -1413,6 +1598,56 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
+    private async Task InstallRogueRustAsync()
+    {
+        if (Plugin?.GameId != "rust") return;
+        if (IsRunning)
+        {
+            ModStatusText = "Stop the Rust server before installing or updating RogueRust.";
+            return;
+        }
+        if (ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Count == 0)
+        {
+            ModStatusText = "RogueRust requires Oxide/uMod or Carbon. Install a mod framework first.";
+            return;
+        }
+
+        ModBusy = true;
+        try
+        {
+            var progress = new Progress<(int pct, string msg)>(x =>
+                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
+            var version = await _mods.InstallRogueRustAsync(Server.InstallPath, progress);
+            var frameworks = string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath)
+                .Select(target => target.Framework));
+            RogueRustStatus = $"Installed {version} · {frameworks}";
+            AppendLog($"[Mods] ✅ RogueRust {version} installed for {frameworks} and SHA-256 verified.", ConsoleMessageType.System);
+            AddActionLog($"RogueRust {version} installed or updated");
+            RefreshInstalledPlugins();
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Mods] ❌ RogueRust: {ex.Message}", ConsoleMessageType.Error);
+            ModStatusText = $"❌ {ex.Message}";
+        }
+        finally { ModBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task CheckRogueRustHealthAsync()
+    {
+        if (!IsRunning)
+        {
+            ModStatusText = "Start Rust before sending RogueRust diagnostics.";
+            return;
+        }
+        await _manager.SendCommandAsync(Server.Id, "roguerust.version");
+        await _manager.SendCommandAsync(Server.Id, "roguerust.readiness");
+        ModStatusText = "RogueRust version and readiness commands sent. Review their responses in the Console tab.";
+        AddActionLog("Requested RogueRust readiness diagnostics");
+    }
+
+    [RelayCommand]
     private void OpenCarbonPluginFolder() =>
         ModManagerService.OpenCarbonPluginFolder(Server.InstallPath);
 
@@ -1427,6 +1662,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void RefreshInstalledPlugins()
     {
         DetectedModFramework = ModManagerService.GetDetectedFramework(Server.InstallPath);
+        RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
+            ? $"Installed {version} · {string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Select(target => target.Framework))}"
+            : "Not installed";
         InstalledPlugins = ModManagerService.GetInstalledPlugins(Server.InstallPath);
 
         if (!DetectedModFramework.StartsWith("Vanilla", StringComparison.OrdinalIgnoreCase))
@@ -1584,6 +1822,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         // server list (the detail endpoint already gets a live count separately).
         Server.CurrentPlayers = parsed.Count;
         Server.LastPlayerSampleAt = DateTime.Now;
+        _manager.ReportPlayerSample(Server.Id);
         if (_lastTelemetryPlayerCount != parsed.Count)
         {
             _lastTelemetryPlayerCount = parsed.Count;
@@ -1641,7 +1880,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         if (_perfModel != null) return;
         _cpuSeries = new OxyPlot.Series.LineSeries
         {
-            Title = "CPU %", Color = OxyPlot.OxyColor.Parse("#F05A28"),
+            Title = "CPU %", Color = OxyPlot.OxyColor.Parse("#A855F7"),
             StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
         };
         _memSeries = new OxyPlot.Series.LineSeries
@@ -1681,7 +1920,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         };
         _netOutSeries = new OxyPlot.Series.LineSeries
         {
-            Title = "Upload KB/s", Color = OxyPlot.OxyColor.Parse("#F05A28"),
+            Title = "Upload KB/s", Color = OxyPlot.OxyColor.Parse("#A855F7"),
             StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
         };
         _playersSeries = new OxyPlot.Series.LineSeries
@@ -2538,6 +2777,16 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         }
     }
 
+    private void OnLifecycleChanged(ServerLifecycleTransition transition)
+    {
+        if (transition.ServerId != Server.Id) return;
+        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        {
+            OnPropertyChanged(nameof(LifecycleDetailText));
+            OnPropertyChanged(nameof(StatusColor));
+        });
+    }
+
     private async Task DisconnectRconForStopAsync()
     {
         await _rconLock.WaitAsync();
@@ -2657,6 +2906,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         OnPropertyChanged(nameof(IsStopped));
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanInstallServerFiles));
         OnPropertyChanged(nameof(StatusColor));
         OnPropertyChanged(nameof(UptimeText));
     }
@@ -2665,6 +2915,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         _manager.LogReceived       -= OnLogReceived;
         _manager.StatusChanged     -= OnStatusChanged;
+        _manager.LifecycleChanged  -= OnLifecycleChanged;
         _manager.CrashLimitReached -= OnCrashLimitReached;
         _manager.PortsReassigned   -= OnPortsReassigned;
         _steamCmd.OutputReceived   -= OnSteamOutput;
