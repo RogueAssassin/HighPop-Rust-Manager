@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Windows;
 using HighPop.Services;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Win32;
 
 namespace HighPop.Views;
 
@@ -41,7 +40,7 @@ public partial class SupportView : System.Windows.Controls.UserControl
 
     private async void ExportSupportBundleButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new SaveFileDialog
+        var dialog = new Microsoft.Win32.SaveFileDialog
         {
             Title = "Export redacted HighPop support bundle",
             Filter = "ZIP archive (*.zip)|*.zip",
