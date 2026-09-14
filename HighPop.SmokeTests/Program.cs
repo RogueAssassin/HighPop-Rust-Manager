@@ -96,6 +96,41 @@ lifecycleServer.DesiredState = ServerDesiredState.Stopped;
 Check(!ServerLifecycleRules.CanRecover(lifecycleServer),
     "manual stopped intent overrides Always-on and Auto-restart");
 
+Check(ServerLifecycleRules.DefaultDeadline(lifecycleServer, ServerLifecyclePhase.Stopping)
+          >= TimeSpan.FromSeconds(lifecycleServer.GracefulStopTimeoutSeconds)
+      && ServerLifecycleRules.StatusForPhase(ServerLifecyclePhase.Faulted)
+          == LifecycleOperationStatus.Failed
+      && ServerLifecycleRules.StatusForPhase(ServerLifecyclePhase.RconReady)
+          == LifecycleOperationStatus.Succeeded,
+    "lifecycle operation deadlines and terminal results are deterministic");
+var firstRconDelay = RconReconnectPolicy.GetDelay(1, 1.0);
+var lateRconDelay = RconReconnectPolicy.GetDelay(20, 1.2);
+Check(firstRconDelay == TimeSpan.FromSeconds(5)
+      && lateRconDelay <= TimeSpan.FromSeconds(54),
+    "WebRCON reconnect backoff starts promptly and remains bounded with jitter");
+var diagnosticText = "password=rust-secret token:api-secret "
+    + "https://discord.com/api/webhooks/123/secret "
+    + "ws://127.0.0.1:28016/rcon-secret dpapi:YWJjZA==";
+var redactedDiagnosticText = SupportBundleService.Redact(diagnosticText);
+Check(!redactedDiagnosticText.Contains("rust-secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("api-secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("/123/secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("rcon-secret", StringComparison.Ordinal)
+      && !redactedDiagnosticText.Contains("YWJjZA", StringComparison.Ordinal),
+    "support bundle redacts passwords, tokens, webhooks, WebRCON credentials, and DPAPI values");
+
+var signalServer = new GameServer { DisplayName = "Signal Test" };
+var signalInstance = new ServerInstance(signalServer);
+signalInstance.MarkProcessObserved();
+signalInstance.TryMarkReady("Rust startup log");
+signalInstance.TryMarkReady("WebRCON connected");
+signalInstance.MarkPlayerSample();
+Check(signalInstance.ProcessObservedUtc.HasValue
+      && signalInstance.RustReadyUtc.HasValue
+      && signalInstance.RconReadyUtc.HasValue
+      && signalInstance.LastPlayerSampleUtc.HasValue,
+    "process, Rust, WebRCON, and player freshness signals are tracked independently");
+
 Check(WindowsStartupTaskService.BuildTaskAction(@"C:\Program Files\HighPop\HighPop.exe")
           == "\"C:\\Program Files\\HighPop\\HighPop.exe\" --background",
     "Windows logon task safely quotes the executable and starts in background mode");

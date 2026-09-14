@@ -8,6 +8,10 @@
 - Routed Auto-start, Always-on recovery, scheduler, health checks, log rules, wake-on-demand, Discord, REST, update workflows, and UI controls through lifecycle-labelled operations.
 - Added visible lifecycle detail and distinct Starting, process-running, Rust-ready, WebRCON-ready, Recovering, Maintenance, Degraded, and Faulted phases.
 - Added smoke coverage for legacy migration, verified reattachment, persisted-running recovery, manual-stop precedence, and stale generation rejection.
+- Added lifecycle deadlines, runtime cancellation for superseded starts, and a bounded 32-entry durable operation-result journal.
+- Separated process, Rust-ready, WebRCON-ready, and player-sample health timestamps and exposed them in a local Support health summary.
+- Replaced fixed WebRCON retry polling with bounded exponential reconnect delays and jitter, cancelled when newer lifecycle intent wins.
+- Added a redacted ZIP support bundle containing an explicit-safe profile summary, lifecycle history, health signals, environment details, and bounded recent logs.
 
 ## 0.8.0
 

@@ -906,9 +906,11 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private async Task ConnectRconAsync() => await ConnectRconCoreAsync(automatic: false);
 
-    private async Task<bool> ConnectRconCoreAsync(bool automatic)
+    private async Task<bool> ConnectRconCoreAsync(
+        bool automatic,
+        CancellationToken cancellationToken = default)
     {
-        await _rconLock.WaitAsync();
+        await _rconLock.WaitAsync(cancellationToken);
         try
         {
             _rcon?.Dispose();
@@ -918,7 +920,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 ? "127.0.0.1"
                 : Server.ServerIp;
             var port = Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1;
-            var ok = await _rcon.ConnectAsync(ip, port, Server.RconPassword);
+            var ok = await _rcon.ConnectAsync(ip, port, Server.RconPassword, cancellationToken);
 
             WpfApplication.Current?.Dispatcher?.Invoke(() =>
             {
@@ -955,6 +957,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         var cts = new CancellationTokenSource();
         _rconAutoConnectCts = cts;
         var token = cts.Token;
+        var lifecycleGeneration = Server.LifecycleGeneration;
         WpfApplication.Current?.Dispatcher?.Invoke(() =>
             RconStatusText = "Waiting for Rust WebRCON...");
         _ = Task.Run(async () =>
@@ -972,15 +975,27 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     RconStatusText = $"Waiting {initialDelay.TotalSeconds:0}s before WebRCON...");
                 await Task.Delay(initialDelay, token);
 
+                var failedAttempt = 0;
                 while (DateTime.UtcNow < deadline && IsRunning && !token.IsCancellationRequested)
                 {
+                    if (!ServerLifecycleRules.IsCurrent(Server, lifecycleGeneration)
+                        || Server.DesiredState != ServerDesiredState.Running)
+                        return;
                     if (RconConnected) return;
-                    if (await ConnectRconCoreAsync(automatic: true))
+                    if (await ConnectRconCoreAsync(automatic: true, token))
                     {
                         await FetchOnlinePlayersAsync();
                         return;
                     }
-                    await Task.Delay(10_000, token);
+                    failedAttempt++;
+                    var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
+                    var retryDelay = RconReconnectPolicy.GetDelay(failedAttempt, jitter);
+                    var remaining = deadline - DateTime.UtcNow;
+                    if (remaining <= TimeSpan.Zero) break;
+                    if (retryDelay > remaining) retryDelay = remaining;
+                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                        RconStatusText = $"WebRCON retry {failedAttempt + 1} in {retryDelay.TotalSeconds:0}s");
+                    await Task.Delay(retryDelay, token);
                 }
                 if (!token.IsCancellationRequested)
                 {
@@ -1807,6 +1822,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         // server list (the detail endpoint already gets a live count separately).
         Server.CurrentPlayers = parsed.Count;
         Server.LastPlayerSampleAt = DateTime.Now;
+        _manager.ReportPlayerSample(Server.Id);
         if (_lastTelemetryPlayerCount != parsed.Count)
         {
             _lastTelemetryPlayerCount = parsed.Count;

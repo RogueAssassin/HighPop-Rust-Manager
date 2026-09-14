@@ -27,32 +27,61 @@ Promotion work:
 
 ## v0.8.1 — Deterministic lifecycle coordinator
 
-In progress on `testing`:
+Implemented on `testing`; live Rust validation is in progress:
 
 - Persisted desired state separately from observed lifecycle phase
 - Added monotonic lifecycle generations, operation IDs, initiators, reasons, and timestamps
 - Made Stop persist intent before process shutdown and cancel stale automatic work
 - Routed local and remote lifecycle entry points through labelled coordinator operations
 - Added visible lifecycle phase/reason details and migration/recovery smoke coverage
-
-Remaining before promotion:
-
-- Add operation deadlines, cancellation tokens, and a bounded durable result journal
-- Complete disposable-process race and failure-injection coverage
+- Added deadline-aware lifecycle operations, cancellation of superseded starts, and a 32-entry durable result journal per server
 - Track process-running, Rust-ready, WebRCON-ready, and fresh-player-data timestamps independently
-- Add bounded, jittered WebRCON reconnect cycles
-- Add the local health summary and redacted support bundle
+- Added bounded exponential WebRCON reconnect cycles with jitter and lifecycle-generation cancellation
+- Added a local health summary and exportable support bundle with secret redaction and bounded logs
+- Added policy, signal, reconnect-bound, and redaction smoke coverage
+
+Validation remaining before promotion:
+
+- Complete the disposable Rust-process start/stop/race and injected-failure matrix on Windows
+- Confirm support bundles contain enough evidence for a failed boot while never exposing credentials
+- Run a slow-start/WebRCON-loss/manual-stop soak against the final `testing` head
 
 Performance benefit: fewer duplicate processes and hot recovery loops, bounded waits, faster diagnosis, and no UI thread dependency for lifecycle correctness. Target unexpected-exit detection under 10 seconds and 99% of available scheduled actions starting within 30 seconds.
 
 ## v0.9 — Transactional Rust maintenance
 
-- Stage SteamCMD updates away from the live installation, validate manifests, check free disk, and commit with rollback
-- Persist update state so an interrupted manager or host restart resumes or rolls back safely
-- Add player-aware maintenance windows, configurable maximum deferral, countdown cancellation, and operator override
-- Broadcast update reason, remaining time, save start, shutdown, and return-to-service through Rust/RogueRust
-- Reapply and verify Carbon, Oxide, RogueRust, and plugins after Rust updates when required
-- Add backup verification and scheduled restore drills with recovery-point/recovery-time reporting
+Planned integration order on `testing`:
+
+### v0.9.0 — Maintenance policy and preflight
+
+- Add per-server maintenance windows with player thresholds, bounded deferral, operator override, quiet-hours handling, and cancellable countdowns
+- Preflight disk space, install ownership, Steam build identity, backup destination, framework state, and writable rollback storage before stopping Rust
+- Persist one maintenance operation ID across countdown, save, stop, stage, commit, framework verification, and return-to-service
+
+### v0.9.1 — Staged update transaction
+
+- Download and validate SteamCMD updates in a sibling staging directory without mutating the live server
+- Commit staged files with an exact rollback manifest; reject path traversal, cross-volume non-atomic assumptions, and incomplete manifests
+- Resume or roll back interrupted operations after manager/host restart, with explicit terminal results in the lifecycle journal
+
+### v0.9.2 — Framework-safe return to service
+
+- Snapshot and verify Carbon, Oxide/uMod, RogueRust, plugin, and config state before maintenance
+- Reapply only artifacts invalidated by the Rust update, then run framework/RogueRust readiness probes before admitting players
+- Broadcast reason, remaining time, save start, shutdown, rollback, and return-to-service through Rust with RogueRust enrichment when available
+
+### v0.9.3 — Verified recovery points
+
+- Verify every maintenance backup by reading the archive, validating its manifest/hash set, and enforcing path safety before destructive work
+- Add opt-in scheduled restore drills into an isolated directory with recovery-point and recovery-time reporting
+- Add retention and disk-pressure policies that never delete the last verified full recovery chain
+
+### v0.9 release gates
+
+- Failure injection at every transaction boundary proves either the old or new installation remains bootable
+- Host/manager restart tests cover countdown, download, staging, commit, rollback, framework verification, and restart
+- Multi-server tests prove disk/network/process concurrency stays bounded and one server's maintenance cannot block unrelated lifecycle work
+- The full v0.8 lifecycle/manual-stop matrix remains green on the final v0.9 `testing` head
 
 Performance benefit: non-destructive build-ID checks remain lightweight; downloads and validation run with bounded disk/network concurrency; update work cannot block the UI or leave half-replaced server files.
 

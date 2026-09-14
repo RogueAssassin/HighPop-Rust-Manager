@@ -115,6 +115,7 @@ public class GameServer
     public string LastLifecycleReason { get; set; } = string.Empty;
     public LifecycleInitiator LastLifecycleInitiator { get; set; } = LifecycleInitiator.Unknown;
     public DateTime? LastLifecycleTransitionUtc { get; set; }
+    public List<LifecycleOperationRecord> LifecycleOperationHistory { get; set; } = [];
     public string GroupId { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
     /// <summary>Saved console command shortcuts shown as one-click buttons in the Console tab.</summary>

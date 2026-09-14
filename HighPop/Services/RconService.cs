@@ -14,7 +14,11 @@ public sealed class RconService : IDisposable
 
     public bool IsConnected => _socket?.State == WebSocketState.Open && _authenticated;
 
-    public async Task<bool> ConnectAsync(string host, int port, string password)
+    public async Task<bool> ConnectAsync(
+        string host,
+        int port,
+        string password,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -23,7 +27,8 @@ public sealed class RconService : IDisposable
             _socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
 
             var encodedPassword = Uri.EscapeDataString(password ?? string.Empty);
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(8));
             await _socket.ConnectAsync(new Uri($"ws://{host}:{port}/{encodedPassword}"), timeout.Token);
             _authenticated = _socket.State == WebSocketState.Open;
             return _authenticated;

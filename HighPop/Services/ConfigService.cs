@@ -168,6 +168,7 @@ public class ConfigService
                     server.GameSpecificSettings ??= new Dictionary<string, string>();
                     server.QuickCommands ??= [];
                     server.LogWatchRules ??= [];
+                    server.LifecycleOperationHistory ??= [];
                     server.RustServerVariables ??= RustServerVariable.CreateDefaults();
                 }
                 return servers;
@@ -226,6 +227,8 @@ public class ConfigService
                     server.LastLifecycleTransitionUtc.HasValue
                         ? JToken.FromObject(server.LastLifecycleTransitionUtc.Value)
                         : JValue.CreateNull();
+                target[nameof(GameServer.LifecycleOperationHistory)] =
+                    JToken.FromObject(server.LifecycleOperationHistory);
                 AtomicWrite(ServersFile, array.ToString(Formatting.Indented));
             }
             catch (JsonException ex)

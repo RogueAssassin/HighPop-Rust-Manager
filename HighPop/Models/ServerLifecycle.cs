@@ -43,6 +43,30 @@ public enum LifecycleInitiator
     ManagerExit,
 }
 
+public enum LifecycleOperationStatus
+{
+    Running,
+    Succeeded,
+    Cancelled,
+    Failed,
+}
+
+/// <summary>A compact durable audit entry. Profiles retain only the newest entries.</summary>
+public sealed class LifecycleOperationRecord
+{
+    public string OperationId { get; set; } = string.Empty;
+    public long Generation { get; set; }
+    public LifecycleInitiator Initiator { get; set; }
+    public ServerDesiredState DesiredState { get; set; }
+    public ServerLifecyclePhase Phase { get; set; }
+    public LifecycleOperationStatus Status { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public string Result { get; set; } = string.Empty;
+    public DateTime StartedUtc { get; set; }
+    public DateTime DeadlineUtc { get; set; }
+    public DateTime? CompletedUtc { get; set; }
+}
+
 public sealed record ServerLifecycleTransition(
     string ServerId,
     string OperationId,
@@ -57,6 +81,8 @@ public sealed record ServerLifecycleTransition(
 /// <summary>Pure lifecycle rules shared by runtime code and smoke tests.</summary>
 public static class ServerLifecycleRules
 {
+    public const int MaxOperationHistory = 32;
+
     public static void InitializeAfterLoad(GameServer server, bool reattached)
     {
         if (reattached)
@@ -90,4 +116,36 @@ public static class ServerLifecycleRules
 
     public static bool IsCurrent(GameServer server, long generation) =>
         server.LifecycleGeneration == generation;
+
+    public static LifecycleOperationStatus StatusForPhase(ServerLifecyclePhase phase) => phase switch
+    {
+        ServerLifecyclePhase.StoppedByOperator or ServerLifecyclePhase.Online
+            or ServerLifecyclePhase.RustReady or ServerLifecyclePhase.RconReady
+            or ServerLifecyclePhase.Maintenance
+            => LifecycleOperationStatus.Succeeded,
+        ServerLifecyclePhase.Faulted or ServerLifecyclePhase.Degraded
+            => LifecycleOperationStatus.Failed,
+        _ => LifecycleOperationStatus.Running,
+    };
+
+    public static TimeSpan DefaultDeadline(GameServer server, ServerLifecyclePhase phase) => phase switch
+    {
+        ServerLifecyclePhase.Stopping => TimeSpan.FromSeconds(
+            Math.Clamp(server.GracefulStopTimeoutSeconds, 15, 600) + 30),
+        ServerLifecyclePhase.Starting or ServerLifecyclePhase.Recovering => TimeSpan.FromMinutes(
+            Math.Clamp(server.RconAutoConnectTimeoutMinutes, 1, 60) + 5),
+        _ => TimeSpan.FromMinutes(15),
+    };
+}
+
+/// <summary>Pure bounded backoff used by automatic WebRCON reconnect cycles.</summary>
+public static class RconReconnectPolicy
+{
+    public static TimeSpan GetDelay(int failedAttempt, double jitter)
+    {
+        failedAttempt = Math.Clamp(failedAttempt, 1, 20);
+        jitter = Math.Clamp(jitter, 0.8, 1.2);
+        var exponentialSeconds = Math.Min(45, 5 * Math.Pow(1.7, failedAttempt - 1));
+        return TimeSpan.FromSeconds(Math.Max(1, exponentialSeconds * jitter));
+    }
 }

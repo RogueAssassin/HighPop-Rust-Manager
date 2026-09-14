@@ -27,6 +27,10 @@ public class ServerInstance
     public bool IsReady => Volatile.Read(ref _ready) == 1;
     public DateTime? ReadyTime { get; private set; }
     public string ReadySource { get; private set; } = string.Empty;
+    public DateTime? ProcessObservedUtc { get; private set; }
+    public DateTime? RustReadyUtc { get; private set; }
+    public DateTime? RconReadyUtc { get; private set; }
+    public DateTime? LastPlayerSampleUtc { get; private set; }
 
     /// <summary>Times of recent crashes (last 10 minutes). Used for crash-loop detection.</summary>
     public List<DateTime> CrashTimes { get; } = [];
@@ -35,11 +39,17 @@ public class ServerInstance
 
     public bool TryMarkReady(string source)
     {
+        var now = DateTime.UtcNow;
+        if (source.Contains("WebRCON", StringComparison.OrdinalIgnoreCase)) RconReadyUtc = now;
+        else if (source.Contains("Rust", StringComparison.OrdinalIgnoreCase)) RustReadyUtc = now;
         if (Interlocked.CompareExchange(ref _ready, 1, 0) != 0) return false;
-        ReadyTime = DateTime.Now;
+        ReadyTime = now.ToLocalTime();
         ReadySource = source;
         return true;
     }
+
+    public void MarkProcessObserved() => ProcessObservedUtc = DateTime.UtcNow;
+    public void MarkPlayerSample() => LastPlayerSampleUtc = DateTime.UtcNow;
 
     public TimeSpan Uptime => StartTime.HasValue ? DateTime.Now - StartTime.Value : TimeSpan.Zero;
 
@@ -54,6 +64,19 @@ public class ServerInstance
     }
     public List<ConsoleMessage> GetLogSnapshot() { lock (LogLock) return Log.ToList(); }
 }
+
+public sealed record ServerHealthSnapshot(
+    string ServerId,
+    string DisplayName,
+    bool ProcessRunning,
+    DateTime? ProcessObservedUtc,
+    DateTime? RustReadyUtc,
+    DateTime? RconReadyUtc,
+    DateTime? LastPlayerSampleUtc,
+    int CurrentPlayers,
+    ServerDesiredState DesiredState,
+    ServerLifecyclePhase LifecyclePhase,
+    string LifecycleReason);
 
 public class ServerManagerService
 {
@@ -118,6 +141,27 @@ public class ServerManagerService
         if (_running.TryGetValue(serverId, out var inst))
             MarkServerReady(inst.Server, inst, "WebRCON connected");
     }
+
+    public void ReportPlayerSample(string serverId)
+    {
+        if (_running.TryGetValue(serverId, out var inst)) inst.MarkPlayerSample();
+    }
+
+    public IReadOnlyList<ServerHealthSnapshot> GetHealthSnapshots() => _running.Values
+        .OrderBy(instance => instance.Server.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .Select(instance => new ServerHealthSnapshot(
+            instance.Server.Id,
+            instance.Server.DisplayName,
+            instance.Process?.HasExited == false,
+            instance.ProcessObservedUtc,
+            instance.RustReadyUtc,
+            instance.RconReadyUtc,
+            instance.LastPlayerSampleUtc,
+            instance.Server.CurrentPlayers,
+            instance.Server.DesiredState,
+            instance.Server.LifecyclePhase,
+            instance.Server.LastLifecycleReason))
+        .ToList();
 
     public int RunningCount => _running.Count;
 
@@ -189,6 +233,7 @@ public class ServerManagerService
             }
 
             var inst = new ServerInstance(server) { Process = p, StartTime = SafeStartTime(p) };
+            inst.MarkProcessObserved();
             inst.TryMarkReady("reattached running process");
             try { p.EnableRaisingEvents = true; } catch { }
             p.Exited += async (_, _) =>
@@ -251,20 +296,36 @@ public class ServerManagerService
         string reason = "Start requested")
     {
         if (IsRunning(server.Id)) return;
+        // Reject invalid profiles before persisting Running intent. Otherwise a bad executable
+        // or credential could be retried forever after the manager restarts.
+        var plugin = GameRegistry.Get(server.GameId);
+        if (plugin == null) throw new InvalidOperationException("This profile is not a Rust Dedicated Server.");
+        var validationError = plugin.ValidateBeforeStart(server);
+        if (validationError != null) throw new InvalidOperationException(validationError);
+
         var operation = _lifecycle.RequestStart(server, initiator, reason);
+        var operationToken = _lifecycle.GetCancellationToken(server, operation.Generation);
         var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync();
+        try { await gate.WaitAsync(operationToken); }
+        catch (OperationCanceledException) { return; }
         try
         {
             if (!_lifecycle.IsCurrent(server, operation.Generation)
                 || server.DesiredState != ServerDesiredState.Running)
                 return;
-            await StartCoreAsync(server, operation);
+            try { await StartCoreAsync(server, operation, operationToken); }
+            catch (OperationCanceledException) when (!_lifecycle.IsCurrent(server, operation.Generation))
+            {
+                // A newer Stop/Start owns the profile now; cancellation is an expected outcome.
+            }
         }
         finally { gate.Release(); }
     }
 
-    private async Task StartCoreAsync(GameServer server, ServerLifecycleTransition operation)
+    private async Task StartCoreAsync(
+        GameServer server,
+        ServerLifecycleTransition operation,
+        CancellationToken operationToken = default)
     {
         if (IsRunning(server.Id)) return;
 
@@ -280,6 +341,7 @@ public class ServerManagerService
 
         try { Directory.CreateDirectory(server.InstallPath); } catch { }
         await plugin.PreStartAsync(server);
+        operationToken.ThrowIfCancellationRequested();
 
         // Pre-flight: kill any zombie instance of THIS server's own executable.
         // Must match on the resolved install-path exe, not just process name — two
@@ -566,6 +628,8 @@ public class ServerManagerService
             catch { }
         }
 
+        operationToken.ThrowIfCancellationRequested();
+
         try
         {
             proc.Start();
@@ -586,6 +650,7 @@ public class ServerManagerService
         // Publish process identity before output handlers can observe a fast startup line.
         inst.Process   = proc;
         inst.StartTime = DateTime.Now;
+        inst.MarkProcessObserved();
         server.LastStarted = DateTime.Now;
         RememberRunningIdentity(server, proc);
 

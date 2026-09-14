@@ -1,4 +1,5 @@
 using HighPop.Models;
+using System.Collections.Concurrent;
 
 namespace HighPop.Services;
 
@@ -9,6 +10,9 @@ namespace HighPop.Services;
 public sealed class ServerLifecycleCoordinator
 {
     private readonly ConfigService _config;
+    private readonly ConcurrentDictionary<string, OperationCancellation> _cancellations = new();
+
+    private sealed record OperationCancellation(long Generation, CancellationTokenSource Source);
 
     public ServerLifecycleCoordinator(ConfigService config) => _config = config;
 
@@ -64,6 +68,14 @@ public sealed class ServerLifecycleCoordinator
     public bool IsCurrent(GameServer server, long generation) =>
         ServerLifecycleRules.IsCurrent(server, generation);
 
+    public CancellationToken GetCancellationToken(GameServer server, long generation)
+    {
+        if (_cancellations.TryGetValue(server.Id, out var active)
+            && active.Generation == generation)
+            return active.Source.Token;
+        return new CancellationToken(canceled: true);
+    }
+
     private ServerLifecycleTransition Transition(
         GameServer server,
         ServerDesiredState? desiredState,
@@ -78,7 +90,27 @@ public sealed class ServerLifecycleCoordinator
         {
             var previous = server.LifecyclePhase;
             if (desiredState.HasValue) server.DesiredState = desiredState.Value;
-            if (advanceGeneration) server.LifecycleGeneration++;
+            if (advanceGeneration)
+            {
+                server.LifecycleGeneration++;
+                if (_cancellations.TryRemove(server.Id, out var superseded))
+                {
+                    superseded.Source.Cancel();
+                    superseded.Source.Dispose();
+                    var prior = server.LifecycleOperationHistory.FirstOrDefault(item =>
+                        item.Generation == superseded.Generation
+                        && item.Status == LifecycleOperationStatus.Running);
+                    if (prior != null)
+                    {
+                        prior.Status = LifecycleOperationStatus.Cancelled;
+                        prior.Result = "Superseded by a newer lifecycle operation";
+                        prior.CompletedUtc = DateTime.UtcNow;
+                    }
+                }
+                _cancellations[server.Id] = new OperationCancellation(
+                    server.LifecycleGeneration,
+                    new CancellationTokenSource(ServerLifecycleRules.DefaultDeadline(server, phase)));
+            }
 
             var occurredUtc = DateTime.UtcNow;
             operationId ??= Guid.NewGuid().ToString("N");
@@ -87,6 +119,35 @@ public sealed class ServerLifecycleCoordinator
             server.LastLifecycleReason = reason;
             server.LastLifecycleInitiator = initiator;
             server.LastLifecycleTransitionUtc = occurredUtc;
+
+            var status = ServerLifecycleRules.StatusForPhase(phase);
+            var journal = server.LifecycleOperationHistory.FirstOrDefault(item =>
+                string.Equals(item.OperationId, operationId, StringComparison.Ordinal));
+            if (journal == null)
+            {
+                journal = new LifecycleOperationRecord
+                {
+                    OperationId = operationId,
+                    Generation = server.LifecycleGeneration,
+                    Initiator = initiator,
+                    StartedUtc = occurredUtc,
+                    DeadlineUtc = occurredUtc + ServerLifecycleRules.DefaultDeadline(server, phase),
+                };
+                server.LifecycleOperationHistory.Add(journal);
+            }
+            journal.DesiredState = server.DesiredState;
+            journal.Phase = phase;
+            journal.Status = status;
+            journal.Reason = reason;
+            journal.Result = status switch
+            {
+                LifecycleOperationStatus.Succeeded => reason,
+                LifecycleOperationStatus.Failed => reason,
+                _ => string.Empty,
+            };
+            journal.CompletedUtc = status == LifecycleOperationStatus.Running ? null : occurredUtc;
+            while (server.LifecycleOperationHistory.Count > ServerLifecycleRules.MaxOperationHistory)
+                server.LifecycleOperationHistory.RemoveAt(0);
 
             transition = new ServerLifecycleTransition(
                 server.Id,
