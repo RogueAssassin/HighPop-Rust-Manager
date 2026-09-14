@@ -102,6 +102,19 @@ public class GameServer
     public DateTime? LastExitAt { get; set; }
     public int? LastExitCode { get; set; }
     public string LastExitReason { get; set; } = string.Empty;
+    /// <summary>
+    /// Durable operator intent. This is deliberately separate from Status/LifecyclePhase so a
+    /// transient process or RCON failure can never turn an explicit Stop into an implicit Start.
+    /// </summary>
+    public ServerDesiredState DesiredState { get; set; } = ServerDesiredState.Unspecified;
+    /// <summary>Last observed lifecycle phase, persisted so recovery decisions remain explainable.</summary>
+    public ServerLifecyclePhase LifecyclePhase { get; set; } = ServerLifecyclePhase.Unknown;
+    /// <summary>Monotonic token used to invalidate callbacks from superseded lifecycle operations.</summary>
+    public long LifecycleGeneration { get; set; }
+    public string LastLifecycleOperationId { get; set; } = string.Empty;
+    public string LastLifecycleReason { get; set; } = string.Empty;
+    public LifecycleInitiator LastLifecycleInitiator { get; set; } = LifecycleInitiator.Unknown;
+    public DateTime? LastLifecycleTransitionUtc { get; set; }
     public string GroupId { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
     /// <summary>Saved console command shortcuts shown as one-click buttons in the Console tab.</summary>

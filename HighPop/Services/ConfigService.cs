@@ -8,6 +8,7 @@ namespace HighPop.Services;
 
 public class ConfigService
 {
+    private readonly object _serversFileGate = new();
     static readonly string ExeDir =
         Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
         ?? AppContext.BaseDirectory;
@@ -143,45 +144,107 @@ public class ConfigService
 
     public List<GameServer> LoadServers()
     {
-        if (!File.Exists(ServersFile)) return [];
-        try
+        lock (_serversFileGate)
         {
-            var array = JArray.Parse(File.ReadAllText(ServersFile));
-            foreach (var server in array.OfType<JObject>())
+            if (!File.Exists(ServersFile)) return [];
+            try
             {
-                UnprotectProperty(server, nameof(GameServer.RconPassword));
-                UnprotectProperty(server, nameof(GameServer.ServerPassword));
-                UnprotectProperty(server, nameof(GameServer.DiscordWebhookUrl));
-            }
-            var servers = array.ToObject<List<GameServer>>() ?? [];
-            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var server in servers)
-            {
-                if (!Guid.TryParse(server.Id, out _) || !ids.Add(server.Id))
+                var array = JArray.Parse(File.ReadAllText(ServersFile));
+                foreach (var server in array.OfType<JObject>())
                 {
-                    server.Id = Guid.NewGuid().ToString();
-                    ids.Add(server.Id);
+                    UnprotectProperty(server, nameof(GameServer.RconPassword));
+                    UnprotectProperty(server, nameof(GameServer.ServerPassword));
+                    UnprotectProperty(server, nameof(GameServer.DiscordWebhookUrl));
                 }
-                server.GameSpecificSettings ??= new Dictionary<string, string>();
-                server.QuickCommands ??= [];
-                server.LogWatchRules ??= [];
-                server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+                var servers = array.ToObject<List<GameServer>>() ?? [];
+                var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var server in servers)
+                {
+                    if (!Guid.TryParse(server.Id, out _) || !ids.Add(server.Id))
+                    {
+                        server.Id = Guid.NewGuid().ToString();
+                        ids.Add(server.Id);
+                    }
+                    server.GameSpecificSettings ??= new Dictionary<string, string>();
+                    server.QuickCommands ??= [];
+                    server.LogWatchRules ??= [];
+                    server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+                }
+                return servers;
             }
-            return servers;
+            catch { return []; }
         }
-        catch { return []; }
     }
 
     public void SaveServers(IEnumerable<GameServer> servers)
     {
-        var array = JArray.FromObject(servers);
-        foreach (var server in array.OfType<JObject>())
+        lock (_serversFileGate)
         {
-            ProtectProperty(server, nameof(GameServer.RconPassword));
-            ProtectProperty(server, nameof(GameServer.ServerPassword));
-            ProtectProperty(server, nameof(GameServer.DiscordWebhookUrl));
+            var array = JArray.FromObject(servers);
+            foreach (var server in array.OfType<JObject>())
+            {
+                ProtectProperty(server, nameof(GameServer.RconPassword));
+                ProtectProperty(server, nameof(GameServer.ServerPassword));
+                ProtectProperty(server, nameof(GameServer.DiscordWebhookUrl));
+            }
+            AtomicWrite(ServersFile, array.ToString(Formatting.Indented));
         }
-        AtomicWrite(ServersFile, array.ToString(Formatting.Indented));
+    }
+
+    /// <summary>
+    /// Persists only lifecycle fields without rewriting unrelated profile data. Stop uses this
+    /// synchronously before touching the Rust process so a manager crash cannot resurrect it.
+    /// </summary>
+    public void PersistServerLifecycle(GameServer server)
+    {
+        lock (_serversFileGate)
+        {
+            try
+            {
+                var array = File.Exists(ServersFile)
+                    ? JArray.Parse(File.ReadAllText(ServersFile))
+                    : new JArray();
+                var target = array.OfType<JObject>().FirstOrDefault(item =>
+                    string.Equals(item[nameof(GameServer.Id)]?.Value<string>(), server.Id,
+                        StringComparison.OrdinalIgnoreCase));
+                if (target == null)
+                {
+                    target = JObject.FromObject(server);
+                    ProtectProperty(target, nameof(GameServer.RconPassword));
+                    ProtectProperty(target, nameof(GameServer.ServerPassword));
+                    ProtectProperty(target, nameof(GameServer.DiscordWebhookUrl));
+                    array.Add(target);
+                }
+
+                target[nameof(GameServer.DesiredState)] = (int)server.DesiredState;
+                target[nameof(GameServer.LifecyclePhase)] = (int)server.LifecyclePhase;
+                target[nameof(GameServer.LifecycleGeneration)] = server.LifecycleGeneration;
+                target[nameof(GameServer.LastLifecycleOperationId)] = server.LastLifecycleOperationId;
+                target[nameof(GameServer.LastLifecycleReason)] = server.LastLifecycleReason;
+                target[nameof(GameServer.LastLifecycleInitiator)] = (int)server.LastLifecycleInitiator;
+                target[nameof(GameServer.LastLifecycleTransitionUtc)] =
+                    server.LastLifecycleTransitionUtc.HasValue
+                        ? JToken.FromObject(server.LastLifecycleTransitionUtc.Value)
+                        : JValue.CreateNull();
+                AtomicWrite(ServersFile, array.ToString(Formatting.Indented));
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException(
+                    "HighPop could not persist lifecycle intent because servers.json is invalid.", ex);
+            }
+            catch (IOException ex)
+            {
+                throw new InvalidOperationException(
+                    "HighPop could not persist lifecycle intent because servers.json is unavailable.", ex);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Do not let a persistence permission failure turn Stop into a process kill
+                // with non-durable intent; RequestStop surfaces this through the coordinator.
+                throw;
+            }
+        }
     }
 
     private static string Protect(string? value) => string.IsNullOrEmpty(value)

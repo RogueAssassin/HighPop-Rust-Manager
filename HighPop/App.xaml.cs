@@ -164,6 +164,7 @@ public partial class App : System.Windows.Application
         s.AddSingleton<ConfigService>();
         s.AddSingleton<SteamCmdService>();
         s.AddSingleton<RustTelemetryService>();
+        s.AddSingleton<ServerLifecycleCoordinator>();
         s.AddSingleton<ServerManagerService>();
         s.AddSingleton<BackupService>();
         s.AddSingleton<NotificationService>();

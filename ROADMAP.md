@@ -27,12 +27,21 @@ Promotion work:
 
 ## v0.8.1 — Deterministic lifecycle coordinator
 
-- Persist desired state: operator-stopped, starting, online, maintenance, recovering, or faulted
-- Give every action an operation ID, initiator, deadline, cancellation token, and durable result
-- Route UI, schedules, health checks, log rules, Discord, REST, and recovery through one coordinator
-- Reject duplicate Start requests and prevent Stop/Update/Restart races
-- Distinguish process-running, Rust-ready, WebRCON-ready, and fresh-player-data health
-- Add bounded, jittered reconnects and a redacted support bundle
+In progress on `testing`:
+
+- Persisted desired state separately from observed lifecycle phase
+- Added monotonic lifecycle generations, operation IDs, initiators, reasons, and timestamps
+- Made Stop persist intent before process shutdown and cancel stale automatic work
+- Routed local and remote lifecycle entry points through labelled coordinator operations
+- Added visible lifecycle phase/reason details and migration/recovery smoke coverage
+
+Remaining before promotion:
+
+- Add operation deadlines, cancellation tokens, and a bounded durable result journal
+- Complete disposable-process race and failure-injection coverage
+- Track process-running, Rust-ready, WebRCON-ready, and fresh-player-data timestamps independently
+- Add bounded, jittered WebRCON reconnect cycles
+- Add the local health summary and redacted support bundle
 
 Performance benefit: fewer duplicate processes and hot recovery loops, bounded waits, faster diagnosis, and no UI thread dependency for lifecycle correctness. Target unexpected-exit detection under 10 seconds and 99% of available scheduled actions starting within 30 seconds.
 

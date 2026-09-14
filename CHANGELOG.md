@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.1
+
+- Added a deterministic lifecycle coordinator with separate persisted desired state and observed phase, monotonic generations, operation IDs, initiators, reasons, and transition timestamps.
+- Made explicit Stop persist stopped intent before process shutdown and invalidate older queued Start, restart, update, wipe, health, scheduler, Discord, REST, wake-on-demand, and log-rule work.
+- Preserved explicit running intent across manager restarts while keeping legacy profiles stopped unless Auto-start is independently enabled.
+- Routed Auto-start, Always-on recovery, scheduler, health checks, log rules, wake-on-demand, Discord, REST, update workflows, and UI controls through lifecycle-labelled operations.
+- Added visible lifecycle detail and distinct Starting, process-running, Rust-ready, WebRCON-ready, Recovering, Maintenance, Degraded, and Faulted phases.
+- Added smoke coverage for legacy migration, verified reattachment, persisted-running recovery, manual-stop precedence, and stale generation rejection.
+
 ## 0.8.0
 
 - Fixed duplicate Rust custom-variable rows: reload now takes the latest active `server.cfg` assignment case-insensitively, and save retains only one active assignment while preserving older duplicates as audit comments.

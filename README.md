@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.8.0-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.8.1-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -17,7 +17,7 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
-## Included in v0.8
+## Included in v0.8.1 testing
 
 | Area | Capabilities |
 |---|---|

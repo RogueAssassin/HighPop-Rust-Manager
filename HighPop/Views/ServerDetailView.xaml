@@ -33,6 +33,9 @@
                                    FontFamily="Consolas"/>
                     </StackPanel>
                 </StackPanel>
+                <TextBlock Text="{Binding LifecycleDetailText}" FontSize="11"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="20,0,0,8"
+                           TextTrimming="CharacterEllipsis"/>
                 <!-- Lifecycle command deck -->
                 <StackPanel Orientation="Horizontal">
                     <Button Content="▶  Start" Style="{StaticResource SuccessButton}" Margin="0,0,6,0"

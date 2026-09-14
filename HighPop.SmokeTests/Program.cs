@@ -57,6 +57,45 @@ foreach (var keepOnline in new[] { false, true })
 }
 server.AutoStart = false;
 server.KeepOnline = true;
+
+var lifecycleServer = new GameServer
+{
+    Id = Guid.NewGuid().ToString(),
+    KeepOnline = true,
+    AutoRestart = true,
+    DesiredState = ServerDesiredState.Unspecified,
+    LifecyclePhase = ServerLifecyclePhase.Unknown,
+};
+ServerLifecycleRules.InitializeAfterLoad(lifecycleServer, reattached: false);
+Check(lifecycleServer.DesiredState == ServerDesiredState.Stopped
+      && lifecycleServer.LifecyclePhase == ServerLifecyclePhase.StoppedByOperator
+      && !ServerLifecycleRules.CanRecover(lifecycleServer),
+    "unattached profiles migrate to durable stopped intent and cannot recover implicitly");
+
+lifecycleServer.DesiredState = ServerDesiredState.Running;
+lifecycleServer.LifecyclePhase = ServerLifecyclePhase.Online;
+lifecycleServer.RunningPid = 0;
+ServerLifecycleRules.InitializeAfterLoad(lifecycleServer, reattached: false);
+Check(lifecycleServer.DesiredState == ServerDesiredState.Running
+      && lifecycleServer.LifecyclePhase == ServerLifecyclePhase.Recovering
+      && ServerLifecycleRules.CanRecover(lifecycleServer),
+    "persisted running intent survives a stale process identity and resumes recovery");
+
+lifecycleServer.RunningPid = 1234;
+ServerLifecycleRules.InitializeAfterLoad(lifecycleServer, reattached: true);
+Check(lifecycleServer.DesiredState == ServerDesiredState.Running
+      && lifecycleServer.LifecyclePhase == ServerLifecyclePhase.Online
+      && ServerLifecycleRules.CanRecover(lifecycleServer),
+    "verified process reattachment establishes desired running state");
+
+lifecycleServer.LifecycleGeneration = 7;
+Check(ServerLifecycleRules.IsCurrent(lifecycleServer, 7)
+      && !ServerLifecycleRules.IsCurrent(lifecycleServer, 6),
+    "lifecycle generations reject callbacks from superseded operations");
+lifecycleServer.DesiredState = ServerDesiredState.Stopped;
+Check(!ServerLifecycleRules.CanRecover(lifecycleServer),
+    "manual stopped intent overrides Always-on and Auto-restart");
+
 Check(WindowsStartupTaskService.BuildTaskAction(@"C:\Program Files\HighPop\HighPop.exe")
           == "\"C:\\Program Files\\HighPop\\HighPop.exe\" --background",
     "Windows logon task safely quotes the executable and starts in background mode");

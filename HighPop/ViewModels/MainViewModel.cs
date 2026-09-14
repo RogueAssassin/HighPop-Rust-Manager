@@ -254,9 +254,9 @@ public partial class MainViewModel : BaseViewModel
         _bot.GetServers    = () =>
             WpfApplication.Current?.Dispatcher?.Invoke(() =>
                 Servers.Select(v => v.Server).ToList()) ?? [];
-        _bot.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartCommand.ExecuteAsync(null)        : Task.CompletedTask; });
-        _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopCommand.ExecuteAsync(null)         : Task.CompletedTask; });
-        _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartCommand.ExecuteAsync(null)      : Task.CompletedTask; });
+        _bot.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.Discord, "Discord start request") : Task.CompletedTask; });
+        _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.Discord, "Discord stop request") : Task.CompletedTask; });
+        _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.Discord, "Discord restart request") : Task.CompletedTask; });
         _bot.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)       : Task.CompletedTask; });
         _bot.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.CreateBackupCommand.ExecuteAsync(null) : Task.CompletedTask; });
         _bot.SendCmd       = (id, cmd) => DispatchCommandAndWait(() =>
@@ -329,9 +329,9 @@ public partial class MainViewModel : BaseViewModel
                 ? action()
                 : dispatcher.InvokeAsync(action).Task.Unwrap();
         }
-        _webApi.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartCommand.ExecuteAsync(null)         : Task.CompletedTask; });
-        _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopCommand.ExecuteAsync(null)          : Task.CompletedTask; });
-        _webApi.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartCommand.ExecuteAsync(null)       : Task.CompletedTask; });
+        _webApi.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.WebApi, "Web API start request") : Task.CompletedTask; });
+        _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.WebApi, "Web API stop request") : Task.CompletedTask; });
+        _webApi.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.WebApi, "Web API restart request") : Task.CompletedTask; });
         _webApi.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)        : Task.CompletedTask; });
         _webApi.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.CreateBackupCommand.ExecuteAsync(null)  : Task.CompletedTask; });
         _webApi.SendCmd       = async (id, cmd) => await manager.SendCommandAsync(id, cmd);
@@ -535,9 +535,13 @@ public partial class MainViewModel : BaseViewModel
             vm.ServerNumber = num++;
             Servers.Add(vm);
             // KeepOnline protects an already-running/reattached process; it must never
-            // turn opening the manager into an implicit server start.
-            if (ServerStartupPolicy.ShouldStartOnManagerLaunch(srv, reattached))
-                _ = WpfApplication.Current?.Dispatcher?.InvokeAsync(() => vm.StartCommand.ExecuteAsync(null))
+            // turn opening the manager into an implicit server start. v0.8.1 desired Running
+            // is different: it proves an earlier explicit start and may resume recovery.
+            if (!reattached && ServerLifecycleRules.CanRecover(srv))
+                _manager.QueueAlwaysOnRecovery(srv, "manager launch found persisted running intent");
+            else if (ServerStartupPolicy.ShouldStartOnManagerLaunch(srv, reattached))
+                _ = WpfApplication.Current?.Dispatcher?.InvokeAsync(() =>
+                        vm.StartManagedAsync(LifecycleInitiator.AutoStart, "Auto-start on manager launch"))
                         .Task.ContinueWith(t => Console.WriteLine($"[HighPop] AutoStart failed for {srv.DisplayName}: {t.Exception?.InnerException?.Message}"),
                             TaskContinuationOptions.OnlyOnFaulted);
         }

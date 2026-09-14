@@ -213,7 +213,32 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     internal Action? BatchSelectionChanged { get; set; }
     partial void OnIsBatchSelectedChanged(bool _) => BatchSelectionChanged?.Invoke();
 
-    public string StatusColor => Server.Status switch
+    public string LifecycleDetailText
+    {
+        get
+        {
+            var phase = Server.LifecyclePhase switch
+            {
+                ServerLifecyclePhase.StoppedByOperator => "Stopped by operator",
+                ServerLifecyclePhase.ProcessRunning => "Process running",
+                ServerLifecyclePhase.RustReady => "Rust ready",
+                ServerLifecyclePhase.RconReady => "WebRCON ready",
+                _ => Server.LifecyclePhase.ToString(),
+            };
+            return string.IsNullOrWhiteSpace(Server.LastLifecycleReason)
+                ? phase
+                : $"{phase} · {Server.LastLifecycleReason}";
+        }
+    }
+
+    public string StatusColor => Server.LifecyclePhase switch
+    {
+        ServerLifecyclePhase.Online or ServerLifecyclePhase.RconReady or ServerLifecyclePhase.RustReady => "#3FB950",
+        ServerLifecyclePhase.Starting or ServerLifecyclePhase.ProcessRunning => "#22D3EE",
+        ServerLifecyclePhase.Stopping or ServerLifecyclePhase.Maintenance => "#A855F7",
+        ServerLifecyclePhase.Recovering or ServerLifecyclePhase.Degraded => "#D29922",
+        ServerLifecyclePhase.Faulted => "#F85149",
+        _ => Server.Status switch
     {
         ServerStatus.Running      => "#3FB950",
         ServerStatus.Starting     => "#22D3EE",
@@ -224,6 +249,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ServerStatus.Error        => "#F85149",
         ServerStatus.NotInstalled => "#8B949E",
         _                         => "#8B949E",
+        },
     };
 
     public bool IsRunning    => Server.Status == ServerStatus.Running;
@@ -460,6 +486,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
         _manager.LogReceived      += OnLogReceived;
         _manager.StatusChanged    += OnStatusChanged;
+        _manager.LifecycleChanged += OnLifecycleChanged;
         _manager.CrashLimitReached += OnCrashLimitReached;
         _manager.PortsReassigned  += OnPortsReassigned;
         _steamCmd.OutputReceived  += OnSteamOutput;
@@ -603,7 +630,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     // ── Start / Stop / Restart ──────────────────────────────────────────────
 
     [RelayCommand]
-    private async Task StartAsync()
+    private Task StartAsync() => StartManagedAsync(LifecycleInitiator.Operator, "Requested from the manager UI");
+
+    public async Task StartManagedAsync(LifecycleInitiator initiator, string reason)
     {
         AddActionLog("Start requested");
         try
@@ -623,7 +652,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 catch (Exception ex) { AppendLog($"[HighPop] Backup before start failed: {ex.Message}", ConsoleMessageType.Warning); }
             }
 
-            await _manager.StartAsync(Server);
+            await _manager.StartAsync(Server, initiator, reason);
             // StartPerfMonitoring() and StartUpdateTimer() are called from OnStatusChanged(Running)
         }
         catch (FileNotFoundException ex)
@@ -642,13 +671,15 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private async Task StopAsync()
+    private Task StopAsync() => StopManagedAsync(LifecycleInitiator.Operator, "Requested from the manager UI");
+
+    public async Task StopManagedAsync(LifecycleInitiator initiator, string reason)
     {
         AddActionLog("Stop requested");
         try
         {
             StopUpdateTimer();
-            await _manager.StopAsync(Server, "Requested from the manager UI");
+            await _manager.StopAsync(Server, reason, initiator);
             // StopPerfMonitoring() called from OnStatusChanged(Stopped)
 
             if (Server.BackupOnShutdown)
@@ -684,13 +715,24 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void ShowWindow() => _manager.ShowWindow(Server);
 
     [RelayCommand]
-    private async Task RestartAsync()
+    private Task RestartAsync() => RestartManagedAsync(
+        LifecycleInitiator.Operator, "Requested from the manager UI");
+
+    public async Task RestartManagedAsync(LifecycleInitiator initiator, string reason)
     {
         AddActionLog("Restart requested");
         AppendLog("[HighPop] " + Loc.StatusStopping, ConsoleMessageType.System);
-        await StopAsync();
+        await StopManagedAsync(initiator, reason);
+        var stoppedGeneration = Server.LifecycleGeneration;
         await Task.Delay(3000);
-        await StartAsync();
+        if (!ServerLifecycleRules.IsCurrent(Server, stoppedGeneration)
+            || Server.DesiredState != ServerDesiredState.Stopped)
+        {
+            AppendLog("[HighPop] Restart cancelled because a newer lifecycle request superseded it.",
+                ConsoleMessageType.Warning);
+            return;
+        }
+        await StartManagedAsync(initiator, reason);
     }
 
     // ── Install / Update ────────────────────────────────────────────────────
@@ -1369,6 +1411,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
                 AppendLog($"[AutoUpdate] Rust update found: {installedBuild} → {latestBuild}.",
                     ConsoleMessageType.Warning);
+                var countdownGeneration = Server.LifecycleGeneration;
                 if (!await RunUpdateCountdownAsync(operatorRequested))
                 {
                     Server.AutoRestart = wasAutoRestart;
@@ -1376,10 +1419,21 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                         ConsoleMessageType.System);
                     return;
                 }
+                if (!ServerLifecycleRules.IsCurrent(Server, countdownGeneration)
+                    || Server.DesiredState != ServerDesiredState.Running)
+                {
+                    Server.AutoRestart = wasAutoRestart;
+                    AppendLog(
+                        "[AutoUpdate] Update cancelled because a newer lifecycle request superseded the countdown.",
+                        ConsoleMessageType.Warning);
+                    return;
+                }
                 // Temporarily disable AutoRestart only for the actual stop → update → start
                 // cycle, not during the one-minute player warning.
                 Server.AutoRestart = false;
-                await _manager.StopAsync(Server, "Automatic SteamCMD update cycle");
+                await _manager.StopAsync(Server, "Automatic SteamCMD update cycle",
+                    LifecycleInitiator.UpdateWorkflow);
+                var stoppedGeneration = Server.LifecycleGeneration;
                 // StopPerfMonitoring called by OnStatusChanged
 
                 await InstallAsync(); // runs SteamCMD update
@@ -1392,7 +1446,16 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
                 // Even if SteamCMD failed, restart the existing installation so a failed
                 // maintenance attempt does not leave a previously live server offline.
-                await _manager.StartAsync(Server);
+                if (!ServerLifecycleRules.IsCurrent(Server, stoppedGeneration)
+                    || Server.DesiredState != ServerDesiredState.Stopped)
+                {
+                    AppendLog(
+                        "[AutoUpdate] Restart cancelled because a newer lifecycle request superseded the update cycle.",
+                        ConsoleMessageType.Warning);
+                    return;
+                }
+                await _manager.StartAsync(Server, LifecycleInitiator.UpdateWorkflow,
+                    "Restart after SteamCMD update cycle");
                 // StartPerfMonitoring + StartUpdateTimer called by OnStatusChanged(Running)
                 if (updateConfirmed)
                 {
@@ -2698,6 +2761,16 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         }
     }
 
+    private void OnLifecycleChanged(ServerLifecycleTransition transition)
+    {
+        if (transition.ServerId != Server.Id) return;
+        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        {
+            OnPropertyChanged(nameof(LifecycleDetailText));
+            OnPropertyChanged(nameof(StatusColor));
+        });
+    }
+
     private async Task DisconnectRconForStopAsync()
     {
         await _rconLock.WaitAsync();
@@ -2826,6 +2899,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         _manager.LogReceived       -= OnLogReceived;
         _manager.StatusChanged     -= OnStatusChanged;
+        _manager.LifecycleChanged  -= OnLifecycleChanged;
         _manager.CrashLimitReached -= OnCrashLimitReached;
         _manager.PortsReassigned   -= OnPortsReassigned;
         _steamCmd.OutputReceived   -= OnSteamOutput;
