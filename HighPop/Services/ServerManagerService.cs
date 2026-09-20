@@ -698,11 +698,16 @@ public class ServerManagerService
         if (server.MaxRamMb > 0)
         {
             inst.JobHandle = JobObjectService.ApplyRamLimit(proc, server.MaxRamMb);
-            AddLog(
-                inst.JobHandle != nint.Zero
+            var ramMessage = new ConsoleMessage
+            {
+                Text = inst.JobHandle != nint.Zero
                     ? $"[HighPop] Hard RAM cap active at {server.MaxRamMb:N0} MB. Windows can terminate Rust if this limit is exceeded."
                     : $"[HighPop] Could not apply the configured {server.MaxRamMb:N0} MB RAM cap.",
-                inst.JobHandle != nint.Zero ? ConsoleMessageType.Warning : ConsoleMessageType.Error);
+                Type = inst.JobHandle != nint.Zero ? ConsoleMessageType.Warning : ConsoleMessageType.Error,
+                Source = "HighPop",
+            };
+            inst.AddToLog(ramMessage);
+            LogReceived?.Invoke(server.Id, ramMessage);
         }
 
         // Schedule daily restart if enabled
