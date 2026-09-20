@@ -7,6 +7,8 @@ public class ConsoleMessage
     public DateTime Timestamp { get; set; } = DateTime.Now;
     public string Text { get; set; } = string.Empty;
     public ConsoleMessageType Type { get; set; } = ConsoleMessageType.Info;
+    public string Source { get; set; } = string.Empty;
 
     public string FormattedTime => Timestamp.ToString("HH:mm:ss");
+    public string SourceLabel => string.IsNullOrWhiteSpace(Source) ? "HighPop" : Source;
 }

@@ -12,6 +12,10 @@
 - Separated process, Rust-ready, WebRCON-ready, and player-sample health timestamps and exposed them in a local Support health summary.
 - Replaced fixed WebRCON retry polling with bounded exponential reconnect delays and jitter, cancelled when newer lifecycle intent wins.
 - Added a redacted ZIP support bundle containing an explicit-safe profile summary, lifecycle history, health signals, environment details, and bounded recent logs.
+- Expanded new-server creation so Game, Query, WebRCON, and Rust+ ports are all editable, validated against saved profiles and active Windows listeners, and can be reassigned together with one click.
+- Prevented multiple server profiles from sharing an installation directory and gave cloned servers a verified free four-port set.
+- Reworked live console ingestion with bounded UI-thread batches, stable filtering, severity toggles, source labels, stronger ANSI/control-code cleanup, stack-trace severity inheritance, and correct handling of normal Rust output written to stderr.
+- Bounded the short-term duplicate-output cache so long-running, high-volume servers cannot grow it indefinitely.
 
 ## 0.8.0
 

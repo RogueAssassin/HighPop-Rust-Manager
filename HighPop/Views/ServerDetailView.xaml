@@ -230,6 +230,14 @@
                                        Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,8,0"/>
                             <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}"
                                      Text="{Binding ConsoleFilter, UpdateSourceTrigger=PropertyChanged}"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="12,0,0,0">
+                                <ToggleButton Content="Info" IsChecked="{Binding ShowConsoleInfo}"
+                                              Style="{StaticResource GhostToggleButton}" Padding="9,3"/>
+                                <ToggleButton Content="Warnings" IsChecked="{Binding ShowConsoleWarnings}"
+                                              Style="{StaticResource GhostToggleButton}" Padding="9,3" Margin="5,0,0,0"/>
+                                <ToggleButton Content="Errors" IsChecked="{Binding ShowConsoleErrors}"
+                                              Style="{StaticResource GhostToggleButton}" Padding="9,3" Margin="5,0,0,0"/>
+                            </StackPanel>
                             <StackPanel Grid.Column="3" Orientation="Horizontal">
                                 <ToggleButton x:Name="AutoScrollToggle" IsChecked="True"
                                               Style="{StaticResource GhostToggleButton}"
@@ -252,13 +260,19 @@
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="65"/>
+                                            <ColumnDefinition Width="82"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding FormattedTime}"
                                                    FontFamily="Consolas" FontSize="11"
                                                    Foreground="{StaticResource TextMutedBrush}"
                                                    Padding="4,1" VerticalAlignment="Top"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Text}"
+                                        <TextBlock Grid.Column="1" Text="{Binding SourceLabel}"
+                                                   FontFamily="Consolas" FontSize="10"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   Padding="4,2" VerticalAlignment="Top"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Text}"
                                                    FontFamily="Cascadia Code, Consolas, Courier New"
                                                    FontSize="12" TextWrapping="Wrap" Padding="4,1">
                                             <TextBlock.Style>
@@ -419,11 +433,13 @@
 
                                 <StackPanel Grid.Row="4" Grid.Column="0">
                                     <TextBlock Text="Game port" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox Text="{Binding Server.ServerPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                                    <TextBox Text="{Binding Server.ServerPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                             IsEnabled="{Binding IsStopped}"/>
                                 </StackPanel>
                                 <StackPanel Grid.Row="4" Grid.Column="2">
                                     <TextBlock Text="Query port" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox Text="{Binding Server.QueryPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                                    <TextBox Text="{Binding Server.QueryPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                             IsEnabled="{Binding IsStopped}"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="3">
@@ -434,15 +450,28 @@
                                 <StackPanel Grid.Row="8" Grid.Column="0"
                                             Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
                                     <TextBlock Text="RCON port" Style="{StaticResource FieldLabel}"/>
-                                    <TextBox Text="{Binding Server.RconPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                                    <TextBox Text="{Binding Server.RconPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                             IsEnabled="{Binding IsStopped}"/>
                                 </StackPanel>
                                 <StackPanel Grid.Row="8" Grid.Column="2"
+                                            Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="Rust+ port" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox Text="{Binding RustPlusPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                             IsEnabled="{Binding IsStopped}"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="3"
+                                           Text="Stop Rust before changing ports so the running process, firewall, WebRCON, and saved profile stay consistent."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"
+                                           Margin="0,52,0,0"/>
+
+                                <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="3"
                                             Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
                                     <TextBlock Text="RCON password" Style="{StaticResource FieldLabel}"/>
                                     <TextBox Text="{Binding Server.RconPassword, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
                                 </StackPanel>
 
-                                <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="3">
+                                <StackPanel Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="3">
                                     <TextBlock Text="Extra start parameters" Style="{StaticResource FieldLabel}"/>
                                     <TextBox Text="{Binding Server.CustomArgs, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource DarkTextBox}"
@@ -452,7 +481,7 @@
                                 </StackPanel>
 
                                 <!-- Notes -->
-                                <StackPanel Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                                <StackPanel Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
                                     <TextBlock Text="Notes" Style="{StaticResource FieldLabel}"/>
                                     <TextBox Text="{Binding Server.Notes, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource DarkTextBox}"

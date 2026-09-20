@@ -44,6 +44,32 @@ Check(server.RconAutoConnectDelaySeconds == 60
     "slow Rust startup and WebRCON timing defaults");
 Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
     "production profiles default to always-on recovery without empty-player shutdown");
+
+var firstPortSet = new ServerPortSet(28015, 28017, 28016, 28083);
+var secondPortSet = ServerPortAllocator.FindAvailable(
+    firstPortSet, [firstPortSet]);
+Check(secondPortSet == new ServerPortSet(28018, 28020, 28019, 28086),
+    "new servers receive a complete non-conflicting Game/Query/WebRCON/Rust+ port set");
+Check(ServerPortAllocator.Validate(
+        new ServerPortSet(29015, 29017, 29016, 29083), [firstPortSet]).Count == 0
+      && ServerPortAllocator.Validate(
+        new ServerPortSet(28015, 29017, 29016, 29083), [firstPortSet]).Count > 0,
+    "manual port editing accepts unique sets and rejects ports reserved by another profile");
+
+var normalStderr = ConsoleOutputParser.Parse("Server startup complete", fromStandardError: true);
+var exceptionLine = ConsoleOutputParser.Parse(
+    "NullReferenceException: object reference not set", fromStandardError: false);
+var stackLine = ConsoleOutputParser.Parse(
+    "   at Oxide.Plugins.Test.Run()", fromStandardError: false, ConsoleMessageType.Error);
+var rogueLine = ConsoleOutputParser.Parse(
+    "\u001b[31m[RogueRust] readiness probe failed\u001b[0m", fromStandardError: false);
+Check(normalStderr?.Type == ConsoleMessageType.Info
+      && normalStderr.Source == "Rust stderr"
+      && exceptionLine?.Type == ConsoleMessageType.Error
+      && stackLine?.Type == ConsoleMessageType.Error
+      && rogueLine?.Source == "RogueRust"
+      && rogueLine.Text == "[RogueRust] readiness probe failed",
+    "console parsing preserves stream source, stack severity, and strips ANSI output");
 foreach (var keepOnline in new[] { false, true })
 {
     server.KeepOnline = keepOnline;

@@ -35,6 +35,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private CancellationTokenSource? _rconAutoConnectCts;
     private int _lastTelemetryPlayerCount = -1;
     private readonly object        _perfLock  = new();
+    private readonly ConcurrentQueue<ConsoleMessage> _pendingConsoleMessages = new();
+    private int _consoleFlushScheduled;
     private System.Timers.Timer?   _updateTimer;
     private readonly SemaphoreSlim _periodicUpdateGate = new(1, 1);
 
@@ -42,6 +44,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public IGamePlugin? Plugin { get; }
     private const int MaxConsoleLines = 2000;
     public ObservableCollection<ConsoleMessage> Log { get; } = [];
+    public ObservableCollection<ConsoleMessage> FilteredLog { get; } = [];
     public ObservableCollection<BackupEntry> Backups { get; } = [];
     public ObservableCollection<string> ActionLog { get; } = [];
 
@@ -56,6 +59,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private bool _rconConnected;
     [ObservableProperty] private string _rconStatusText = "Disconnected";
     [ObservableProperty] private string _consoleFilter   = string.Empty;
+    [ObservableProperty] private bool _showConsoleInfo = true;
+    [ObservableProperty] private bool _showConsoleWarnings = true;
+    [ObservableProperty] private bool _showConsoleErrors = true;
     [ObservableProperty] private string _modStatusText   = string.Empty;
     [ObservableProperty] private bool   _modBusy;
     [ObservableProperty] private string _detectedModFramework = "Not scanned";
@@ -323,6 +329,18 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ? "No recorded process exit yet."
         : $"{Server.LastExitAt:g} — {Server.LastExitReason}";
 
+    public int RustPlusPort
+    {
+        get => Server.GameSpecificSettings.TryGetValue("appPort", out var text)
+            && int.TryParse(text, out var port) ? port : 0;
+        set
+        {
+            if (RustPlusPort == value) return;
+            Server.GameSpecificSettings["appPort"] = value.ToString();
+            OnPropertyChanged();
+        }
+    }
+
     public bool AutoConnectRcon
     {
         get => Server.AutoConnectRcon;
@@ -420,17 +438,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         });
     }
 
-    public ObservableCollection<ConsoleMessage> FilteredLog
-    {
-        get
-        {
-            if (string.IsNullOrWhiteSpace(ConsoleFilter)) return Log;
-            var filter = ConsoleFilter.ToLowerInvariant();
-            return new ObservableCollection<ConsoleMessage>(
-                Log.Where(m => m.Text.Contains(filter, StringComparison.OrdinalIgnoreCase)));
-        }
-    }
-
     public ServerViewModel(GameServer server, ServerManagerService manager, SteamCmdService steamCmd,
         BackupService backup, NotificationService notifications, PerformanceMonitorService perfMonitor,
         ConfigService config, ModManagerService mods,
@@ -523,7 +530,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
         PluginFields = Plugin?.GetConfigFields()
             .Where(f => f.Key is not ("serverName" or "maxPlayers" or "serverPass"
-                or "steamBranch" or "tags"))
+                or "steamBranch" or "tags" or "appPort"))
             .Select(f => new PluginFieldVm(server, f, () =>
             {
                 if (f.Key != "identity") return;
@@ -835,7 +842,12 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private void ClearConsole() => Log.Clear();
+    private void ClearConsole()
+    {
+        while (_pendingConsoleMessages.TryDequeue(out _)) { }
+        Log.Clear();
+        FilteredLog.Clear();
+    }
 
     // ── Quick commands ───────────────────────────────────────────────────────
 
@@ -862,7 +874,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         Server.QuickCommands.Remove(qc);
     }
 
-    partial void OnConsoleFilterChanged(string value) => OnPropertyChanged(nameof(FilteredLog));
+    partial void OnConsoleFilterChanged(string value) => RebuildFilteredLog();
+    partial void OnShowConsoleInfoChanged(bool value) => RebuildFilteredLog();
+    partial void OnShowConsoleWarningsChanged(bool value) => RebuildFilteredLog();
+    partial void OnShowConsoleErrorsChanged(bool value) => RebuildFilteredLog();
 
     // ── Log Watcher rules ────────────────────────────────────────────────────
 
@@ -2717,14 +2732,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void OnLogReceived(string serverId, ConsoleMessage msg)
     {
         if (serverId != Server.Id) return;
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
-        {
-            Log.Add(msg);
-            while (Log.Count > MaxConsoleLines)
-                Log.RemoveAt(0);
-            if (!string.IsNullOrWhiteSpace(ConsoleFilter))
-                OnPropertyChanged(nameof(FilteredLog));
-        });
+        EnqueueConsoleMessage(msg);
     }
 
     private void OnStatusChanged(string serverId, ServerStatus status)
@@ -2828,7 +2836,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void OnSteamOutput(string serverId, string line)
     {
         if (serverId.Length > 0 && serverId != Server.Id) return;
-        WpfApplication.Current?.Dispatcher?.Invoke(() => AppendLog(line, ConsoleMessageType.System));
+        AppendLog(line, ConsoleMessageType.System, "SteamCMD");
     }
 
     private void OnSteamProgress(string serverId, int p)
@@ -2837,17 +2845,90 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         WpfApplication.Current?.Dispatcher?.Invoke(() => InstallProgress = p);
     }
 
-    private void AppendLog(string text, ConsoleMessageType type = ConsoleMessageType.Info)
+    private void AppendLog(
+        string text,
+        ConsoleMessageType type = ConsoleMessageType.Info,
+        string source = "HighPop")
     {
-        // Split on newlines so batched output (e.g. from BuildTools flush) renders as separate
-        // lines, not one invisible block. BeginInvoke (async) so the calling thread never blocks
-        // waiting for the UI to process the log — this keeps other servers' buttons responsive.
         var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
+        foreach (var line in lines)
+            EnqueueConsoleMessage(new ConsoleMessage
+            {
+                Text = line.TrimEnd('\r'),
+                Type = type,
+                Source = InferConsoleSource(line, source),
+            });
+    }
+
+    private void EnqueueConsoleMessage(ConsoleMessage message)
+    {
+        _pendingConsoleMessages.Enqueue(message);
+        ScheduleConsoleFlush();
+    }
+
+    private void ScheduleConsoleFlush()
+    {
+        if (Interlocked.Exchange(ref _consoleFlushScheduled, 1) != 0) return;
+        var dispatcher = WpfApplication.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess()) FlushConsoleMessages();
+        else dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(FlushConsoleMessages));
+    }
+
+    private void FlushConsoleMessages()
+    {
+        var added = 0;
+        while (added < 250 && _pendingConsoleMessages.TryDequeue(out var message))
         {
-            foreach (var line in lines)
-                Log.Add(new ConsoleMessage { Text = line, Type = type });
-        });
+            Log.Add(message);
+            if (MatchesConsoleFilter(message)) FilteredLog.Add(message);
+            added++;
+        }
+
+        while (Log.Count > MaxConsoleLines)
+        {
+            var removed = Log[0];
+            Log.RemoveAt(0);
+            FilteredLog.Remove(removed);
+        }
+
+        Interlocked.Exchange(ref _consoleFlushScheduled, 0);
+        if (!_pendingConsoleMessages.IsEmpty) ScheduleConsoleFlush();
+    }
+
+    private bool MatchesConsoleFilter(ConsoleMessage message)
+    {
+        var severityVisible = message.Type switch
+        {
+            ConsoleMessageType.Error => ShowConsoleErrors,
+            ConsoleMessageType.Warning => ShowConsoleWarnings,
+            _ => ShowConsoleInfo,
+        };
+        if (!severityVisible) return false;
+        if (string.IsNullOrWhiteSpace(ConsoleFilter)) return true;
+        return message.Text.Contains(ConsoleFilter, StringComparison.OrdinalIgnoreCase)
+            || message.SourceLabel.Contains(ConsoleFilter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RebuildFilteredLog()
+    {
+        void Rebuild()
+        {
+            FilteredLog.Clear();
+            foreach (var message in Log.Where(MatchesConsoleFilter)) FilteredLog.Add(message);
+        }
+        var dispatcher = WpfApplication.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess()) Rebuild();
+        else dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Rebuild));
+    }
+
+    private static string InferConsoleSource(string line, string fallback)
+    {
+        if (line.StartsWith("[RCON]", StringComparison.OrdinalIgnoreCase)) return "WebRCON";
+        if (line.StartsWith("[SteamCMD]", StringComparison.OrdinalIgnoreCase)) return "SteamCMD";
+        if (line.StartsWith("[RogueRust]", StringComparison.OrdinalIgnoreCase)) return "RogueRust";
+        if (line.StartsWith("[Oxide]", StringComparison.OrdinalIgnoreCase)) return "Oxide";
+        if (line.StartsWith("[Carbon]", StringComparison.OrdinalIgnoreCase)) return "Carbon";
+        return fallback;
     }
 
     public void AppendConsoleWarning(string text)

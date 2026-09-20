@@ -39,6 +39,8 @@ Implemented on `testing`; live Rust validation is in progress:
 - Added bounded exponential WebRCON reconnect cycles with jitter and lifecycle-generation cancellation
 - Added a local health summary and exportable support bundle with secret redaction and bounded logs
 - Added policy, signal, reconnect-bound, and redaction smoke coverage
+- Added complete four-port allocation/editing for multi-server creation with profile, Windows-listener, and install-folder conflict checks
+- Added source-aware, severity-filtered console reporting with batched UI ingestion and bounded duplicate tracking
 
 Validation remaining before promotion:
 

@@ -10,9 +10,20 @@ public class PortCheckerService
 {
     public static PortCheckResult CheckPort(int port, string protocol = "TCP")
     {
-        bool inUse = protocol.ToUpper() == "UDP"
-            ? IsUdpPortInUse(port)
-            : IsTcpPortInUse(port);
+        if (port is <= 0 or > 65535)
+            return new PortCheckResult(port, false, $"Port {port} is outside the valid 1–65535 range");
+        bool inUse;
+        try
+        {
+            inUse = protocol.ToUpperInvariant() == "UDP"
+                ? IsUdpPortInUse(port)
+                : IsTcpPortInUse(port);
+        }
+        catch (Exception ex)
+        {
+            return new PortCheckResult(
+                port, false, $"Could not verify port {port}/{protocol}: {ex.Message}");
+        }
 
         return new PortCheckResult(
             port,
@@ -20,6 +31,9 @@ public class PortCheckerService
             inUse ? $"Port {port}/{protocol} is already in use!" : $"Port {port}/{protocol} is free"
         );
     }
+
+    public static bool IsAvailable(int port, string protocol) =>
+        CheckPort(port, protocol).IsAvailable;
 
     public static List<PortCheckResult> CheckServerPorts(Models.GameServer server)
     {

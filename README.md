@@ -23,14 +23,14 @@ HighPop Rust Manager brings installation, lifecycle control, administration, aut
 |---|---|
 | Rust installation | One-click SteamCMD bootstrap, stopped-server install/validate/update, public-branch support, update-on-start, and non-destructive live build checks |
 | Process control | Explicit Start, configurable save-and-quit Stop, save-backed Force Stop, restart, crash recovery, crash-loop protection, serialized scheduler operations, daily restarts, idle shutdown, wake on demand |
-| High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, `server.cfg` variable synchronization, custom log directory, identity and conflict-safe ports |
+| High-pop profiles | 500-player default, vanilla/modded/development labels, Facepunch-documented browser tag picker, `server.cfg` variable synchronization, custom log directory, identity, and editable conflict-checked Game/Query/WebRCON/Rust+ ports |
 | Administration | Auto-reconnecting Facepunch WebRCON console, native timed bans, kick/unban, persistent player notes, whitelist permissions, confirmation-gated bulk moderation, shared group bans, and richer session statistics |
 | Mods and maps | Carbon and Oxide installation/detection, framework-aware verified RogueRust installation/update and diagnostic commands, installed-plugin inventory, HTTP(S) custom-map URL, server/plugin config discovery, version history, and live plugin reload |
 | Wipes and backups | Map/full wipes, mandatory pre-wipe safety backup, full/incremental ZIP backups, retention, restore with path-traversal protection |
 | Reliability | Explicit-start always-on recovery, separate launch-on-manager-start control, durable operation journal, lifecycle cancellation/deadlines, bounded jittered WebRCON recovery, independent readiness signals, redacted support bundles, reasoned process-exit diagnostics, and non-destructive update checks |
 | Local telemetry | Opt-in versioned lifecycle/action/player-count JSONL events with per-server age and storage retention |
 | Automation | Durable once/daily/weekly/repeating tasks for start, stop, restart, update, backup, wipe, broadcast, and console commands, plus configurable in-game update countdowns, serialized per server with visible results |
-| Monitoring | Persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |
+| Monitoring | Source-aware severity-filtered live console, persistent CPU/RAM/network/player graphs, system metrics, bandwidth, player activity, health checks, log watches, crash-risk warnings, server hygiene, and an expanded action trail |
 | Remote operations | Optional token-protected REST API, browser dashboard, status links, master/slave machines, a local Discord bot with live boards and staff controls, webhooks, and SMTP alerts |
 | Windows controls | System tray, per-user logon task, verified close/reopen process reattachment, CPU affinity, process priority, optional RAM cap, firewall and UPnP controls |
 | Customization | Portable Rust presets, editable launch/config values, server templates, custom images, and replaceable brand assets |

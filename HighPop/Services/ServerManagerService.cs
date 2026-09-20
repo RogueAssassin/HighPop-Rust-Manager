@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using HighPop.Games;
 using HighPop.Models;
 
@@ -80,9 +79,6 @@ public sealed record ServerHealthSnapshot(
 
 public class ServerManagerService
 {
-    // CSI sequences (colors, cursor movement) and OSC sequences (terminal title-set, used by
-    // FXServer/txAdmin) — both leak through as garbled text in the embedded console otherwise.
-    private static readonly Regex AnsiEscapeRegex = new(@"\x1B\[[0-9;]*[a-zA-Z]|\x1B\][^\x07\x1B]*(\x07|\x1B\\)", RegexOptions.Compiled);
     private readonly NetworkMonitorService _network;
     private readonly ConfigService _config;
     private readonly RustTelemetryService _telemetry;
@@ -494,20 +490,36 @@ public class ServerManagerService
         // Some engines (Unity/Rust) write the same line to both stdout and stderr.
         // Suppress duplicates seen within a 200 ms window across both streams.
         var _recentLines = new System.Collections.Concurrent.ConcurrentDictionary<string, long>();
+        var lastStdoutType = ConsoleMessageType.Info;
+        var lastStderrType = ConsoleMessageType.Info;
 
-        void AddLog(string text, ConsoleMessageType type)
+        void AddLog(string text, bool fromStandardError)
         {
-            // Keep Rust console output readable if a mod emits ANSI escape codes.
-            text = AnsiEscapeRegex.Replace(text, "");
+            var previousType = fromStandardError ? lastStderrType : lastStdoutType;
+            var parsed = ConsoleOutputParser.Parse(text, fromStandardError, previousType);
+            if (parsed == null) return;
+            if (fromStandardError) lastStderrType = parsed.Type;
+            else lastStdoutType = parsed.Type;
+
             var now = System.Diagnostics.Stopwatch.GetTimestamp();
             var threshold = System.Diagnostics.Stopwatch.Frequency / 5; // 200 ms
-            if (_recentLines.TryGetValue(text, out var seen) && (now - seen) < threshold) return;
-            _recentLines[text] = now;
-            var msg = new ConsoleMessage { Text = text, Type = type };
+            var duplicateKey = $"{parsed.Source}\n{parsed.Text}";
+            if (parsed.Type == ConsoleMessageType.Info
+                && _recentLines.TryGetValue(duplicateKey, out var seen)
+                && (now - seen) < threshold) return;
+            _recentLines[duplicateKey] = now;
+            if (_recentLines.Count > 1000) _recentLines.Clear();
+
+            var msg = new ConsoleMessage
+            {
+                Text = parsed.Text,
+                Type = parsed.Type,
+                Source = parsed.Source,
+            };
             inst.AddToLog(msg);
             LogReceived?.Invoke(server.Id, msg);
             if (server.GameId == "rust"
-                && text.Contains("Server startup complete", StringComparison.OrdinalIgnoreCase))
+                && parsed.Text.Contains("Server startup complete", StringComparison.OrdinalIgnoreCase))
                 MarkServerReady(server, inst, "Rust startup log");
         }
 
@@ -515,14 +527,14 @@ public class ServerManagerService
         {
             if (e.Data == null) return;
             if (plugin.IsNoiseLine(e.Data)) return;
-            AddLog(e.Data, DetectType(e.Data));
+            AddLog(e.Data, fromStandardError: false);
         };
 
         proc.ErrorDataReceived += (_, e) =>
         {
             if (e.Data == null) return;
             if (plugin.IsNoiseLine(e.Data)) return;
-            AddLog(e.Data, ConsoleMessageType.Error);
+            AddLog(e.Data, fromStandardError: true);
         };
 
         proc.Exited += async (_, _) =>
@@ -1345,11 +1357,4 @@ public class ServerManagerService
         return any;
     }
 
-    private static ConsoleMessageType DetectType(string line)
-    {
-        var l = line.ToLowerInvariant();
-        if (l.Contains("error") || l.Contains("exception") || l.Contains("fatal")) return ConsoleMessageType.Error;
-        if (l.Contains("warn")) return ConsoleMessageType.Warning;
-        return ConsoleMessageType.Info;
-    }
 }

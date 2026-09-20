@@ -57,6 +57,10 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private IGamePlugin? _newServerGame = GameRegistry.RustServer;
     [ObservableProperty] private int  _newServerPort      = 28015;
     [ObservableProperty] private int  _newServerQueryPort = 28017;
+    [ObservableProperty] private int  _newServerRconPort  = 28016;
+    [ObservableProperty] private int  _newServerRustPlusPort = 28083;
+    [ObservableProperty] private string _newServerPortStatus = "Ports have not been checked.";
+    [ObservableProperty] private bool _newServerPortsValid;
     [ObservableProperty] private bool _showSettingsPage;
     [ObservableProperty] private bool _showDashboard;
     [ObservableProperty] private bool _showSupport;
@@ -756,7 +760,7 @@ public partial class MainViewModel : BaseViewModel
     {
         NewServerName    = string.Empty;
         NewServerGame    = GameRegistry.RustServer;
-        // ports are set by OnNewServerGameChanged above
+        AssignFreePorts(useGameDefaults: true);
         ShowAddDialog    = true;
     }
 
@@ -797,14 +801,13 @@ public partial class MainViewModel : BaseViewModel
     {
         UpdateInstallPath();
         if (value == null) return;
-        // Auto-assign free ports, incrementing by 1 until no conflict
-        var (gp, qp) = AllocatePorts(
-            value.DefaultPort,
-            value.DefaultQueryPort);
-        NewServerPort         = gp;
-        NewServerQueryPort    = qp;
+        AssignFreePorts(useGameDefaults: true);
     }
     partial void OnNewServerNameChanged(string value)      => UpdateInstallPath();
+    partial void OnNewServerPortChanged(int value)          => UpdateNewServerPortStatus();
+    partial void OnNewServerQueryPortChanged(int value)     => UpdateNewServerPortStatus();
+    partial void OnNewServerRconPortChanged(int value)      => UpdateNewServerPortStatus();
+    partial void OnNewServerRustPlusPortChanged(int value)  => UpdateNewServerPortStatus();
 
     private void UpdateInstallPath()
     {
@@ -827,18 +830,41 @@ public partial class MainViewModel : BaseViewModel
     {
         if (NewServerGame == null || string.IsNullOrWhiteSpace(NewServerName)) return;
 
-        var requestedPorts = new List<int> { NewServerPort };
-        if (NewServerQueryPort > 0) requestedPorts.Add(NewServerQueryPort);
-        requestedPorts.Add(NewServerPort + 1);  // WebRCON
-        requestedPorts.Add(NewServerPort + 68); // Rust+ companion app
-        var usedPorts = UsedPorts();
-        if (requestedPorts.Any(p => p is <= 0 or > 65535)
-            || requestedPorts.Distinct().Count() != requestedPorts.Count
-            || requestedPorts.Any(usedPorts.Contains))
+        var ports = CurrentNewServerPorts();
+        var portErrors = ServerPortAllocator.Validate(
+            ports, ExistingPortSets(), PortCheckerService.IsAvailable);
+        if (portErrors.Count > 0)
         {
             System.Windows.MessageBox.Show(
-                "One or more selected ports are invalid, duplicated, or already assigned to another server.",
+                string.Join(Environment.NewLine, portErrors),
                 "Port conflict", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        string fullInstallPath;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(NewServerInstall))
+                throw new ArgumentException("An installation folder is required.");
+            fullInstallPath = System.IO.Path.GetFullPath(NewServerInstall.Trim());
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+                                   or System.Security.SecurityException)
+        {
+            System.Windows.MessageBox.Show(
+                $"Choose a valid installation folder. {ex.Message}",
+                "Invalid installation folder", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+        if (Servers.Any(existing => string.Equals(
+                System.IO.Path.GetFullPath(existing.Server.InstallPath), fullInstallPath,
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            System.Windows.MessageBox.Show(
+                "Another server already uses this installation folder. Choose a unique folder so saves, configuration, and logs cannot overlap.",
+                "Installation folder conflict", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
             return;
         }
 
@@ -850,14 +876,14 @@ public partial class MainViewModel : BaseViewModel
             InstallPath   = NewServerInstall,
             ServerPort    = NewServerPort,
             QueryPort     = NewServerQueryPort,
-            RconPort      = NewServerPort + 1,
+            RconPort      = NewServerRconPort,
             RconPassword  = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
             MaxPlayers    = NewServerGame.DefaultMaxPlayers,
             Status        = ServerStatus.NotInstalled,
             GameSpecificSettings = NewServerGame.GetDefaultSettings(),
         };
 
-        srv.GameSpecificSettings["appPort"] = (srv.RconPort + 67).ToString();
+        srv.GameSpecificSettings["appPort"] = NewServerRustPlusPort.ToString();
         var identity = new string(NewServerName
             .ToLowerInvariant()
             .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_')
@@ -883,9 +909,18 @@ public partial class MainViewModel : BaseViewModel
         if (plugin == null) return;
 
         // Allocate fresh ports so clone doesn't conflict
-        var (gp, qp) = AllocatePorts(
-            src.ServerPort,
-            src.QueryPort);
+        var sourcePorts = PortSetFor(src);
+        var allocated = ServerPortAllocator.FindAvailable(
+            sourcePorts, ExistingPortSets(), PortCheckerService.IsAvailable);
+        if (!allocated.HasValue)
+        {
+            System.Windows.MessageBox.Show(
+                "HighPop could not find a free Game, Query, WebRCON, and Rust+ port set for this clone.",
+                "No free port set", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+        var ports = allocated.Value;
 
         // Build a unique name and install path
         var cloneName = $"{src.DisplayName} (Copy)";
@@ -900,9 +935,9 @@ public partial class MainViewModel : BaseViewModel
             DisplayName          = cloneName,
             ServerName           = cloneName,
             InstallPath          = clonePath,
-            ServerPort           = gp,
-            QueryPort            = qp,
-            RconPort             = gp + 1,
+            ServerPort           = ports.Game,
+            QueryPort            = ports.Query,
+            RconPort             = ports.Rcon,
             RconPassword         = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
             AutoConnectRcon      = src.AutoConnectRcon,
             RconAutoConnectDelaySeconds = src.RconAutoConnectDelaySeconds,
@@ -935,7 +970,7 @@ public partial class MainViewModel : BaseViewModel
             GameSpecificSettings = new Dictionary<string, string>(src.GameSpecificSettings),
         };
 
-        clone.GameSpecificSettings["appPort"] = (clone.RconPort + 67).ToString();
+        clone.GameSpecificSettings["appPort"] = ports.RustPlus.ToString();
         clone.GameSpecificSettings["identity"] = "highpop_" + clone.Id[..8];
 
         var vm = MakeVm(clone);
@@ -1163,49 +1198,52 @@ public partial class MainViewModel : BaseViewModel
         catch { }
     }
 
-    /// <summary>
-    /// Returns all port numbers already assigned to any existing HighPop server.
-    /// </summary>
-    private HashSet<int> UsedPorts()
+    private IEnumerable<ServerPortSet> ExistingPortSets() =>
+        Servers.Select(vm => PortSetFor(vm.Server)).ToList();
+
+    private static ServerPortSet PortSetFor(GameServer server)
     {
-        var used = new HashSet<int>();
-        foreach (var vm in Servers)
-        {
-            used.Add(vm.Server.ServerPort);
-            if (vm.Server.QueryPort  > 0) used.Add(vm.Server.QueryPort);
-            if (vm.Server.RconPort   > 0) used.Add(vm.Server.RconPort);
-            if (vm.Server.GameSpecificSettings.TryGetValue("appPort", out var appPortText)
-                && int.TryParse(appPortText, out var appPort) && appPort > 0)
-                used.Add(appPort);
-        }
-        return used;
+        var rustPlus = server.GameSpecificSettings.TryGetValue("appPort", out var text)
+            && int.TryParse(text, out var parsed) ? parsed : 0;
+        return new ServerPortSet(server.ServerPort, server.QueryPort, server.RconPort, rustPlus);
     }
 
-    /// <summary>
-    /// Given Rust's default ports, increments them until it finds
-    /// a combination where no port overlaps with existing servers.
-    /// a free combination including WebRCON and Rust+.
-    /// </summary>
-    private (int game, int query) AllocatePorts(int defGame, int defQuery)
+    private ServerPortSet CurrentNewServerPorts() => new(
+        NewServerPort, NewServerQueryPort, NewServerRconPort, NewServerRustPlusPort);
+
+    [RelayCommand]
+    private void AutoAssignNewServerPorts() => AssignFreePorts(useGameDefaults: false);
+
+    private void AssignFreePorts(bool useGameDefaults)
     {
-        var used  = UsedPorts();
-        int offset = 0;
-        while (offset < 1000)
+        var game = NewServerGame ?? GameRegistry.RustServer;
+        var preferred = useGameDefaults
+            ? new ServerPortSet(game.DefaultPort, game.DefaultQueryPort,
+                game.DefaultPort + 1, game.DefaultPort + 68)
+            : CurrentNewServerPorts();
+        var allocated = ServerPortAllocator.FindAvailable(
+            preferred, ExistingPortSets(), PortCheckerService.IsAvailable);
+        if (!allocated.HasValue)
         {
-            int gp = defGame  + offset;
-            int qp = defQuery > 0 ? defQuery + offset : 0;
-            int rp = gp + 1;
-            int ap = gp + 68;
-
-            var candidates = new[] { gp, qp, rp, ap }.Where(p => p > 0).ToArray();
-            bool clash = candidates.Any(p => p > 65535 || used.Contains(p))
-                      || candidates.Distinct().Count() != candidates.Length;
-            if (!clash)
-                return (gp, qp > 0 ? qp : defQuery);
-
-            offset++;
+            NewServerPortsValid = false;
+            NewServerPortStatus = "No free four-port set was found in the search range.";
+            return;
         }
-        // Fallback: return defaults unchanged
-        return (defGame, defQuery);
+        NewServerPort = allocated.Value.Game;
+        NewServerQueryPort = allocated.Value.Query;
+        NewServerRconPort = allocated.Value.Rcon;
+        NewServerRustPlusPort = allocated.Value.RustPlus;
+        UpdateNewServerPortStatus();
     }
+
+    private void UpdateNewServerPortStatus()
+    {
+        var errors = ServerPortAllocator.Validate(
+            CurrentNewServerPorts(), ExistingPortSets(), PortCheckerService.IsAvailable);
+        NewServerPortsValid = errors.Count == 0;
+        NewServerPortStatus = NewServerPortsValid
+            ? "All four ports are valid and currently available."
+            : string.Join(" ", errors.Take(2));
+    }
+
 }
