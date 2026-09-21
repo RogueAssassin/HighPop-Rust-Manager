@@ -7,17 +7,17 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.8.1-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.8.2-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
 </p>
 
-HighPop Rust Manager brings installation, lifecycle control, administration, automation, monitoring, backups, mods, and remote access into one native Windows app. The release is a self-contained `HighPop.exe`; mutable files live under `HighPop/assets/**`, so a server installation can be moved or backed up as a unit.
+HighPop Rust Manager brings installation, lifecycle control, administration, automation, monitoring, backups, mods, and remote access into one native Windows app. The portable ZIP extracts as `HPRM/HighPop.exe` with mutable files under `HPRM/assets/**`, so an installation can be moved or backed up as a unit.
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
-## Included in v0.8.1 testing
+## Included in v0.8.2 testing
 
 | Area | Capabilities |
 |---|---|
@@ -48,7 +48,7 @@ The current integration findings and promotion checklist are maintained in [AUDI
 ## Install
 
 1. Download the latest Windows x64 ZIP from [Releases](../../releases).
-2. Verify its matching `.sha256` file, then extract the entire `HighPop` folder to a writable location.
+2. Verify its matching `.sha256` file, then extract the entire `HPRM` folder to a writable location.
 3. Run `HighPop.exe`.
 4. Add a Rust server profile and choose **Install**. SteamCMD is downloaded automatically.
 
@@ -59,7 +59,7 @@ Administrator rights are only needed for system-wide firewall/URL ACL changes. N
 ## Portable layout
 
 ```text
-HighPop/
+HPRM/
 ├─ HighPop.exe
 └─ assets/
    ├─ README.txt

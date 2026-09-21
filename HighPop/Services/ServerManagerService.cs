@@ -19,6 +19,7 @@ public class ServerInstance
     public readonly object LogLock = new();
     public int RestartCount { get; set; }
     public CancellationTokenSource DailyRestartCts { get; } = new();
+    public CancellationTokenSource? ReattachedLogTailCts { get; set; }
     public nint JobHandle { get; set; } = nint.Zero;
     public volatile bool IntentionalStop;
     public string StopReason { get; set; } = string.Empty;
@@ -62,6 +63,13 @@ public class ServerInstance
         }
     }
     public List<ConsoleMessage> GetLogSnapshot() { lock (LogLock) return Log.ToList(); }
+
+    public void CancelAuxiliaryMonitoring()
+    {
+        try { ReattachedLogTailCts?.Cancel(); } catch { }
+        ReattachedLogTailCts?.Dispose();
+        ReattachedLogTailCts = null;
+    }
 }
 
 public sealed record ServerHealthSnapshot(
@@ -264,6 +272,8 @@ public class ServerManagerService
                     recovery, server.AutoRestartDelaySec);
             };
             _running[server.Id] = inst;
+            inst.ReattachedLogTailCts = new CancellationTokenSource();
+            _ = TailReattachedRustLogAsync(server, inst, inst.ReattachedLogTailCts.Token);
             RememberRunningIdentity(server, p);
             _network.RegisterServer(server.Id, p.Id);
             SetStatus(server, ServerStatus.Running);
@@ -719,7 +729,11 @@ public class ServerManagerService
 
         // Add firewall rules
         if (server.FirewallAutoManage)
-            FirewallService.AddRules(server);
+        {
+            var firewall = FirewallService.AddRules(server);
+            if (!firewall.Success)
+                InjectLogLine(server.Id, $"[Firewall] {firewall.Message}", ConsoleMessageType.Error);
+        }
 
         SetStatus(server, ServerStatus.Running);
         _lifecycle.MarkPhase(server, ServerLifecyclePhase.ProcessRunning,
@@ -1013,6 +1027,7 @@ public class ServerManagerService
                 var instance = _running[id];
                 instance.IntentionalStop = true;
                 instance.DailyRestartCts.Cancel();
+                instance.CancelAuxiliaryMonitoring();
                 JobObjectService.ReleaseJob(instance.JobHandle);
                 instance.JobHandle = nint.Zero;
 
@@ -1314,8 +1329,82 @@ public class ServerManagerService
         => _running.TryGetValue(serverId, out var current) && ReferenceEquals(current, instance);
 
     private bool RemoveInstanceIfCurrent(string serverId, ServerInstance instance)
-        => ((ICollection<KeyValuePair<string, ServerInstance>>)_running)
+    {
+        var removed = ((ICollection<KeyValuePair<string, ServerInstance>>)_running)
             .Remove(new KeyValuePair<string, ServerInstance>(serverId, instance));
+        if (removed) instance.CancelAuxiliaryMonitoring();
+        return removed;
+    }
+
+    private async Task TailReattachedRustLogAsync(
+        GameServer server,
+        ServerInstance instance,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(server.GameId, "rust", StringComparison.OrdinalIgnoreCase)) return;
+        var logPath = Path.Combine(RustPlugin.GetEffectiveLogDirectory(server), "RustDedicated.log");
+        long position = 0;
+        var initialized = false;
+        var previousType = ConsoleMessageType.Info;
+
+        while (!cancellationToken.IsCancellationRequested
+               && IsCurrentInstance(server.Id, instance)
+               && instance.Process?.HasExited == false)
+        {
+            try
+            {
+                if (!File.Exists(logPath))
+                {
+                    await Task.Delay(750, cancellationToken);
+                    continue;
+                }
+
+                await using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, 4096, useAsync: true);
+                var discardPartialLine = false;
+                if (!initialized)
+                {
+                    position = Math.Max(0, stream.Length - 64 * 1024);
+                    stream.Seek(position, SeekOrigin.Begin);
+                    discardPartialLine = position > 0;
+                    initialized = true;
+                }
+                else
+                {
+                    if (stream.Length < position) position = 0;
+                    stream.Seek(position, SeekOrigin.Begin);
+                }
+
+                using var reader = new StreamReader(stream, leaveOpen: true);
+                if (discardPartialLine) await reader.ReadLineAsync(cancellationToken);
+                string? line;
+                while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+                {
+                    var parsed = ConsoleOutputParser.Parse(line, fromStandardError: false, previousType);
+                    if (parsed == null) continue;
+                    previousType = parsed.Type;
+                    var message = new ConsoleMessage
+                    {
+                        Text = parsed.Text,
+                        Type = parsed.Type,
+                        Source = "Rust log",
+                    };
+                    instance.AddToLog(message);
+                    LogReceived?.Invoke(server.Id, message);
+                }
+                position = stream.Position;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            try { await Task.Delay(750, cancellationToken); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
 
     private static int? SafeExitCode(Process process)
     {

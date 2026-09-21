@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using HighPop.Models;
@@ -9,6 +11,7 @@ namespace HighPop.Services;
 public class ConfigService
 {
     private readonly object _serversFileGate = new();
+    private string? _lastServersSnapshotHash;
     static readonly string ExeDir =
         Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
         ?? AppContext.BaseDirectory;
@@ -171,6 +174,7 @@ public class ConfigService
                     server.LifecycleOperationHistory ??= [];
                     server.RustServerVariables ??= RustServerVariable.CreateDefaults();
                 }
+                _lastServersSnapshotHash = ComputeServersSnapshotHash(servers);
                 return servers;
             }
             catch { return []; }
@@ -181,7 +185,11 @@ public class ConfigService
     {
         lock (_serversFileGate)
         {
-            var array = JArray.FromObject(servers);
+            var snapshot = servers.ToList();
+            var snapshotHash = ComputeServersSnapshotHash(snapshot);
+            if (string.Equals(snapshotHash, _lastServersSnapshotHash, StringComparison.Ordinal)) return;
+
+            var array = JArray.FromObject(snapshot);
             foreach (var server in array.OfType<JObject>())
             {
                 ProtectProperty(server, nameof(GameServer.RconPassword));
@@ -189,6 +197,7 @@ public class ConfigService
                 ProtectProperty(server, nameof(GameServer.DiscordWebhookUrl));
             }
             AtomicWrite(ServersFile, array.ToString(Formatting.Indented));
+            _lastServersSnapshotHash = snapshotHash;
         }
     }
 
@@ -230,6 +239,7 @@ public class ConfigService
                 target[nameof(GameServer.LifecycleOperationHistory)] =
                     JToken.FromObject(server.LifecycleOperationHistory);
                 AtomicWrite(ServersFile, array.ToString(Formatting.Indented));
+                _lastServersSnapshotHash = null;
             }
             catch (JsonException ex)
             {
@@ -274,5 +284,11 @@ public class ConfigService
         var temp = path + ".tmp";
         File.WriteAllText(temp, content);
         File.Move(temp, path, overwrite: true);
+    }
+
+    private static string ComputeServersSnapshotHash(IEnumerable<GameServer> servers)
+    {
+        var json = JArray.FromObject(servers).ToString(Formatting.None);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
     }
 }

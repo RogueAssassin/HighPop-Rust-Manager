@@ -13,6 +13,34 @@ public readonly record struct ServerPortSet(int Game, int Query, int Rcon, int R
 
 public static class ServerPortAllocator
 {
+    public static IReadOnlyList<string> ValidateProfiles(
+        IEnumerable<(string Id, string Name, ServerPortSet Ports)> profiles)
+    {
+        var snapshot = profiles.ToList();
+        var errors = new List<string>();
+
+        foreach (var profile in snapshot)
+        {
+            foreach (var error in Validate(profile.Ports, [], null))
+                errors.Add($"{profile.Name}: {error}");
+        }
+
+        foreach (var collision in snapshot
+                     .SelectMany(profile => profile.Ports.Endpoints()
+                         .Where(endpoint => endpoint.Port > 0)
+                         .Select(endpoint => (profile.Id, profile.Name, endpoint.Port, endpoint.Label)))
+                     .GroupBy(item => item.Port)
+                     .Where(group => group.Select(item => item.Id).Distinct().Count() > 1))
+        {
+            var owners = string.Join(", ", collision
+                .Select(item => $"{item.Name} ({item.Label})")
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            errors.Add($"Port {collision.Key} conflicts across profiles: {owners}.");
+        }
+
+        return errors.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
     public static IReadOnlyList<string> Validate(
         ServerPortSet candidate,
         IEnumerable<ServerPortSet> existing,

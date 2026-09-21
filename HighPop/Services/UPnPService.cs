@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Security;
 using System.Text;
 using System.Xml.Linq;
 using HighPop.Models;
@@ -20,21 +21,41 @@ public class UPnPService
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-public async Task AddPortsForServerAsync(GameServer server)
+    public async Task<NetworkRuleUpdateResult> AddPortsForServerAsync(GameServer server)
     {
         await EnsureDiscoveredAsync();
-        if (!_discovered || _controlUrl == null) return;
+        if (!_discovered || _controlUrl == null)
+            return new NetworkRuleUpdateResult(false, "UPnP gateway was not discovered.");
 
+        var added = new List<(int Port, string Proto)>();
         foreach (var (port, proto) in GetPorts(server))
-            await AddMappingAsync(port, proto, $"HighPop-{server.DisplayName}");
+        {
+            if (await AddMappingAsync(port, proto,
+                    SecurityElement.Escape($"HighPop-{server.DisplayName}") ?? "HighPop"))
+            {
+                added.Add((port, proto));
+                continue;
+            }
+
+            foreach (var mapping in added)
+                await RemoveMappingAsync(mapping.Port, mapping.Proto);
+            return new NetworkRuleUpdateResult(false,
+                $"UPnP mapping failed at {port}/{proto}; {added.Count} earlier mapping(s) were rolled back.");
+        }
+        return new NetworkRuleUpdateResult(true, $"Configured {added.Count} UPnP mappings.");
     }
 
-    public async Task RemovePortsForServerAsync(GameServer server)
+    public async Task<NetworkRuleUpdateResult> RemovePortsForServerAsync(GameServer server)
     {
-        if (!_discovered || _controlUrl == null) return;
+        if (!_discovered || _controlUrl == null)
+            return new NetworkRuleUpdateResult(true, "No discovered UPnP gateway required cleanup.");
 
+        var failures = new List<string>();
         foreach (var (port, proto) in GetPorts(server))
-            await RemoveMappingAsync(port, proto);
+            if (!await RemoveMappingAsync(port, proto)) failures.Add($"{port}/{proto}");
+        return failures.Count == 0
+            ? new NetworkRuleUpdateResult(true, "Removed UPnP mappings.")
+            : new NetworkRuleUpdateResult(false, $"Could not remove UPnP mappings: {string.Join(", ", failures)}.");
     }
 
     /// <summary>Explicit one-shot discovery — can be called from Settings to test.</summary>
@@ -207,6 +228,8 @@ public async Task AddPortsForServerAsync(GameServer server)
         Add(server.ServerPort,  "TCP");
         if (server.QueryPort > 0 && server.QueryPort != server.ServerPort)
             Add(server.QueryPort, "UDP");
+        if (server.RconPort > 0)
+            Add(server.RconPort, "TCP");
         if (server.GameSpecificSettings.TryGetValue("appPort", out var appPortText)
             && int.TryParse(appPortText, out var appPort) && appPort > 0)
             Add(appPort, "TCP");
@@ -214,7 +237,7 @@ public async Task AddPortsForServerAsync(GameServer server)
         return seen;
     }
 
-    private async Task AddMappingAsync(int port, string protocol, string description)
+    private async Task<bool> AddMappingAsync(int port, string protocol, string description)
     {
         var soap = BuildSoapEnvelope("AddPortMapping",
             $"<NewRemoteHost></NewRemoteHost>" +
@@ -225,16 +248,16 @@ public async Task AddPortsForServerAsync(GameServer server)
             $"<NewEnabled>1</NewEnabled>" +
             $"<NewPortMappingDescription>{description}</NewPortMappingDescription>" +
             $"<NewLeaseDuration>0</NewLeaseDuration>");
-        await SendSoapAsync("AddPortMapping", soap);
+        return await SendSoapAsync("AddPortMapping", soap);
     }
 
-    private async Task RemoveMappingAsync(int port, string protocol)
+    private async Task<bool> RemoveMappingAsync(int port, string protocol)
     {
         var soap = BuildSoapEnvelope("DeletePortMapping",
             $"<NewRemoteHost></NewRemoteHost>" +
             $"<NewExternalPort>{port}</NewExternalPort>" +
             $"<NewProtocol>{protocol}</NewProtocol>");
-        await SendSoapAsync("DeletePortMapping", soap);
+        return await SendSoapAsync("DeletePortMapping", soap);
     }
 
     private static string BuildSoapEnvelope(string action, string innerXml) =>
@@ -248,7 +271,7 @@ public async Task AddPortsForServerAsync(GameServer server)
         "</s:Body>" +
         "</s:Envelope>";
 
-    private async Task SendSoapAsync(string action, string body)
+    private async Task<bool> SendSoapAsync(string action, string body)
     {
         try
         {
@@ -257,9 +280,10 @@ public async Task AddPortsForServerAsync(GameServer server)
             content.Headers.TryAddWithoutValidation("Content-Type", "text/xml; charset=\"utf-8\"");
             content.Headers.TryAddWithoutValidation("SOAPAction",
                 $"\"urn:schemas-upnp-org:service:WANIPConnection:1#{action}\"");
-            await _http.PostAsync(_controlUrl, content);
+            using var response = await _http.PostAsync(_controlUrl, content);
+            return response.IsSuccessStatusCode;
         }
-        catch { }
+        catch { return false; }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -50,6 +50,28 @@ Validation remaining before promotion:
 
 Performance benefit: fewer duplicate processes and hot recovery loops, bounded waits, faster diagnosis, and no UI thread dependency for lifecycle correctness. Target unexpected-exit detection under 10 seconds and 99% of available scheduled actions starting within 30 seconds.
 
+## v0.8.2 — Multi-server reliability and portable delivery
+
+Implemented on `testing`; Windows and live Rust validation is in progress:
+
+- Validate Game, Query, WebRCON, and Rust+ edits against all saved profiles and active listeners before accepting them
+- Refuse to persist invalid legacy port collisions and safely snapshot UI-owned profile data during autosave
+- Keep reattached Rust reporting alive by following `RustDedicated.log`
+- Add console pause/resume, export, source/severity filtering, and recycling virtualization
+- Apply firewall and UPnP mappings as rollback-capable transactions with visible errors
+- Skip unchanged periodic profile rewrites
+- Produce and CI-verify a portable ZIP rooted at `HPRM/`, containing `HighPop.exe` and the complete `assets/` tree
+- Retain a standalone executable for in-place upgrades
+
+Validation remaining before promotion:
+
+- Run two simultaneous Rust servers through start, RCON, Rust+, query, safe stop, restart, and manager reattachment
+- Inject firewall and UPnP partial failures and confirm no partial mappings remain
+- Soak console pause/resume and reattached log rotation under high output
+- Extract the CI ZIP into a clean writable location and confirm every mutable path stays below `HPRM/assets/`
+
+Performance benefit: unchanged profile state no longer rewrites encrypted JSON every five seconds, while console virtualization bounds visual-tree cost during long high-output sessions.
+
 ## v0.9 — Transactional Rust maintenance
 
 Planned integration order on `testing`:

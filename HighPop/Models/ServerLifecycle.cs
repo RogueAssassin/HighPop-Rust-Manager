@@ -93,7 +93,7 @@ public static class ServerLifecycleRules
         }
 
         // Legacy profiles have no durable intent and must remain stopped unless Auto-start is
-        // independently enabled. A v0.8.1 profile that already persisted Running retains that
+        // independently enabled. A profile that already persisted Running retains that
         // explicit intent even if its old PID can no longer be reattached.
         if (server.DesiredState == ServerDesiredState.Unspecified)
         {

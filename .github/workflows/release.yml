@@ -120,36 +120,11 @@ jobs:
       - name: Assemble portable package
         shell: pwsh
         run: |
-          $baseName = "HighPop-${{ needs.prepare.outputs.tag }}-win-x64"
-          New-Item package/HighPop/assets/presets -ItemType Directory -Force | Out-Null
-          Copy-Item publish_out/HighPop.exe package/HighPop/
-          Copy-Item HighPop/assets/README.txt package/HighPop/assets/
-          Copy-Item HighPop/assets/presets/*.json package/HighPop/assets/presets/
-          Copy-Item -Path LICENSE,NOTICE.md,README.md,CHANGELOG.md -Destination package/HighPop/
-          Copy-Item publish_out/HighPop.exe "$baseName.exe"
-          Compress-Archive -Path package/HighPop -DestinationPath "$baseName.zip" -CompressionLevel Optimal
-
-          $releaseFiles = @("$baseName.exe", "$baseName.zip")
-          foreach ($file in $releaseFiles) {
-            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $file" | Set-Content "$file.sha256" -Encoding ascii
-          }
-
-          $manifest = [ordered]@{
-            product = "HighPop Rust Manager"
-            version = "${{ needs.prepare.outputs.version }}"
-            runtime = "win-x64"
-            commit = "${{ github.sha }}"
-            files = @($releaseFiles | ForEach-Object {
-              [ordered]@{
-                name = $_
-                sha256 = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant()
-                bytes = (Get-Item $_).Length
-              }
-            })
-          }
-          $manifest | ConvertTo-Json -Depth 4 |
-            Set-Content "$baseName.manifest.json" -Encoding utf8
+          ./scripts/Build-PortablePackage.ps1 `
+            -PublishDirectory publish_out `
+            -OutputDirectory . `
+            -Version "${{ needs.prepare.outputs.version }}" `
+            -Commit "${{ github.sha }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

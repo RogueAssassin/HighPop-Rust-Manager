@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.2
+
+- Expanded new-server creation so Game, Query, WebRCON, and Rust+ ports are editable, checked against saved profiles and active Windows listeners, and can be reassigned together.
+- Added the same conflict validation to existing profiles, blocked persistence of invalid legacy collisions, prevented shared installation directories, and assigned verified free ports to clones.
+- Reworked console ingestion with bounded UI batches, source and severity parsing, ANSI cleanup, pause/resume, export, recycling virtualization, and bounded duplicate tracking.
+- Restored server reporting after process reattachment by tailing the active Rust log with truncation and rotation handling.
+- Made firewall and UPnP port setup transactional, including rollback and visible failure reporting; UPnP now includes WebRCON.
+- Avoided unchanged encrypted profile rewrites during periodic autosave and captured UI-owned profile state safely.
+- Added a shared portable-package builder and CI validation. The ZIP now extracts to `HPRM/HighPop.exe` and `HPRM/assets/**`, while the standalone executable remains available.
+- Expanded the multi-server smoke matrix for invalid, conflicting, and independently allocated port sets.
+
 ## 0.8.1
 
 - Added a deterministic lifecycle coordinator with separate persisted desired state and observed phase, monotonic generations, operation IDs, initiators, reasons, and transition timestamps.
@@ -12,10 +23,6 @@
 - Separated process, Rust-ready, WebRCON-ready, and player-sample health timestamps and exposed them in a local Support health summary.
 - Replaced fixed WebRCON retry polling with bounded exponential reconnect delays and jitter, cancelled when newer lifecycle intent wins.
 - Added a redacted ZIP support bundle containing an explicit-safe profile summary, lifecycle history, health signals, environment details, and bounded recent logs.
-- Expanded new-server creation so Game, Query, WebRCON, and Rust+ ports are all editable, validated against saved profiles and active Windows listeners, and can be reassigned together with one click.
-- Prevented multiple server profiles from sharing an installation directory and gave cloned servers a verified free four-port set.
-- Reworked live console ingestion with bounded UI-thread batches, stable filtering, severity toggles, source labels, stronger ANSI/control-code cleanup, stack-trace severity inheritance, and correct handling of normal Rust output written to stderr.
-- Bounded the short-term duplicate-output cache so long-running, high-volume servers cannot grow it indefinitely.
 
 ## 0.8.0
 

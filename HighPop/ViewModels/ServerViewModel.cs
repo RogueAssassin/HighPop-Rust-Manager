@@ -62,6 +62,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private bool _showConsoleInfo = true;
     [ObservableProperty] private bool _showConsoleWarnings = true;
     [ObservableProperty] private bool _showConsoleErrors = true;
+    [ObservableProperty] private bool _isConsolePaused;
+    [ObservableProperty] private string _portConfigurationStatus = "Ports are valid.";
     [ObservableProperty] private string _modStatusText   = string.Empty;
     [ObservableProperty] private bool   _modBusy;
     [ObservableProperty] private string _detectedModFramework = "Not scanned";
@@ -217,6 +219,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     // ── Batch selection ───────────────────────────────────────────────────────
     [ObservableProperty] private bool _isBatchSelected;
     internal Action? BatchSelectionChanged { get; set; }
+    internal Func<GameServer, ServerPortSet, string?>? ValidatePortSet { get; set; }
     partial void OnIsBatchSelectedChanged(bool _) => BatchSelectionChanged?.Invoke();
 
     public string LifecycleDetailText
@@ -336,9 +339,61 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         set
         {
             if (RustPlusPort == value) return;
+            if (!TryAcceptPortSet(CurrentPortSet() with { RustPlus = value })) return;
             Server.GameSpecificSettings["appPort"] = value.ToString();
             OnPropertyChanged();
         }
+    }
+
+    public int GamePort
+    {
+        get => Server.ServerPort;
+        set
+        {
+            if (Server.ServerPort == value) return;
+            if (!TryAcceptPortSet(CurrentPortSet() with { Game = value })) return;
+            Server.ServerPort = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public int QueryPort
+    {
+        get => Server.QueryPort;
+        set
+        {
+            if (Server.QueryPort == value) return;
+            if (!TryAcceptPortSet(CurrentPortSet() with { Query = value })) return;
+            Server.QueryPort = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public int RconPort
+    {
+        get => Server.RconPort;
+        set
+        {
+            if (Server.RconPort == value) return;
+            if (!TryAcceptPortSet(CurrentPortSet() with { Rcon = value })) return;
+            Server.RconPort = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private ServerPortSet CurrentPortSet() => new(
+        Server.ServerPort, Server.QueryPort, Server.RconPort, RustPlusPort);
+
+    private bool TryAcceptPortSet(ServerPortSet candidate)
+    {
+        if (!IsStopped)
+        {
+            PortConfigurationStatus = "Stop Rust before changing ports.";
+            return false;
+        }
+        var error = ValidatePortSet?.Invoke(Server, candidate);
+        PortConfigurationStatus = error ?? "Ports are valid and available.";
+        return error == null;
     }
 
     public bool AutoConnectRcon
@@ -849,6 +904,31 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         FilteredLog.Clear();
     }
 
+    [RelayCommand]
+    private async Task ExportConsoleAsync()
+    {
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Export server console",
+            Filter = "Log file|*.log|Text file|*.txt",
+            FileName = $"{SanitizeFileName(Server.DisplayName)}-{DateTime.Now:yyyyMMdd-HHmmss}.log",
+            DefaultExt = ".log",
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            var lines = Log.Select(message =>
+                $"[{message.Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{message.Type}] [{message.SourceLabel}] {message.Text}");
+            await File.WriteAllLinesAsync(dialog.FileName, lines);
+            AddActionLog($"Console exported: {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Console] Export failed: {ex.Message}", ConsoleMessageType.Error);
+        }
+    }
+
     // ── Quick commands ───────────────────────────────────────────────────────
 
     [ObservableProperty] private string _newQuickCommandLabel   = string.Empty;
@@ -878,6 +958,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     partial void OnShowConsoleInfoChanged(bool value) => RebuildFilteredLog();
     partial void OnShowConsoleWarningsChanged(bool value) => RebuildFilteredLog();
     partial void OnShowConsoleErrorsChanged(bool value) => RebuildFilteredLog();
+    partial void OnIsConsolePausedChanged(bool value)
+    {
+        if (!value) RebuildFilteredLog();
+    }
 
     // ── Log Watcher rules ────────────────────────────────────────────────────
 
@@ -2880,7 +2964,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         while (added < 250 && _pendingConsoleMessages.TryDequeue(out var message))
         {
             Log.Add(message);
-            if (MatchesConsoleFilter(message)) FilteredLog.Add(message);
+            if (!IsConsolePaused && MatchesConsoleFilter(message)) FilteredLog.Add(message);
             added++;
         }
 

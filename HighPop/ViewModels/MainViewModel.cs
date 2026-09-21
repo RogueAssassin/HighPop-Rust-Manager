@@ -221,14 +221,14 @@ public partial class MainViewModel : BaseViewModel
             {
                 if (status == ServerStatus.Running)
                 {
-                    if (_config.EnableUPnP) _ = _upnp.AddPortsForServerAsync(server);
+                    if (_config.EnableUPnP) _ = ApplyUpnpAsync(server, add: true);
                     _crashPrediction.RegisterServerStart(id);
                     _wakeOnDemand.Disarm(id);
                     _wakeOnDemand.ArmIdleShutdown(server);
                 }
                 else if (status is ServerStatus.Stopped or ServerStatus.Error)
                 {
-                    if (_config.EnableUPnP) _ = _upnp.RemovePortsForServerAsync(server);
+                    if (_config.EnableUPnP) _ = ApplyUpnpAsync(server, add: false);
                     _wakeOnDemand.DisarmIdleShutdown(id);
                     _wakeOnDemand.Arm(server);
                 }
@@ -539,7 +539,7 @@ public partial class MainViewModel : BaseViewModel
             vm.ServerNumber = num++;
             Servers.Add(vm);
             // KeepOnline protects an already-running/reattached process; it must never
-            // turn opening the manager into an implicit server start. v0.8.1 desired Running
+            // turn opening the manager into an implicit server start. Persisted desired Running
             // is different: it proves an earlier explicit start and may resume recovery.
             if (!reattached && ServerLifecycleRules.CanRecover(srv))
                 _manager.QueueAlwaysOnRecovery(srv, "manager launch found persisted running intent");
@@ -752,7 +752,17 @@ public partial class MainViewModel : BaseViewModel
                _configEditor, _playerStats, _perfHistory, _templates, _scheduler,
                _network, _groupBans, _moderation, _hygiene, _presets, _telemetry);
         vm.BatchSelectionChanged = () => OnPropertyChanged(nameof(BatchSelectedCount));
+        vm.ValidatePortSet = ValidatePortSetForServer;
         return vm;
+    }
+
+    private async Task ApplyUpnpAsync(GameServer server, bool add)
+    {
+        var result = add
+            ? await _upnp.AddPortsForServerAsync(server)
+            : await _upnp.RemovePortsForServerAsync(server);
+        if (!result.Success)
+            _manager.InjectLogLine(server.Id, $"[UPnP] {result.Message}", ConsoleMessageType.Warning);
     }
 
     [RelayCommand]
@@ -1176,7 +1186,32 @@ public partial class MainViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    public void Save() => _config.SaveServers(Servers.Select(v => v.Server));
+    public void Save()
+    {
+        List<GameServer> snapshot = [];
+        void Capture() => snapshot = Servers.Select(viewModel => viewModel.Server).ToList();
+
+        var dispatcher = WpfApplication.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess()) dispatcher.Invoke(Capture);
+        else Capture();
+
+        var errors = ServerPortAllocator.ValidateProfiles(snapshot.Select(server =>
+            (server.Id, server.DisplayName, PortSetFor(server))));
+        if (errors.Count > 0)
+        {
+            void Report()
+            {
+                var summary = string.Join(" ", errors.Take(2));
+                foreach (var viewModel in Servers)
+                    viewModel.PortConfigurationStatus = summary;
+            }
+            if (dispatcher != null && !dispatcher.CheckAccess()) dispatcher.Invoke(Report);
+            else Report();
+            return;
+        }
+
+        _config.SaveServers(snapshot);
+    }
 
     private void RefreshCounts()
     {
@@ -1206,6 +1241,16 @@ public partial class MainViewModel : BaseViewModel
         var rustPlus = server.GameSpecificSettings.TryGetValue("appPort", out var text)
             && int.TryParse(text, out var parsed) ? parsed : 0;
         return new ServerPortSet(server.ServerPort, server.QueryPort, server.RconPort, rustPlus);
+    }
+
+    private string? ValidatePortSetForServer(GameServer server, ServerPortSet candidate)
+    {
+        var otherProfiles = Servers
+            .Where(viewModel => viewModel.Server.Id != server.Id)
+            .Select(viewModel => PortSetFor(viewModel.Server))
+            .ToList();
+        var errors = ServerPortAllocator.Validate(candidate, otherProfiles, PortCheckerService.IsAvailable);
+        return errors.Count == 0 ? null : string.Join(" ", errors.Take(2));
     }
 
     private ServerPortSet CurrentNewServerPorts() => new(

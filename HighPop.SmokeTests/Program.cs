@@ -55,6 +55,22 @@ Check(ServerPortAllocator.Validate(
       && ServerPortAllocator.Validate(
         new ServerPortSet(28015, 29017, 29016, 29083), [firstPortSet]).Count > 0,
     "manual port editing accepts unique sets and rejects ports reserved by another profile");
+var profilePortErrors = ServerPortAllocator.ValidateProfiles([
+    ("server-a", "Server A", firstPortSet),
+    ("server-b", "Server B", new ServerPortSet(28015, 28117, 28116, 28183)),
+]);
+Check(profilePortErrors.Any(error => error.Contains("Port 28015", StringComparison.Ordinal)),
+    "profile-wide validation rejects a port collision before autosave");
+var allocatedPortSets = new List<ServerPortSet>();
+for (var index = 0; index < 4; index++)
+{
+    var allocated = ServerPortAllocator.FindAvailable(firstPortSet, allocatedPortSets);
+    if (allocated.HasValue) allocatedPortSets.Add(allocated.Value);
+}
+Check(allocatedPortSets.Count == 4
+      && ServerPortAllocator.ValidateProfiles(allocatedPortSets.Select((ports, index) =>
+          ($"server-{index}", $"Server {index + 1}", ports))).Count == 0,
+    "multi-server allocation matrix produces independent four-port profiles");
 
 var normalStderr = ConsoleOutputParser.Parse("Server startup complete", fromStandardError: true);
 var exceptionLine = ConsoleOutputParser.Parse(

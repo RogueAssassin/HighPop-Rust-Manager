@@ -46,3 +46,19 @@ jobs:
           if (-not (Test-Path publish_out/HighPop.exe)) { throw "HighPop.exe was not produced" }
           if (-not (Test-Path publish_out/assets/README.txt)) { throw "assets/README.txt was not produced" }
           if (-not (Test-Path publish_out/assets/presets/rust_highpop.json)) { throw "Rust presets were not produced" }
+
+      - name: Assemble and verify HPRM portable package
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content HighPop/HighPop.csproj)).Project.PropertyGroup.Version | Select-Object -First 1
+          ./scripts/Build-PortablePackage.ps1 `
+            -PublishDirectory publish_out `
+            -OutputDirectory package_out `
+            -Version $version `
+            -Commit "${{ github.sha }}"
+
+      - name: Upload testing package
+        uses: actions/upload-artifact@v4
+        with:
+          name: HighPop-testing-win-x64
+          path: package_out/HighPop-v*-win-x64*
