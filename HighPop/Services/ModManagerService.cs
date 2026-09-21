@@ -24,6 +24,13 @@ public sealed record RogueRustInstallTarget(string Framework, string Directory)
     public string DllPath => Path.Combine(Directory, "Oxide.Ext.RogueRust.dll");
 }
 
+public sealed record ModFrameworkPaths(
+    string Framework,
+    string RootDirectory,
+    string PluginDirectory,
+    string ConfigDirectory,
+    string ExtensionDirectory);
+
 /// <summary>Installs and manages the two supported Rust server frameworks: Oxide/uMod and Carbon.</summary>
 public sealed class ModManagerService
 {
@@ -311,14 +318,40 @@ public sealed class ModManagerService
             .ToList();
     }
 
-    public static void OpenPluginFolder(IGamePlugin plugin, string installPath)
+    public static ModFrameworkPaths? GetActiveFrameworkPaths(string installPath)
     {
-        if (!plugin.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase)) return;
-        OpenFolder(Path.Combine(installPath, "oxide", "plugins"));
+        var oxide = GetInstalledOxideVersion(installPath) != null;
+        var carbon = IsCarbonInstalled(installPath);
+        if (oxide == carbon) return null; // neither installed, or an unsupported dual-framework conflict
+
+        return oxide
+            ? new ModFrameworkPaths(
+                "Oxide / uMod",
+                Path.Combine(installPath, "oxide"),
+                Path.Combine(installPath, "oxide", "plugins"),
+                Path.Combine(installPath, "oxide", "config"),
+                Path.Combine(installPath, "RustDedicated_Data", "Managed"))
+            : new ModFrameworkPaths(
+                "Carbon",
+                Path.Combine(installPath, "carbon"),
+                Path.Combine(installPath, "carbon", "plugins"),
+                Path.Combine(installPath, "carbon", "configs"),
+                Path.Combine(installPath, "carbon", "extensions"));
     }
 
-    public static void OpenCarbonPluginFolder(string installPath) =>
-        OpenFolder(Path.Combine(installPath, "carbon", "plugins"));
+    public static bool OpenExistingFolder(string path)
+    {
+        if (!Directory.Exists(path)) return false;
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", path) { UseShellExecute = true });
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return false;
+        }
+    }
 
     private static string? GetCarbonVersion(string installPath)
     {
@@ -408,12 +441,6 @@ public sealed class ModManagerService
     {
         if (!File.Exists(Path.Combine(installPath, "RustDedicated.exe")))
             throw new InvalidOperationException("Install the Rust dedicated server before installing a mod framework.");
-    }
-
-    private static void OpenFolder(string path)
-    {
-        Directory.CreateDirectory(path);
-        Process.Start(new ProcessStartInfo("explorer.exe", path) { UseShellExecute = true });
     }
 
     private static void Report(IProgress<(int pct, string msg)>? progress, int pct, string message) =>

@@ -309,6 +309,13 @@ try
           && oxideTargets[0].Framework == "Oxide/uMod"
           && oxideTargets[0].Directory == oxideManaged,
         "RogueRust targets Oxide's managed directory");
+    var oxidePaths = ModManagerService.GetActiveFrameworkPaths(server.InstallPath);
+    var missingCarbonPlugins = Path.Combine(server.InstallPath, "carbon", "plugins");
+    Check(oxidePaths?.Framework == "Oxide / uMod"
+          && oxidePaths.PluginDirectory == Path.Combine(server.InstallPath, "oxide", "plugins")
+          && !ModManagerService.OpenExistingFolder(missingCarbonPlugins)
+          && !Directory.Exists(missingCarbonPlugins),
+        "framework folder shortcuts select Oxide and never create a missing Carbon folder");
     var carbonManaged = Path.Combine(server.InstallPath, "carbon", "managed");
     Directory.CreateDirectory(carbonManaged);
     File.Copy(Environment.ProcessPath!, Path.Combine(carbonManaged, "Carbon.Common.dll"));
@@ -317,6 +324,8 @@ try
           && dualTargets.Any(target => target.Framework == "Carbon"
               && target.Directory == Path.Combine(server.InstallPath, "carbon", "extensions")),
         "RogueRust targets Carbon extensions and handles dual-framework detection");
+    Check(ModManagerService.GetActiveFrameworkPaths(server.InstallPath) == null,
+        "framework folder shortcuts refuse an ambiguous dual-framework installation");
 
     var staleCarbonRoot = Path.Combine(testRoot, "stale-carbon");
     Directory.CreateDirectory(Path.Combine(staleCarbonRoot, "carbon"));

@@ -1536,14 +1536,18 @@
                                                        TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Grid>
-                                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <WrapPanel Margin="0,14,0,0">
+                                        <Button Content="📂 Open server files" Style="{StaticResource GhostButton}"
+                                                Command="{Binding OpenInstallFolderCommand}" Margin="0,0,8,0"/>
                                         <Button Content="↻ Rescan mods" Style="{StaticResource GhostButton}"
                                                 Command="{Binding RefreshInstalledPluginsCommand}" Margin="0,0,8,0"/>
                                         <Button Content="📂 Open Rust logs" Style="{StaticResource GhostButton}"
                                                 Command="{Binding OpenLogDirectoryCommand}" Margin="0,0,8,0"/>
+                                        <Button Content="📂 Open config folder" Style="{StaticResource GhostButton}"
+                                                Command="{Binding OpenServerConfigDirectoryCommand}" Margin="0,0,8,0"/>
                                         <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
                                                 Command="{Binding OpenServerConfigCommand}"/>
-                                    </StackPanel>
+                                    </WrapPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -1584,9 +1588,40 @@
                             </Grid>
                         </Border>
 
+                        <!-- Framework-aware Windows Explorer shortcuts -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Windows Explorer shortcuts" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Shortcuts open folders for this server only. Framework shortcuts are available only when exactly one installed framework is detected; HighPop never creates the other framework's missing folders."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,12"/>
+                                <WrapPanel>
+                                    <Button Content="📂 Server files" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenInstallFolderCommand}" Margin="0,0,8,8"/>
+                                    <Button Content="📂 Rust config" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenServerConfigDirectoryCommand}" Margin="0,0,8,8"/>
+                                    <Button Content="📂 Rust logs" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenLogDirectoryCommand}" Margin="0,0,8,8"/>
+                                    <Button Content="📂 Framework root" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenActiveFrameworkFolderCommand}" Margin="0,0,8,8"
+                                            Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="📂 Active plugins" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenActivePluginFolderCommand}" Margin="0,0,8,8"
+                                            Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="📂 Plugin configs" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenActiveModConfigFolderCommand}" Margin="0,0,8,8"
+                                            Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="📂 Extensions" Style="{StaticResource GhostButton}"
+                                            Command="{Binding OpenActiveExtensionFolderCommand}" Margin="0,0,8,8"
+                                            Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Status bar -->
                         <Border Style="{StaticResource Card}" Margin="0,0,0,16"
-                                Visibility="{Binding ModBusy, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding ModStatusText, Converter={StaticResource StringToVis}}">
                             <TextBlock Text="{Binding ModStatusText}" FontSize="13"
                                        Foreground="{StaticResource AccentBlueBrush}" TextWrapping="Wrap"/>
                         </Border>
@@ -1612,9 +1647,10 @@
                                     <Button Content="⬇ Install / Update Oxide" Style="{StaticResource PrimaryButton}"
                                             Margin="0,0,8,0"
                                             Command="{Binding InstallOxideCommand}"
-                                            IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
+                                            IsEnabled="{Binding CanInstallOxide}"/>
                                     <Button Content="📂 Open plugins folder" Style="{StaticResource GhostButton}"
-                                            Command="{Binding OpenPluginFolderCommand}"/>
+                                            Command="{Binding OpenPluginFolderCommand}"
+                                            Visibility="{Binding IsOxideInstalled, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -1638,9 +1674,10 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="⬇ Install / Update Carbon" Style="{StaticResource PrimaryButton}"
                                             Margin="0,0,8,0" Command="{Binding InstallCarbonCommand}"
-                                            IsEnabled="{Binding ModBusy, Converter={StaticResource InvBool}}"/>
+                                            IsEnabled="{Binding CanInstallCarbon}"/>
                                     <Button Content="📂 Open Carbon plugins" Style="{StaticResource GhostButton}"
-                                            Command="{Binding OpenCarbonPluginFolderCommand}"/>
+                                            Command="{Binding OpenCarbonPluginFolderCommand}"
+                                            Visibility="{Binding IsCarbonInstalled, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>

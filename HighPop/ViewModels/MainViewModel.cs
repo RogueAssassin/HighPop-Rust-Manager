@@ -246,9 +246,9 @@ public partial class MainViewModel : BaseViewModel
         _updateCheckTimer.Elapsed += async (_, _) => await CheckForUpdateAsync();
         _updateCheckTimer.Start();
 
-        // Auto-save server settings periodically so changes survive app restart
-        // without requiring the user to press the Save button.
-        _autoSaveTimer = new System.Timers.Timer(5000) { AutoReset = true };
+        // A 15-second interval avoids repeatedly serializing every profile while the user is
+        // idle. Explicit lifecycle changes and application shutdown still save immediately.
+        _autoSaveTimer = new System.Timers.Timer(15_000) { AutoReset = true };
         _autoSaveTimer.Elapsed += (_, _) => Save();
         _autoSaveTimer.Start();
 
@@ -774,10 +774,12 @@ public partial class MainViewModel : BaseViewModel
         ShowAddDialog    = true;
     }
 
-    partial void OnSelectedServerChanged(ServerViewModel? value)
+    partial void OnSelectedServerChanged(ServerViewModel? oldValue, ServerViewModel? newValue)
     {
-        if (value != null)
+        if (oldValue != null) oldValue.IsWorkspaceActive = false;
+        if (newValue != null)
         {
+            newValue.IsWorkspaceActive = true;
             ShowDashboard      = false;
             ShowSupport        = false;
             ShowMachines       = false;

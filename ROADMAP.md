@@ -58,8 +58,9 @@ Implemented on `testing`; Windows and live Rust validation is in progress:
 - Refuse to persist invalid legacy port collisions and safely snapshot UI-owned profile data during autosave
 - Keep reattached Rust reporting alive by following `RustDedicated.log`
 - Add console pause/resume, export, source/severity filtering, and recycling virtualization
+- Add framework-aware Explorer shortcuts without creating inactive Oxide/Carbon folder trees
 - Apply firewall and UPnP mappings as rollback-capable transactions with visible errors
-- Skip unchanged periodic profile rewrites
+- Skip unchanged periodic profile rewrites and avoid rebuilding hidden server charts
 - Produce and CI-verify a portable ZIP rooted at `HPRM/`, containing `HighPop.exe`, the complete `assets/` tree, and a separate `Servers/` root
 - Retain a standalone executable for in-place upgrades
 

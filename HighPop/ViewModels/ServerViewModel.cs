@@ -69,6 +69,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private string _detectedModFramework = "Not scanned";
     [ObservableProperty] private string _rogueRustStatus = "Not installed";
     [ObservableProperty] private List<InstalledModPlugin> _installedPlugins = [];
+    [ObservableProperty] private bool _isOxideInstalled;
+    [ObservableProperty] private bool _isCarbonInstalled;
+    [ObservableProperty] private bool _isWorkspaceActive;
 
     // Config editor
     [ObservableProperty] private List<Services.ConfigFileEntry> _configFiles = [];
@@ -212,6 +215,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     public bool HasModSupport       => Plugin?.SupportsOxide == true;
     public bool IsRust              => Plugin?.GameId == "rust";
+    public bool HasSingleModFramework => IsOxideInstalled ^ IsCarbonInstalled;
+    public bool CanInstallOxide => IsStopped && !ModBusy && !IsCarbonInstalled;
+    public bool CanInstallCarbon => IsStopped && !ModBusy && !IsOxideInstalled;
+
+    partial void OnModBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanInstallOxide));
+        OnPropertyChanged(nameof(CanInstallCarbon));
+    }
+
+    partial void OnIsWorkspaceActiveChanged(bool value)
+    {
+        if (value) UpdatePerfChart();
+    }
 
     public List<CpuCoreItem> CpuCores { get; }
     public string[] PriorityOptions { get; } = ["Normal", "AboveNormal", "High", "BelowNormal", "RealTime"];
@@ -1232,8 +1249,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private void OpenInstallFolder()
     {
-        if (System.IO.Directory.Exists(Server.InstallPath))
-            System.Diagnostics.Process.Start("explorer.exe", Server.InstallPath);
+        OpenExistingExplorerFolder(Server.InstallPath, "server files");
     }
 
     [RelayCommand]
@@ -1262,8 +1278,15 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         var directory = EffectiveLogDirectory;
         Directory.CreateDirectory(directory);
-        System.Diagnostics.Process.Start(
-            new System.Diagnostics.ProcessStartInfo("explorer.exe", directory) { UseShellExecute = true });
+        OpenExistingExplorerFolder(directory, "Rust logs");
+    }
+
+    [RelayCommand]
+    private void OpenServerConfigDirectory()
+    {
+        var directory = Path.GetDirectoryName(ServerConfigPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+            OpenExistingExplorerFolder(directory, "Rust configuration");
     }
 
     [RelayCommand]
@@ -1747,19 +1770,60 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private void OpenCarbonPluginFolder() =>
-        ModManagerService.OpenCarbonPluginFolder(Server.InstallPath);
+    private void OpenCarbonPluginFolder()
+    {
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths?.Framework != "Carbon"
+            || !ModManagerService.OpenExistingFolder(paths.PluginDirectory))
+            ModStatusText = "Carbon is not active for this server, or its plugins folder does not exist yet.";
+    }
 
     [RelayCommand]
     private void OpenPluginFolder()
     {
-        if (Plugin == null) return;
-        ModManagerService.OpenPluginFolder(Plugin, Server.InstallPath);
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths?.Framework != "Oxide / uMod"
+            || !ModManagerService.OpenExistingFolder(paths.PluginDirectory))
+            ModStatusText = "Oxide/uMod is not active for this server, or its plugins folder does not exist yet.";
+    }
+
+    [RelayCommand]
+    private void OpenActiveFrameworkFolder()
+    {
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths == null || !ModManagerService.OpenExistingFolder(paths.RootDirectory))
+            ModStatusText = "Install exactly one supported mod framework before opening its folder.";
+    }
+
+    [RelayCommand]
+    private void OpenActivePluginFolder()
+    {
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths == null || !ModManagerService.OpenExistingFolder(paths.PluginDirectory))
+            ModStatusText = "The active framework plugins folder does not exist yet.";
+    }
+
+    [RelayCommand]
+    private void OpenActiveModConfigFolder()
+    {
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths == null || !ModManagerService.OpenExistingFolder(paths.ConfigDirectory))
+            ModStatusText = "The active framework configuration folder does not exist yet.";
+    }
+
+    [RelayCommand]
+    private void OpenActiveExtensionFolder()
+    {
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths == null || !ModManagerService.OpenExistingFolder(paths.ExtensionDirectory))
+            ModStatusText = "The active framework extension folder does not exist yet.";
     }
 
     [RelayCommand]
     private void RefreshInstalledPlugins()
     {
+        IsOxideInstalled = ModManagerService.GetInstalledOxideVersion(Server.InstallPath) != null;
+        IsCarbonInstalled = ModManagerService.IsCarbonInstalled(Server.InstallPath);
         DetectedModFramework = ModManagerService.GetDetectedFramework(Server.InstallPath);
         RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
             ? $"Installed {version} · {string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Select(target => target.Framework))}"
@@ -1771,6 +1835,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             if (Server.RustServerProfile == "Community (Vanilla)")
                 RustServerProfile = "Modded";
         }
+        OnPropertyChanged(nameof(HasSingleModFramework));
+        OnPropertyChanged(nameof(CanInstallOxide));
+        OnPropertyChanged(nameof(CanInstallCarbon));
         OnPropertyChanged(nameof(EffectiveLogDirectory));
     }
 
@@ -2776,7 +2843,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     (network?.BytesInPerSec ?? 0) / 1024.0,
                     (network?.BytesOutPerSec ?? 0) / 1024.0,
                     Server.CurrentPlayers);
-                UpdatePerfChart();
+                if (IsWorkspaceActive) UpdatePerfChart();
                 WpfApplication.Current?.Dispatcher?.Invoke(() =>
                 {
                     CpuPercent = Math.Round(m.CurrentCpu, 1);
@@ -3072,8 +3139,29 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(CanInstallServerFiles));
+        OnPropertyChanged(nameof(CanInstallOxide));
+        OnPropertyChanged(nameof(CanInstallCarbon));
         OnPropertyChanged(nameof(StatusColor));
         OnPropertyChanged(nameof(UptimeText));
+    }
+
+    private void OpenExistingExplorerFolder(string path, string label)
+    {
+        try
+        {
+            if (!ModManagerService.OpenExistingFolder(path))
+            {
+                ModStatusText = $"The {label} folder does not exist yet.";
+                AppendLog($"[Files] The {label} folder does not exist yet.", ConsoleMessageType.Warning);
+                return;
+            }
+            AddActionLog($"Opened {label} in Windows Explorer");
+        }
+        catch (Exception ex)
+        {
+            ModStatusText = $"Could not open {label}: {ex.Message}";
+            AppendLog($"[Files] Could not open {label}: {ex.Message}", ConsoleMessageType.Error);
+        }
     }
 
     public void Dispose()

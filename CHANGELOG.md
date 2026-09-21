@@ -11,6 +11,9 @@
 - Added a shared portable-package builder and CI validation. The ZIP now extracts to `HPRM/HighPop.exe` and `HPRM/assets/**`, while the standalone executable remains available.
 - Moved managed Rust installations to `HPRM/Servers/**`, with conflict-safe migration from the former `HPRM/assets/servers/**` layout and automatic saved-path repair.
 - Corrected new-server paths to `HPRM/Servers/<server-name>` without an intermediate `rust` folder, and safely flattened paths created by the earlier v0.8.2 testing build.
+- Added server-specific Windows Explorer shortcuts for server files, Rust configuration/logs, and the active framework's root, plugins, configs, and extensions.
+- Made mod-folder controls framework-aware: Carbon never exposes or creates Oxide folders, Oxide never exposes or creates Carbon folders, and ambiguous dual-framework installs expose neither.
+- Reduced idle UI and serialization work by rebuilding live performance charts only for the selected server and changing unchanged-profile autosave checks from five to fifteen seconds; application shutdown still saves immediately.
 - Expanded the multi-server smoke matrix for invalid, conflicting, and independently allocated port sets.
 
 ## 0.8.1
