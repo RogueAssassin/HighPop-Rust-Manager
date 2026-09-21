@@ -260,6 +260,34 @@ var testRoot = Path.Combine(Path.GetTempPath(), "highpop-smoke-" + Guid.NewGuid(
 try
 {
     Directory.CreateDirectory(testRoot);
+    var legacyServerRoot = Path.Combine(testRoot, "assets", "servers");
+    var portableServerRoot = Path.Combine(testRoot, "Servers");
+    var legacyServerPath = Path.Combine(legacyServerRoot, "server-one");
+    Directory.CreateDirectory(legacyServerPath);
+    File.WriteAllText(Path.Combine(legacyServerPath, "identity.txt"), "server-one");
+    var layoutMigration = PortableLayoutService.MigrateServerRoot(
+        legacyServerRoot, portableServerRoot);
+    Check(layoutMigration.MovedEntries == 1
+          && layoutMigration.Conflicts == 0
+          && File.Exists(Path.Combine(portableServerRoot, "server-one", "identity.txt"))
+          && PortableLayoutService.ResolveInstallPath(
+              legacyServerPath, legacyServerRoot, portableServerRoot)
+              == Path.Combine(portableServerRoot, "server-one"),
+        "portable layout safely migrates assets/servers profiles into top-level Servers");
+
+    var conflictingLegacyPath = Path.Combine(legacyServerRoot, "conflict");
+    var conflictingPortablePath = Path.Combine(portableServerRoot, "conflict");
+    Directory.CreateDirectory(conflictingLegacyPath);
+    Directory.CreateDirectory(conflictingPortablePath);
+    var conflictMigration = PortableLayoutService.MigrateServerRoot(
+        legacyServerRoot, portableServerRoot);
+    Check(conflictMigration.Conflicts == 1
+          && Directory.Exists(conflictingLegacyPath)
+          && PortableLayoutService.ResolveInstallPath(
+              conflictingLegacyPath, legacyServerRoot, portableServerRoot)
+              == conflictingLegacyPath,
+        "portable layout preserves both installations and the legacy path on a name conflict");
+
     server.InstallPath = Path.Combine(testRoot, "server");
     Directory.CreateDirectory(server.InstallPath);
 

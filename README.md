@@ -13,7 +13,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
 </p>
 
-HighPop Rust Manager brings installation, lifecycle control, administration, automation, monitoring, backups, mods, and remote access into one native Windows app. The portable ZIP extracts as `HPRM/HighPop.exe` with mutable files under `HPRM/assets/**`, so an installation can be moved or backed up as a unit.
+HighPop Rust Manager brings installation, lifecycle control, administration, automation, monitoring, backups, mods, and remote access into one native Windows app. The portable ZIP extracts as `HPRM/HighPop.exe`, keeps application state under `HPRM/assets/**`, and places managed Rust installations in `HPRM/Servers/**`.
 
 > HighPop is an independent community project. It is not affiliated with or endorsed by Facepunch Studios, Valve, Rustadmin, MyRustServer, CFTools, or EU Game Host.
 
@@ -61,16 +61,21 @@ Administrator rights are only needed for system-wide firewall/URL ACL changes. N
 ```text
 HPRM/
 ├─ HighPop.exe
+├─ Servers/          # one independent directory per managed Rust server
 └─ assets/
    ├─ README.txt
    ├─ presets/       # editable shipped/community presets
    ├─ data/          # settings, profiles, history, users, SteamCMD, opt-in telemetry
-   ├─ servers/       # Rust server installations
    ├─ backups/       # full and incremental backups
    └─ logs/          # application diagnostics
 ```
 
 Secrets are protected at rest with Windows DPAPI. They can only be decrypted by the same Windows user on the same machine. Treat a copied `assets/data` folder as sensitive even though the secret fields are encrypted.
+
+When upgrading an existing portable installation, HighPop safely moves non-conflicting folders
+from the former `assets/servers` location into `Servers` and updates matching saved profile paths.
+If both locations already contain the same folder name, the existing legacy path is retained so
+HighPop never overwrites either installation.
 
 ## Rust port model
 

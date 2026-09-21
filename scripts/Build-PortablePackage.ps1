@@ -22,10 +22,19 @@ if (-not (Test-Path (Join-Path $publish "assets"))) {
 New-Item $output -ItemType Directory -Force | Out-Null
 if (Test-Path $stageRoot) { Remove-Item $stageRoot -Recurse -Force }
 New-Item $hprmRoot -ItemType Directory -Force | Out-Null
+New-Item (Join-Path $hprmRoot "Servers") -ItemType Directory -Force | Out-Null
 
 Copy-Item (Join-Path $publish "HighPop.exe") $hprmRoot
 Copy-Item (Join-Path $publish "assets") $hprmRoot -Recurse
 Copy-Item -Path LICENSE,NOTICE.md,README.md,CHANGELOG.md -Destination $hprmRoot
+@"
+HighPop managed Rust servers
+============================
+
+Each managed Rust installation is created as its own folder here. Existing installations from
+assets/servers are moved here automatically when HighPop v0.8.2 starts. Do not combine two server
+profiles into the same directory.
+"@ | Set-Content (Join-Path $hprmRoot "Servers/README.txt") -Encoding utf8
 
 $directExe = Join-Path $output "$baseName.exe"
 $zip = Join-Path $output "$baseName.zip"
@@ -40,7 +49,8 @@ try {
     foreach ($required in @(
         "HPRM/HighPop.exe",
         "HPRM/assets/README.txt",
-        "HPRM/assets/presets/rust_highpop.json"
+        "HPRM/assets/presets/rust_highpop.json",
+        "HPRM/Servers/README.txt"
     )) {
         if ($entries -notcontains $required) { throw "Portable ZIP is missing $required" }
     }
@@ -73,4 +83,4 @@ $manifest | ConvertTo-Json -Depth 4 |
     Set-Content (Join-Path $output "$baseName.manifest.json") -Encoding utf8
 
 Remove-Item $stageRoot -Recurse -Force
-Write-Host "Created $zip with HPRM/HighPop.exe and HPRM/assets/."
+Write-Host "Created $zip with HPRM/HighPop.exe, HPRM/assets/, and HPRM/Servers/."

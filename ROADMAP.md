@@ -60,7 +60,7 @@ Implemented on `testing`; Windows and live Rust validation is in progress:
 - Add console pause/resume, export, source/severity filtering, and recycling virtualization
 - Apply firewall and UPnP mappings as rollback-capable transactions with visible errors
 - Skip unchanged periodic profile rewrites
-- Produce and CI-verify a portable ZIP rooted at `HPRM/`, containing `HighPop.exe` and the complete `assets/` tree
+- Produce and CI-verify a portable ZIP rooted at `HPRM/`, containing `HighPop.exe`, the complete `assets/` tree, and a separate `Servers/` root
 - Retain a standalone executable for in-place upgrades
 
 Validation remaining before promotion:
@@ -68,7 +68,7 @@ Validation remaining before promotion:
 - Run two simultaneous Rust servers through start, RCON, Rust+, query, safe stop, restart, and manager reattachment
 - Inject firewall and UPnP partial failures and confirm no partial mappings remain
 - Soak console pause/resume and reattached log rotation under high output
-- Extract the CI ZIP into a clean writable location and confirm every mutable path stays below `HPRM/assets/`
+- Extract the CI ZIP into a clean writable location and confirm application state stays below `HPRM/assets/` while Rust installations stay below `HPRM/Servers/`
 
 Performance benefit: unchanged profile state no longer rewrites encrypted JSON every five seconds, while console virtualization bounds visual-tree cost during long high-output sessions.
 

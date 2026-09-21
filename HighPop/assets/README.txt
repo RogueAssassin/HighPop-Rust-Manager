@@ -3,7 +3,8 @@ HighPop runtime assets
 
 HighPop Rust Manager v0.8.2
 
-HighPop.exe is self-contained. This folder is the only external location HighPop uses:
+HighPop.exe is self-contained. This folder contains HighPop application state; managed Rust
+installations are stored separately in the sibling HPRM/Servers folder:
 
 Production Rust profiles use the Always-on recovery policy by default. Always-on retries an
 unexpected exit only after HighPop deliberately started or reattached the server. It never starts
@@ -18,13 +19,13 @@ seconds. Direct Install/Update is locked while Rust is running; safe live update
 checks build IDs first and broadcasts the configured countdown before maintenance.
 
 - data/       encrypted settings, databases, schedules, update staging, and opt-in telemetry
-- servers/    Rust dedicated server installations
 - backups/    automatic and manual server backups
 - logs/       HighPop diagnostics
 - presets/    editable Rust configuration presets
 
-Back up HighPop.exe and this assets folder together. Secrets stored by HighPop are protected
+Back up the complete HPRM folder, including HighPop.exe, assets, and Servers. Secrets are protected
 with Windows DPAPI for the current Windows user. Do not publish the data folder.
 
 The official portable ZIP has an HPRM root folder. Extract that folder as a unit so HighPop.exe
-and assets remain side-by-side.
+and assets remain side-by-side. Managed Rust installations now live in HPRM/Servers beside the
+assets folder; existing assets/servers installations migrate automatically on first start.

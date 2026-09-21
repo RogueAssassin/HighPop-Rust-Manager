@@ -12,6 +12,8 @@ public class ConfigService
 {
     private readonly object _serversFileGate = new();
     private string? _lastServersSnapshotHash;
+    private readonly string _legacyDefaultInstallRoot;
+    private readonly string _portableDefaultInstallRoot;
     static readonly string ExeDir =
         Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
         ?? AppContext.BaseDirectory;
@@ -50,17 +52,22 @@ public class ConfigService
 
     public ConfigService()
     {
-        // HighPop is intentionally portable. Every mutable dependency and user-owned file
-        // lives beside HighPop.exe under assets/** so an installation can be moved, backed up,
-        // or removed without leaving state in AppData.
+        // HighPop is intentionally portable. Application state lives under assets/** and
+        // managed Rust installations live under Servers/** beside HighPop.exe, so the HPRM
+        // directory can be moved, backed up, or removed without leaving state in AppData.
         AppDataPath        = Path.Combine(ExeDir, "assets", "data");
         ServersFile        = Path.Combine(AppDataPath, "servers.json");
         SettingsFile       = Path.Combine(AppDataPath, "settings.json");
-        DefaultInstallRoot = Path.Combine(ExeDir, "assets", "servers");
+        _legacyDefaultInstallRoot = Path.Combine(ExeDir, "assets", "servers");
+        _portableDefaultInstallRoot = Path.Combine(ExeDir, "Servers");
+        DefaultInstallRoot = _portableDefaultInstallRoot;
         BackupPath         = Path.Combine(ExeDir, "assets", "backups");
         Directory.CreateDirectory(AppDataPath);
-        Directory.CreateDirectory(DefaultInstallRoot);
+        PortableLayoutService.MigrateServerRoot(
+            _legacyDefaultInstallRoot, _portableDefaultInstallRoot);
         LoadSettings();
+        var migratedDefaultRoot = PathsEqual(DefaultInstallRoot, _legacyDefaultInstallRoot);
+        if (migratedDefaultRoot) DefaultInstallRoot = _portableDefaultInstallRoot;
         try { Directory.CreateDirectory(DefaultInstallRoot); } catch { }
         // Migrate older configurations that enabled remote control without a token. An empty
         // token would otherwise authenticate an empty Authorization header.
@@ -71,6 +78,7 @@ public class ConfigService
             Save();
         }
         Directory.CreateDirectory(BackupPath);
+        if (migratedDefaultRoot) Save();
     }
 
     private record SettingsData(
@@ -161,6 +169,7 @@ public class ConfigService
                 }
                 var servers = array.ToObject<List<GameServer>>() ?? [];
                 var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var installPathMigrated = false;
                 foreach (var server in servers)
                 {
                     if (!Guid.TryParse(server.Id, out _) || !ids.Add(server.Id))
@@ -173,8 +182,20 @@ public class ConfigService
                     server.LogWatchRules ??= [];
                     server.LifecycleOperationHistory ??= [];
                     server.RustServerVariables ??= RustServerVariable.CreateDefaults();
+                    var resolvedInstallPath = PortableLayoutService.ResolveInstallPath(
+                        server.InstallPath,
+                        _legacyDefaultInstallRoot,
+                        _portableDefaultInstallRoot);
+                    if (!string.Equals(resolvedInstallPath, server.InstallPath,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        server.InstallPath = resolvedInstallPath;
+                        installPathMigrated = true;
+                    }
                 }
-                _lastServersSnapshotHash = ComputeServersSnapshotHash(servers);
+                _lastServersSnapshotHash = installPathMigrated
+                    ? null
+                    : ComputeServersSnapshotHash(servers);
                 return servers;
             }
             catch { return []; }
@@ -290,5 +311,17 @@ public class ConfigService
     {
         var json = JArray.FromObject(servers).ToString(Formatting.None);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 }

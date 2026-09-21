@@ -9,6 +9,7 @@
 - Made firewall and UPnP port setup transactional, including rollback and visible failure reporting; UPnP now includes WebRCON.
 - Avoided unchanged encrypted profile rewrites during periodic autosave and captured UI-owned profile state safely.
 - Added a shared portable-package builder and CI validation. The ZIP now extracts to `HPRM/HighPop.exe` and `HPRM/assets/**`, while the standalone executable remains available.
+- Moved managed Rust installations to `HPRM/Servers/**`, with conflict-safe migration from the former `HPRM/assets/servers/**` layout and automatic saved-path repair.
 - Expanded the multi-server smoke matrix for invalid, conflicting, and independently allocated port sets.
 
 ## 0.8.1
