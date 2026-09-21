@@ -1029,7 +1029,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         await _rconLock.WaitAsync(cancellationToken);
         try
         {
-            _rcon?.Dispose();
+            if (_rcon != null)
+                await _rcon.DisconnectAsync(cancellationToken);
             _rcon = new RconService();
 
             var ip = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp == "0.0.0.0"
@@ -1137,7 +1138,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         await _rconLock.WaitAsync();
         try
         {
-            _rcon?.Dispose();
+            if (_rcon != null)
+                await _rcon.DisconnectAsync();
             _rcon = null;
         }
         finally { _rconLock.Release(); }
@@ -2951,7 +2953,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         await _rconLock.WaitAsync();
         try
         {
-            _rcon?.Dispose();
+            if (_rcon != null)
+                await _rcon.DisconnectAsync();
             _rcon = null;
         }
         catch { }

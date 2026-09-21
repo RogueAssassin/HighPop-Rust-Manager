@@ -22,7 +22,7 @@ public sealed class RconService : IDisposable
     {
         try
         {
-            Disconnect();
+            await DisconnectAsync(cancellationToken);
             _socket = new ClientWebSocket();
             _socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
 
@@ -35,7 +35,7 @@ public sealed class RconService : IDisposable
         }
         catch
         {
-            Disconnect();
+            await DisconnectAsync();
             return false;
         }
     }
@@ -104,23 +104,34 @@ public sealed class RconService : IDisposable
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    public void Disconnect()
+    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         _authenticated = false;
-        if (_socket?.State == WebSocketState.Open)
+        var socket = Interlocked.Exchange(ref _socket, null);
+        if (socket == null) return;
+
+        try
         {
-            try
+            if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
-                _socket.CloseAsync(
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromMilliseconds(500));
+
+                // CloseOutputAsync sends our close frame without waiting indefinitely for the
+                // peer's reply. Awaiting it ensures transport faults are always observed.
+                await socket.CloseOutputAsync(
                     WebSocketCloseStatus.NormalClosure,
                     "HighPop disconnect",
-                    CancellationToken.None).Wait(500);
+                    timeout.Token);
             }
-            catch { }
         }
-        _socket?.Dispose();
-        _socket = null;
+        catch (OperationCanceledException) { }
+        catch (WebSocketException) { }
+        catch (IOException) { }
+        finally { socket.Dispose(); }
     }
+
+    public void Disconnect() => DisconnectAsync().GetAwaiter().GetResult();
 
     public void Dispose() => Disconnect();
 }

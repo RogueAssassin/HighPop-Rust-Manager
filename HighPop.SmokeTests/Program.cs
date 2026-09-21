@@ -11,6 +11,13 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
+using (var disconnectedRcon = new RconService())
+{
+    await disconnectedRcon.DisconnectAsync();
+    Check(!disconnectedRcon.IsConnected,
+        "WebRCON disconnect is safe and awaitable when no socket is active");
+}
+
 var rust = new RustPlugin();
 Check(rust.SteamAppId == 258550, "Rust dedicated server AppID");
 Check(rust.DefaultPort == 28015, "Rust game port default");

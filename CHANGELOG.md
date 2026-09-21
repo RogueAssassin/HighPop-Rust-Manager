@@ -14,6 +14,7 @@
 - Added server-specific Windows Explorer shortcuts for server files, Rust configuration/logs, and the active framework's root, plugins, configs, and extensions.
 - Made mod-folder controls framework-aware: Carbon never exposes or creates Oxide folders, Oxide never exposes or creates Carbon folders, and ambiguous dual-framework installs expose neither.
 - Reduced idle UI and serialization work by rebuilding live performance charts only for the selected server and changing unchanged-profile autosave checks from five to fifteen seconds; application shutdown still saves immediately.
+- Fixed unobserved WebRCON shutdown faults by replacing the timed-out synchronous close handshake with an awaited, cancellation-bounded close-output operation that observes remote disconnect errors.
 - Expanded the multi-server smoke matrix for invalid, conflicting, and independently allocated port sets.
 
 ## 0.8.1
