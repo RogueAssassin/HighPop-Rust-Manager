@@ -24,5 +24,6 @@ public class ServerTemplate
     public int    BackupRetention  { get; set; } = 5;
     public string CustomArgs       { get; set; } = string.Empty;
     public string ProcessPriority  { get; set; } = "Normal";
+    public string RogueRustChannel { get; set; } = "Stable";
     public Dictionary<string, string> GameSpecificSettings { get; set; } = new();
 }

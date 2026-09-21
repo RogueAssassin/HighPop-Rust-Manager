@@ -73,6 +73,35 @@ Validation remaining before promotion:
 
 Performance benefit: unchanged profile state no longer rewrites encrypted JSON every five seconds, while console virtualization bounds visual-tree cost during long high-output sessions.
 
+## v0.8.5 — Release channels and clean delivery
+
+Implemented on `testing`; Windows and live Rust validation is in progress:
+
+- Persist a Stable or Testing RogueRust channel independently for every managed server
+- Resolve both channels through RogueRust's public update manifests and validate channel identity, download origin, and SHA-256 before changing a server
+- Pass the selected manifest to Rust so RogueRust remains on the chosen channel across restarts and self-update checks
+- Preserve channel choice when cloning profiles and make Testing risk explicit in the Mods workspace
+- Limit the portable ZIP to the executable, assets tree, and changelog, with an exact CI content allow-list
+- Keep the README product-focused and route release history to the standalone changelog
+
+Validation remaining before promotion:
+
+- Install Stable on a production-profile server and Testing on a development-profile server, then confirm both survive restart without crossing channels
+- Promote a new RogueRust testing manifest and confirm only Testing profiles stage the update
+- Extract the portable ZIP into a clean writable directory and complete first-run, install, restart, and update checks
+
+### Manager capability review — prioritized gaps
+
+HighPop already covers the common install/update/start/stop/console/backup/monitor/schedule baseline. The next material improvements are:
+
+1. **Windows service host and operator accounts** — move lifecycle ownership out of the desktop session, then add authenticated role-based access and optional two-factor authentication.
+2. **Verified remote backups** — add S3-compatible and SFTP targets, encryption, integrity checks, restore drills, and a rule that preserves the last verified recovery chain.
+3. **Unified first-run diagnostics** — test SteamCMD, disk space, filesystem permissions, firewall, NAT/UPnP, WebRCON, Rust+, Carbon/Oxide, and RogueRust before declaring a server ready.
+4. **Transactional maintenance** — stage Rust updates outside the live installation, retain exact rollback manifests, recover interrupted updates, and verify framework health before reopening the server.
+5. **Safer extension/plugin lifecycle** — inventory compatibility, detect changed hashes, quarantine failed updates, and support an opt-in signed catalog without executing untrusted downloads silently.
+6. **Fleet operations** — bounded rolling restarts, maintenance groups, cross-server resource limits, and a single correlated operations timeline.
+7. **Observability and alert quality** — health-based alerts, deduplication, escalation, quiet hours, Prometheus/OpenTelemetry export, and clear readiness/service-level history.
+
 ## v0.9 — Transactional Rust maintenance
 
 Planned integration order on `testing`:
@@ -149,14 +178,12 @@ Performance targets: delta rather than full-state updates, coalesced UI renderin
 - Add staged HighPop self-update with schema migration recovery and automatic rollback
 - Publish Prometheus/OpenTelemetry metrics and versioned webhook schemas
 - Add first-run NAT, firewall, SteamCMD, WebRCON, Rust+, and RogueRust diagnostics
-- Support optional SFTP/FTPS backup replication and signed provider interfaces without making local management account-dependent
+- Support optional S3-compatible and SFTP/FTPS backup replication and signed provider interfaces without making local management account-dependent
 
 Performance target: a seven-day multi-server soak survives desktop-client crashes and host reboot without data loss, duplicate scheduled work, uncontrolled restart loops, or update corruption.
 
 ## Later audit backlog
 
-- Replace unconditional five-second profile writes with dirty-state debounce and content hashing
-- Remove forced full GC and system-wide working-set trimming; measure HighPop before optimizing
 - Narrow firewall rules and CORS, add request limits, audit authentication failures, and separate public status from control endpoints
 - Add time-zone/DST-aware schedule storage, restart catch-up, overlap suppression, and persistent countdown state
 - Add notification deduplication, severity routing, quiet hours, and persistent-fault escalation

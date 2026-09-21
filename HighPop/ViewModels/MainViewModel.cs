@@ -966,6 +966,7 @@ public partial class MainViewModel : BaseViewModel
             CpuAffinityMask      = src.CpuAffinityMask,
             ProcessPriority      = src.ProcessPriority,
             RustServerProfile    = src.RustServerProfile,
+            RogueRustChannel     = src.RogueRustChannel,
             RustTelemetryEnabled = src.RustTelemetryEnabled,
             RustTelemetryRetentionDays = src.RustTelemetryRetentionDays,
             RustTelemetryMaxMegabytes = src.RustTelemetryMaxMegabytes,

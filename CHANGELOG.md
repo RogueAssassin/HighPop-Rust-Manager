@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.5
+
+- Added a persisted per-server RogueRust release channel: Stable for production servers and Testing for development servers.
+- Switched RogueRust installation to the public Stable/Testing update manifests, with channel validation, trusted release URL validation, SHA-256 verification, transactional installation, and rollback.
+- Pass the selected RogueRust manifest into each Rust process so extension self-updates remain on the server's chosen channel after restart.
+- Added channel-aware status, action logging, guidance, cloning, and smoke coverage.
+- Reduced the portable ZIP to `HPRM/HighPop.exe`, `HPRM/assets/**`, and `HPRM/CHANGELOG.md`, with CI rejecting unexpected packaged files.
+- Refocused the README on HighPop's current capabilities, installation, layout, security, RogueRust channels, and operator workflow; release history remains in this changelog.
+- Reviewed current manager capabilities and added the remaining high-value operational gaps to the roadmap.
+- Removed the legacy “optimize system RAM” launch option, which forced a blocking full garbage collection and trimmed every Windows process working set before starting Rust; Windows and .NET now manage memory normally without the launch pause or system-wide churn.
+
 ## 0.8.2
 
 - Expanded new-server creation so Game, Query, WebRCON, and Rust+ ports are editable, checked against saved profiles and active Windows listeners, and can be reassigned together.

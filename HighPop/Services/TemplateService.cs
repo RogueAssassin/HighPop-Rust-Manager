@@ -62,6 +62,7 @@ public class TemplateService
             BackupRetention      = server.BackupRetention,
             CustomArgs           = server.CustomArgs,
             ProcessPriority      = server.ProcessPriority,
+            RogueRustChannel     = server.RogueRustChannel,
             GameSpecificSettings = new Dictionary<string, string>(server.GameSpecificSettings),
         };
         lock (_lock)
@@ -81,6 +82,7 @@ public class TemplateService
         server.BackupRetention = template.BackupRetention;
         server.CustomArgs      = template.CustomArgs;
         server.ProcessPriority = template.ProcessPriority;
+        server.RogueRustChannel = ModManagerService.NormalizeRogueRustChannel(template.RogueRustChannel);
         foreach (var kv in template.GameSpecificSettings)
             server.GameSpecificSettings[kv.Key] = kv.Value;
     }
@@ -112,6 +114,7 @@ public class TemplateService
                 BackupRetention      = src.BackupRetention,
                 CustomArgs           = src.CustomArgs,
                 ProcessPriority      = src.ProcessPriority,
+                RogueRustChannel     = src.RogueRustChannel,
                 GameSpecificSettings = new Dictionary<string, string>(src.GameSpecificSettings),
             };
             _templates.Add(clone);

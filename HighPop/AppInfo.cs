@@ -4,7 +4,7 @@ public static class AppInfo
 {
     public static string Version =>
         System.Reflection.Assembly.GetExecutingAssembly()
-              .GetName().Version?.ToString(4) ?? "?";
+              .GetName().Version?.ToString(3) ?? "?";
 
     public static string VersionDisplay => $"v{Version}";
     public static string VersionTag => $"v{Version}  ·  HighPop Contributors";

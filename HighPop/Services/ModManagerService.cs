@@ -38,8 +38,10 @@ public sealed class ModManagerService
     private const string OxideDownloadUrl = "https://umod.org/games/rust/download";
     private const string CarbonLatestReleaseApi =
         "https://api.github.com/repos/CarbonCommunity/Carbon/releases/latest";
-    private const string RogueRustLatestReleaseApi =
-        "https://api.github.com/repos/RogueAssassin/Oxide.Ext.RogueRust/releases/latest";
+    internal const string RogueRustStableManifestUrl =
+        "https://raw.githubusercontent.com/RogueAssassin/Oxide.Ext.RogueRust/main/update-manifest.json";
+    internal const string RogueRustTestingManifestUrl =
+        "https://raw.githubusercontent.com/RogueAssassin/Oxide.Ext.RogueRust/main/update-manifest-testing.json";
 
     public async Task InstallOxideAsync(
         IGamePlugin plugin,
@@ -64,7 +66,7 @@ public sealed class ModManagerService
         Report(progress, 0, "Resolving the latest stable Carbon release...");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, CarbonLatestReleaseApi);
-        request.Headers.UserAgent.ParseAdd("HighPop-Rust-Manager/0.2");
+        request.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
         using var response = await Http.SendAsync(request);
         response.EnsureSuccessStatusCode();
 
@@ -90,6 +92,7 @@ public sealed class ModManagerService
 
     public async Task<string> InstallRogueRustAsync(
         string installPath,
+        string channel,
         IProgress<(int pct, string msg)>? progress = null)
     {
         EnsureRustInstalled(installPath);
@@ -97,40 +100,51 @@ public sealed class ModManagerService
         if (targets.Count == 0)
             throw new InvalidOperationException("Install Oxide/uMod or Carbon before installing the RogueRust extension.");
 
-        Report(progress, 0, "Resolving the latest RogueRust release from GitHub...");
-        using var request = new HttpRequestMessage(HttpMethod.Get, RogueRustLatestReleaseApi);
-        request.Headers.UserAgent.ParseAdd("HighPop-Rust-Manager/0.8");
+        channel = NormalizeRogueRustChannel(channel);
+        var manifestUrl = GetRogueRustManifestUrl(channel);
+        Report(progress, 0, $"Resolving the RogueRust {channel} channel...");
+        using var request = new HttpRequestMessage(HttpMethod.Get, manifestUrl);
+        request.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
         using var response = await Http.SendAsync(request);
         response.EnsureSuccessStatusCode();
-        using var release = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var tag = release.RootElement.GetProperty("tag_name").GetString()
-            ?? throw new InvalidOperationException("RogueRust release did not provide a version tag.");
-        var assets = release.RootElement.GetProperty("assets").EnumerateArray()
-            .Select(item => new
-            {
-                Name = item.GetProperty("name").GetString() ?? string.Empty,
-                Url = item.GetProperty("browser_download_url").GetString() ?? string.Empty,
-            })
-            .ToList();
-        var dllAsset = assets.FirstOrDefault(item =>
-            item.Name.Equals("Oxide.Ext.RogueRust.dll", StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException("The latest RogueRust release has no Oxide.Ext.RogueRust.dll asset.");
-        var sumsAsset = assets.FirstOrDefault(item =>
-            item.Name.Equals("SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException("The RogueRust release has no SHA256SUMS.txt verification asset.");
+        using var manifest = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = manifest.RootElement;
+        var version = root.GetProperty("Version").GetString();
+        var downloadUrl = root.GetProperty("DownloadUrl").GetString();
+        var expected = root.GetProperty("Sha256").GetString();
+        var manifestChannel = root.GetProperty("Channel").GetInt32();
+        var expectedChannel = channel == "Testing" ? 1 : 0;
+        if (string.IsNullOrWhiteSpace(version) || manifestChannel != expectedChannel)
+            throw new InvalidDataException($"The RogueRust {channel} manifest is invalid or identifies another channel.");
+        if (!IsTrustedRogueRustDownloadUrl(downloadUrl))
+            throw new InvalidDataException("The RogueRust manifest contains an untrusted download URL.");
 
-        Report(progress, 20, $"Downloading RogueRust {tag}...");
-        var bytes = await Http.GetByteArrayAsync(dllAsset.Url);
-        var sums = await Http.GetStringAsync(sumsAsset.Url);
-        var expected = sums.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim())
-            .FirstOrDefault(line => line.EndsWith(dllAsset.Name, StringComparison.OrdinalIgnoreCase))?
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        Report(progress, 20, $"Downloading RogueRust {version} ({channel})...");
+        var bytes = await Http.GetByteArrayAsync(downloadUrl!);
         await InstallVerifiedRogueRustFilesAsync(targets, bytes, expected, progress);
         var frameworks = string.Join(" and ", targets.Select(target => target.Framework));
-        Report(progress, 100, $"RogueRust {tag} installed for {frameworks}. Restart Rust to load it.");
-        return tag;
+        Report(progress, 100, $"RogueRust {version} ({channel}) installed for {frameworks}. Restart Rust to load it.");
+        return version;
     }
+
+    internal static string NormalizeRogueRustChannel(string? channel) =>
+        channel?.Equals("Testing", StringComparison.OrdinalIgnoreCase) == true
+            ? "Testing"
+            : "Stable";
+
+    internal static string GetRogueRustManifestUrl(string? channel) =>
+        NormalizeRogueRustChannel(channel) == "Testing"
+            ? RogueRustTestingManifestUrl
+            : RogueRustStableManifestUrl;
+
+    private static bool IsTrustedRogueRustDownloadUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
+        && uri.AbsolutePath.StartsWith(
+            "/RogueAssassin/Oxide.Ext.RogueRust/releases/download/",
+            StringComparison.OrdinalIgnoreCase)
+        && uri.AbsolutePath.EndsWith("/Oxide.Ext.RogueRust.dll", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Stages and verifies every target before replacing anything. If a later replacement fails,

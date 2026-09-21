@@ -57,6 +57,27 @@ jobs:
             -Version $version `
             -Commit "${{ github.sha }}"
 
+      - name: Confirm minimal ZIP contents
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem package_out/HighPop-v*-win-x64.zip | Select-Object -First 1
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          try {
+            $files = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') } |
+              Where-Object { -not $_.EndsWith('/') })
+            $unexpected = @($files | Where-Object {
+              $_ -ne 'HPRM/HighPop.exe' -and
+              $_ -ne 'HPRM/CHANGELOG.md' -and
+              -not $_.StartsWith('HPRM/assets/')
+            })
+            if ($unexpected.Count -gt 0) {
+              throw "ZIP contains files outside the approved executable/assets/changelog set: $($unexpected -join ', ')"
+            }
+          } finally {
+            $archive.Dispose()
+          }
+
       - name: Upload testing package
         uses: actions/upload-artifact@v4
         with:

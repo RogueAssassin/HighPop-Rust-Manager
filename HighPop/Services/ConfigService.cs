@@ -42,7 +42,6 @@ public class ConfigService
     public bool   EnableUPnP             { get; set; } = false;
     public string SortMode               { get; set; } = "name-asc";
     public bool   HasSeenOnboarding      { get; set; } = false;
-    public bool   OptimizeRamBeforeStart { get; set; } = false;
     public bool   HealthCheckEnabled     { get; set; } = true;
     public int    HealthCheckFailThreshold { get; set; } = 3;   // consecutive failures before action
     public HealthCheckAction HealthCheckAction { get; set; } = HealthCheckAction.Notify;
@@ -99,7 +98,6 @@ public class ConfigService
         bool   CrashPredictionHighCpuOnly = false,
         double CrashPredictionHighCpuPercent = 98.0,
         bool   HasSeenOnboarding = false,
-        bool   OptimizeRamBeforeStart = false,
         bool   HealthCheckEnabled = true,
         int    HealthCheckFailThreshold = 3,
         HealthCheckAction HealthCheckAction = HealthCheckAction.Notify);
@@ -132,7 +130,6 @@ public class ConfigService
             CrashPredictionHighCpuOnly = d.CrashPredictionHighCpuOnly;
             CrashPredictionHighCpuPercent = d.CrashPredictionHighCpuPercent > 0 ? d.CrashPredictionHighCpuPercent : 98.0;
             HasSeenOnboarding = d.HasSeenOnboarding;
-            OptimizeRamBeforeStart   = d.OptimizeRamBeforeStart;
             HealthCheckEnabled       = d.HealthCheckEnabled;
             HealthCheckFailThreshold = d.HealthCheckFailThreshold > 0 ? d.HealthCheckFailThreshold : 3;
             HealthCheckAction        = d.HealthCheckAction;
@@ -149,7 +146,7 @@ public class ConfigService
             WebApiEnabled, WebApiPort, Protect(WebApiToken), SlaveMode, SlaveName, CrashPredictionDiscord,
             EnableUPnP, SortMode, CrashPredictionLowMemOnly, CrashPredictionLowMemPercent,
             CrashPredictionHighCpuOnly, CrashPredictionHighCpuPercent, HasSeenOnboarding,
-            OptimizeRamBeforeStart, HealthCheckEnabled, HealthCheckFailThreshold, HealthCheckAction);
+            HealthCheckEnabled, HealthCheckFailThreshold, HealthCheckAction);
         AtomicWrite(SettingsFile, JsonConvert.SerializeObject(d, Formatting.Indented));
     }
 
@@ -178,6 +175,7 @@ public class ConfigService
                         ids.Add(server.Id);
                     }
                     server.GameSpecificSettings ??= new Dictionary<string, string>();
+                    server.RogueRustChannel = ModManagerService.NormalizeRogueRustChannel(server.RogueRustChannel);
                     server.QuickCommands ??= [];
                     server.LogWatchRules ??= [];
                     server.LifecycleOperationHistory ??= [];

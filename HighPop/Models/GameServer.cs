@@ -91,6 +91,8 @@ public class GameServer
     /// it documents whether this installation is community vanilla, modded, or development.
     /// </summary>
     public string RustServerProfile { get; set; } = "Community (Vanilla)";
+    /// <summary>RogueRust update stream used for verified installs and extension self-updates.</summary>
+    public string RogueRustChannel { get; set; } = "Stable";
     /// <summary>Record HighPop's versioned local Rust event stream for this server.</summary>
     public bool RustTelemetryEnabled { get; set; } = false;
     public int RustTelemetryRetentionDays { get; set; } = 14;

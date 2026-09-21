@@ -1707,7 +1707,22 @@
                                             <TextBlock Text="{Binding RogueRustStatus}" Foreground="{StaticResource AccentGreenBrush}"/>
                                         </Border>
                                     </Grid>
-                                    <TextBlock Text="Installs the same verified RogueRust DLL into the active framework's correct extension location: RustDedicated_Data/Managed for Oxide/uMod or carbon/extensions for Carbon. If both are detected, both copies update as one transaction; any failure restores all changed targets. The newest 20 rollback copies are retained per target."
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="180"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Release channel" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,10,0"/>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding RogueRustChannelOptions}"
+                                                  SelectedItem="{Binding RogueRustChannel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEnabled="{Binding IsStopped}"/>
+                                        <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                   Text="Stable is recommended for production. Testing is intended for development servers and may contain unreleased changes."
+                                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"/>
+                                    </Grid>
+                                    <TextBlock Text="Installs the selected Stable or Testing RogueRust build into the active framework's correct extension location: RustDedicated_Data/Managed for Oxide/uMod or carbon/extensions for Carbon. Every download is SHA-256 verified. If both frameworks are detected, both copies update as one transaction; any failure restores all changed targets. The newest 20 rollback copies are retained per target."
                                                FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                                TextWrapping="Wrap" Margin="0,0,0,12"/>
                                     <StackPanel Orientation="Horizontal">

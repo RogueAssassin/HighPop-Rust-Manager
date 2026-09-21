@@ -52,6 +52,7 @@ public sealed class SupportBundleService
                 server.RconAutoConnectDelaySeconds,
                 server.RconAutoConnectTimeoutMinutes,
                 server.StartupGraceMinutes,
+                server.RogueRustChannel,
                 server.KeepOnline,
                 server.AutoRestart,
                 server.AutoStart,

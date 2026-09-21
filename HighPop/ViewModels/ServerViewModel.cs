@@ -134,6 +134,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ["Community (Vanilla)", "Modded", "Development"];
     public IReadOnlyList<string> RustSteamBranchOptions { get; } =
         ["public", "staging", "aux01"];
+    public IReadOnlyList<string> RogueRustChannelOptions { get; } = ["Stable", "Testing"];
     public ObservableCollection<RustBrowserTagOption> RustBrowserTags { get; } = [];
     public string EffectiveLogDirectory => IsRust
         ? RustPlugin.GetEffectiveLogDirectory(Server)
@@ -471,6 +472,22 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                      && RustServerProfile == "Development")
                 RustServerProfile = "Community (Vanilla)";
             AddActionLog($"Rust SteamCMD branch changed to {branch}");
+        }
+    }
+
+    public string RogueRustChannel
+    {
+        get => ModManagerService.NormalizeRogueRustChannel(Server.RogueRustChannel);
+        set
+        {
+            var channel = ModManagerService.NormalizeRogueRustChannel(value);
+            if (RogueRustChannel == channel) return;
+            Server.RogueRustChannel = channel;
+            OnPropertyChanged();
+            RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
+                ? $"Installed {version} · {channel} channel"
+                : $"Not installed · {channel} channel";
+            AddActionLog($"RogueRust channel changed to {channel}");
         }
     }
 
@@ -1741,12 +1758,12 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         {
             var progress = new Progress<(int pct, string msg)>(x =>
                 WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            var version = await _mods.InstallRogueRustAsync(Server.InstallPath, progress);
+            var version = await _mods.InstallRogueRustAsync(Server.InstallPath, RogueRustChannel, progress);
             var frameworks = string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath)
                 .Select(target => target.Framework));
-            RogueRustStatus = $"Installed {version} · {frameworks}";
-            AppendLog($"[Mods] ✅ RogueRust {version} installed for {frameworks} and SHA-256 verified.", ConsoleMessageType.System);
-            AddActionLog($"RogueRust {version} installed or updated");
+            RogueRustStatus = $"Installed {version} · {RogueRustChannel} · {frameworks}";
+            AppendLog($"[Mods] ✅ RogueRust {version} ({RogueRustChannel}) installed for {frameworks} and SHA-256 verified.", ConsoleMessageType.System);
+            AddActionLog($"RogueRust {version} ({RogueRustChannel}) installed or updated");
             RefreshInstalledPlugins();
         }
         catch (Exception ex)
@@ -1828,8 +1845,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         IsCarbonInstalled = ModManagerService.IsCarbonInstalled(Server.InstallPath);
         DetectedModFramework = ModManagerService.GetDetectedFramework(Server.InstallPath);
         RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
-            ? $"Installed {version} · {string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Select(target => target.Framework))}"
-            : "Not installed";
+            ? $"Installed {version} · {RogueRustChannel} · {string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Select(target => target.Framework))}"
+            : $"Not installed · {RogueRustChannel} channel";
         InstalledPlugins = ModManagerService.GetInstalledPlugins(Server.InstallPath);
 
         if (!DetectedModFramework.StartsWith("Vanilla", StringComparison.OrdinalIgnoreCase))

@@ -338,6 +338,11 @@ try
     Directory.CreateDirectory(Path.Combine(staleCarbonRoot, "carbon"));
     Check(!ModManagerService.IsCarbonInstalled(staleCarbonRoot),
         "an empty or stale carbon directory is not treated as an active framework");
+    Check(ModManagerService.NormalizeRogueRustChannel(null) == "Stable"
+          && ModManagerService.NormalizeRogueRustChannel("testing") == "Testing"
+          && ModManagerService.GetRogueRustManifestUrl("Stable").EndsWith("update-manifest.json")
+          && ModManagerService.GetRogueRustManifestUrl("Testing").EndsWith("update-manifest-testing.json"),
+        "RogueRust channel selection is stable by default and resolves separate verified manifests");
 
     var rogueRustBytes = "verified RogueRust test payload"u8.ToArray();
     var rogueRustHash = Convert.ToHexString(SHA256.HashData(rogueRustBytes));

@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $publish = (Resolve-Path $PublishDirectory).Path
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $baseName = "HighPop-v$Version-win-x64"
@@ -22,19 +23,10 @@ if (-not (Test-Path (Join-Path $publish "assets"))) {
 New-Item $output -ItemType Directory -Force | Out-Null
 if (Test-Path $stageRoot) { Remove-Item $stageRoot -Recurse -Force }
 New-Item $hprmRoot -ItemType Directory -Force | Out-Null
-New-Item (Join-Path $hprmRoot "Servers") -ItemType Directory -Force | Out-Null
 
 Copy-Item (Join-Path $publish "HighPop.exe") $hprmRoot
 Copy-Item (Join-Path $publish "assets") $hprmRoot -Recurse
-Copy-Item -Path LICENSE,NOTICE.md,README.md,CHANGELOG.md -Destination $hprmRoot
-@"
-HighPop managed Rust servers
-============================
-
-Each managed Rust installation is created as its own folder here. Existing installations from
-assets/servers are moved here automatically when HighPop v0.8.2 starts. Do not combine two server
-profiles into the same directory.
-"@ | Set-Content (Join-Path $hprmRoot "Servers/README.txt") -Encoding utf8
+Copy-Item (Join-Path $repoRoot "CHANGELOG.md") $hprmRoot
 
 $directExe = Join-Path $output "$baseName.exe"
 $zip = Join-Path $output "$baseName.zip"
@@ -48,11 +40,20 @@ try {
     $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
     foreach ($required in @(
         "HPRM/HighPop.exe",
+        "HPRM/CHANGELOG.md",
         "HPRM/assets/README.txt",
-        "HPRM/assets/presets/rust_highpop.json",
-        "HPRM/Servers/README.txt"
+        "HPRM/assets/presets/rust_highpop.json"
     )) {
         if ($entries -notcontains $required) { throw "Portable ZIP is missing $required" }
+    }
+    $unexpected = @($entries | Where-Object {
+        -not $_.EndsWith('/') `
+        -and $_ -ne "HPRM/HighPop.exe" `
+        -and $_ -ne "HPRM/CHANGELOG.md" `
+        -and -not $_.StartsWith("HPRM/assets/")
+    })
+    if ($unexpected.Count -gt 0) {
+        throw "Portable ZIP contains unexpected files: $($unexpected -join ', ')"
     }
 } finally {
     $archive.Dispose()
@@ -83,4 +84,4 @@ $manifest | ConvertTo-Json -Depth 4 |
     Set-Content (Join-Path $output "$baseName.manifest.json") -Encoding utf8
 
 Remove-Item $stageRoot -Recurse -Force
-Write-Host "Created $zip with HPRM/HighPop.exe, HPRM/assets/, and HPRM/Servers/."
+Write-Host "Created $zip with only HPRM/HighPop.exe, HPRM/assets/, and HPRM/CHANGELOG.md."

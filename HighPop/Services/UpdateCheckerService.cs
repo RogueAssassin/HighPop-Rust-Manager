@@ -77,5 +77,5 @@ public static class UpdateCheckerService
     public static string GetCurrentVersion() =>
         Assembly.GetExecutingAssembly()
                 .GetName().Version?
-                .ToString(4) ?? "1.1.0";
+                .ToString(3) ?? "0.0.0";
 }

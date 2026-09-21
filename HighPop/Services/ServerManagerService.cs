@@ -96,9 +96,6 @@ public class ServerManagerService
     private readonly ConcurrentDictionary<string, ConcurrentQueue<DateTime>> _crashHistory = new();
     private readonly ConcurrentDictionary<string, long> _recoveryGenerations = new();
 
-    [DllImport("psapi.dll", SetLastError = true)]
-    private static extern bool EmptyWorkingSet(IntPtr hProcess);
-
     public event Action<string, ConsoleMessage>? LogReceived;
     public event Action<string, ServerStatus>?  StatusChanged;
     public event Action<ServerLifecycleTransition>? LifecycleChanged;
@@ -492,6 +489,8 @@ public class ServerManagerService
             StandardOutputEncoding = System.Text.Encoding.UTF8,
             StandardErrorEncoding  = System.Text.Encoding.UTF8,
         };
+        psi.Environment["ROGUERUST_UPDATE_MANIFEST_URL"] =
+            ModManagerService.GetRogueRustManifestUrl(server.RogueRustChannel);
 
         var inst = inst0;
 
@@ -638,17 +637,6 @@ public class ServerManagerService
                 Console.WriteLine($"[HighPop] Exited handler error for {server.Id}: {ex.Message}");
             }
         };
-
-        if (_config.OptimizeRamBeforeStart)
-        {
-            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
-            try
-            {
-                foreach (var p in Process.GetProcesses())
-                    try { EmptyWorkingSet(p.Handle); } catch { }
-            }
-            catch { }
-        }
 
         operationToken.ThrowIfCancellationRequested();
 
