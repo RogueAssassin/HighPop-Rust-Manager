@@ -288,6 +288,16 @@ try
               == conflictingLegacyPath,
         "portable layout preserves both installations and the legacy path on a name conflict");
 
+    var nestedGeneratedPath = Path.Combine(portableServerRoot, "rust", "OxideTest");
+    Directory.CreateDirectory(nestedGeneratedPath);
+    File.WriteAllText(Path.Combine(nestedGeneratedPath, "RustDedicated.exe"), "test");
+    var flattenedGeneratedPath = PortableLayoutService.FlattenGeneratedGamePath(
+        nestedGeneratedPath, portableServerRoot, "rust");
+    Check(flattenedGeneratedPath == Path.Combine(portableServerRoot, "OxideTest")
+          && File.Exists(Path.Combine(flattenedGeneratedPath, "RustDedicated.exe"))
+          && !Directory.Exists(Path.Combine(portableServerRoot, "rust")),
+        "generated Servers/rust/name paths flatten to Servers/name without data loss");
+
     server.InstallPath = Path.Combine(testRoot, "server");
     Directory.CreateDirectory(server.InstallPath);
 

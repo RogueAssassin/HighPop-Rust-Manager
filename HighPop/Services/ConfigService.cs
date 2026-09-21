@@ -186,6 +186,10 @@ public class ConfigService
                         server.InstallPath,
                         _legacyDefaultInstallRoot,
                         _portableDefaultInstallRoot);
+                    resolvedInstallPath = PortableLayoutService.FlattenGeneratedGamePath(
+                        resolvedInstallPath,
+                        _portableDefaultInstallRoot,
+                        server.GameId);
                     if (!string.Equals(resolvedInstallPath, server.InstallPath,
                             StringComparison.OrdinalIgnoreCase))
                     {

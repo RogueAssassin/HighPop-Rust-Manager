@@ -10,6 +10,7 @@
 - Avoided unchanged encrypted profile rewrites during periodic autosave and captured UI-owned profile state safely.
 - Added a shared portable-package builder and CI validation. The ZIP now extracts to `HPRM/HighPop.exe` and `HPRM/assets/**`, while the standalone executable remains available.
 - Moved managed Rust installations to `HPRM/Servers/**`, with conflict-safe migration from the former `HPRM/assets/servers/**` layout and automatic saved-path repair.
+- Corrected new-server paths to `HPRM/Servers/<server-name>` without an intermediate `rust` folder, and safely flattened paths created by the earlier v0.8.2 testing build.
 - Expanded the multi-server smoke matrix for invalid, conflicting, and independently allocated port sets.
 
 ## 0.8.1

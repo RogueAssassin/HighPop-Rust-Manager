@@ -825,10 +825,9 @@ public partial class MainViewModel : BaseViewModel
         var baseName = string.IsNullOrWhiteSpace(NewServerName)
             ? NewServerGame.GameId
             : string.Join("_", NewServerName.Split(System.IO.Path.GetInvalidFileNameChars()));
-        // Install directly next to where the .exe will live — one folder per server
+        // One directly-addressable folder per server: HPRM/Servers/<server-name>.
         NewServerInstall = System.IO.Path.Combine(
             _config.DefaultInstallRoot,
-            NewServerGame.GameId,
             baseName);
     }
 
