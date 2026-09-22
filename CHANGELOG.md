@@ -10,6 +10,8 @@
 - Refocused the README on HighPop's current capabilities, installation, layout, security, RogueRust channels, and operator workflow; release history remains in this changelog.
 - Reviewed current manager capabilities and added the remaining high-value operational gaps to the roadmap.
 - Removed the legacy “optimize system RAM” launch option, which forced a blocking full garbage collection and trimmed every Windows process working set before starting Rust; Windows and .NET now manage memory normally without the launch pause or system-wide churn.
+- Fixed Oxide console reporting by de-duplicating lines mirrored across stdout, stderr, and `RustDedicated.log`, while retaining legitimate repeated messages from the same source.
+- Added live `RustDedicated.log` tailing as a console fallback so Oxide output remains visible when its redirected process streams are incomplete.
 
 ## 0.8.2
 

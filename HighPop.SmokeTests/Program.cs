@@ -180,6 +180,13 @@ Check(signalInstance.ProcessObservedUtc.HasValue
       && signalInstance.LastPlayerSampleUtc.HasValue,
     "process, Rust, WebRCON, and player freshness signals are tracked independently");
 
+Check(signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stdout")
+      && !signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stderr")
+      && signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stdout")
+      && signalInstance.TryAcceptConsoleLine("Legitimate repeated output", "stdout")
+      && signalInstance.TryAcceptConsoleLine("Legitimate repeated output", "stdout"),
+    "console output suppresses cross-transport mirrors without hiding same-stream repeats");
+
 Check(WindowsStartupTaskService.BuildTaskAction(@"C:\Program Files\HighPop\HighPop.exe")
           == "\"C:\\Program Files\\HighPop\\HighPop.exe\" --background",
     "Windows logon task safely quotes the executable and starts in background mode");

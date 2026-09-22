@@ -19,7 +19,7 @@ public class ServerInstance
     public readonly object LogLock = new();
     public int RestartCount { get; set; }
     public CancellationTokenSource DailyRestartCts { get; } = new();
-    public CancellationTokenSource? ReattachedLogTailCts { get; set; }
+    public CancellationTokenSource? RustLogTailCts { get; set; }
     public nint JobHandle { get; set; } = nint.Zero;
     public volatile bool IntentionalStop;
     public string StopReason { get; set; } = string.Empty;
@@ -31,6 +31,9 @@ public class ServerInstance
     public DateTime? RustReadyUtc { get; private set; }
     public DateTime? RconReadyUtc { get; private set; }
     public DateTime? LastPlayerSampleUtc { get; private set; }
+    private readonly object _consoleDedupeLock = new();
+    private readonly Dictionary<string, (string Transport, long Timestamp)> _recentConsoleLines =
+        new(StringComparer.Ordinal);
 
     /// <summary>Times of recent crashes (last 10 minutes). Used for crash-loop detection.</summary>
     public List<DateTime> CrashTimes { get; } = [];
@@ -51,6 +54,27 @@ public class ServerInstance
     public void MarkProcessObserved() => ProcessObservedUtc = DateTime.UtcNow;
     public void MarkPlayerSample() => LastPlayerSampleUtc = DateTime.UtcNow;
 
+    /// <summary>
+    /// Suppresses a line only when a different Rust output transport mirrors it within two
+    /// seconds. Legitimate repeated messages from the same transport remain visible.
+    /// </summary>
+    public bool TryAcceptConsoleLine(string text, string transport)
+    {
+        var now = Stopwatch.GetTimestamp();
+        var threshold = Stopwatch.Frequency * 2;
+        lock (_consoleDedupeLock)
+        {
+            if (_recentConsoleLines.TryGetValue(text, out var previous)
+                && !string.Equals(previous.Transport, transport, StringComparison.Ordinal)
+                && now - previous.Timestamp < threshold)
+                return false;
+
+            _recentConsoleLines[text] = (transport, now);
+            if (_recentConsoleLines.Count > 2000) _recentConsoleLines.Clear();
+            return true;
+        }
+    }
+
     public TimeSpan Uptime => StartTime.HasValue ? DateTime.Now - StartTime.Value : TimeSpan.Zero;
 
     private const int MaxLogLines = 500;
@@ -66,9 +90,9 @@ public class ServerInstance
 
     public void CancelAuxiliaryMonitoring()
     {
-        try { ReattachedLogTailCts?.Cancel(); } catch { }
-        ReattachedLogTailCts?.Dispose();
-        ReattachedLogTailCts = null;
+        try { RustLogTailCts?.Cancel(); } catch { }
+        RustLogTailCts?.Dispose();
+        RustLogTailCts = null;
     }
 }
 
@@ -269,8 +293,9 @@ public class ServerManagerService
                     recovery, server.AutoRestartDelaySec);
             };
             _running[server.Id] = inst;
-            inst.ReattachedLogTailCts = new CancellationTokenSource();
-            _ = TailReattachedRustLogAsync(server, inst, inst.ReattachedLogTailCts.Token);
+            inst.RustLogTailCts = new CancellationTokenSource();
+            _ = TailRustLogAsync(server, inst, includeRecentHistory: true,
+                cancellationToken: inst.RustLogTailCts.Token);
             RememberRunningIdentity(server, p);
             _network.RegisterServer(server.Id, p.Id);
             SetStatus(server, ServerStatus.Running);
@@ -496,9 +521,9 @@ public class ServerManagerService
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
-        // Some engines (Unity/Rust) write the same line to both stdout and stderr.
-        // Suppress duplicates seen within a 200 ms window across both streams.
-        var _recentLines = new System.Collections.Concurrent.ConcurrentDictionary<string, long>();
+        // Some engines (especially Oxide) mirror the same line to multiple transports.
+        // ServerInstance owns cross-transport de-duplication so the Rust logfile fallback
+        // can also share it with stdout and stderr.
         var lastStdoutType = ConsoleMessageType.Info;
         var lastStderrType = ConsoleMessageType.Info;
 
@@ -510,14 +535,8 @@ public class ServerManagerService
             if (fromStandardError) lastStderrType = parsed.Type;
             else lastStdoutType = parsed.Type;
 
-            var now = System.Diagnostics.Stopwatch.GetTimestamp();
-            var threshold = System.Diagnostics.Stopwatch.Frequency / 5; // 200 ms
-            var duplicateKey = $"{parsed.Source}\n{parsed.Text}";
-            if (parsed.Type == ConsoleMessageType.Info
-                && _recentLines.TryGetValue(duplicateKey, out var seen)
-                && (now - seen) < threshold) return;
-            _recentLines[duplicateKey] = now;
-            if (_recentLines.Count > 1000) _recentLines.Clear();
+            var transport = fromStandardError ? "stderr" : "stdout";
+            if (!inst.TryAcceptConsoleLine(parsed.Text, transport)) return;
 
             var msg = new ConsoleMessage
             {
@@ -666,6 +685,17 @@ public class ServerManagerService
 
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
+
+        // RustDedicated always receives a -logfile path. Tailing new logfile output as a
+        // third transport keeps Oxide consoles useful when its redirected streams are sparse.
+        // Existing content is skipped here because stdout/stderr already cover startup; a
+        // reattached process intentionally loads recent history instead.
+        if (server.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase))
+        {
+            inst.RustLogTailCts = new CancellationTokenSource();
+            _ = TailRustLogAsync(server, inst, includeRecentHistory: false,
+                cancellationToken: inst.RustLogTailCts.Token);
+        }
 
         // Rust output is captured in HighPop, so hide any window the process creates.
         // CreateNoWindow suppresses the console host, while this also handles a window
@@ -1324,9 +1354,10 @@ public class ServerManagerService
         return removed;
     }
 
-    private async Task TailReattachedRustLogAsync(
+    private async Task TailRustLogAsync(
         GameServer server,
         ServerInstance instance,
+        bool includeRecentHistory,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(server.GameId, "rust", StringComparison.OrdinalIgnoreCase)) return;
@@ -1352,7 +1383,9 @@ public class ServerManagerService
                 var discardPartialLine = false;
                 if (!initialized)
                 {
-                    position = Math.Max(0, stream.Length - 64 * 1024);
+                    position = includeRecentHistory
+                        ? Math.Max(0, stream.Length - 64 * 1024)
+                        : stream.Length;
                     stream.Seek(position, SeekOrigin.Begin);
                     discardPartialLine = position > 0;
                     initialized = true;
@@ -1371,6 +1404,7 @@ public class ServerManagerService
                     var parsed = ConsoleOutputParser.Parse(line, fromStandardError: false, previousType);
                     if (parsed == null) continue;
                     previousType = parsed.Type;
+                    if (!instance.TryAcceptConsoleLine(parsed.Text, "logfile")) continue;
                     var message = new ConsoleMessage
                     {
                         Text = parsed.Text,
@@ -1379,6 +1413,8 @@ public class ServerManagerService
                     };
                     instance.AddToLog(message);
                     LogReceived?.Invoke(server.Id, message);
+                    if (parsed.Text.Contains("Server startup complete", StringComparison.OrdinalIgnoreCase))
+                        MarkServerReady(server, instance, "Rust logfile");
                 }
                 position = stream.Position;
             }
