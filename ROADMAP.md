@@ -102,17 +102,28 @@ HighPop already covers the common install/update/start/stop/console/backup/monit
 6. **Fleet operations** — bounded rolling restarts, maintenance groups, cross-server resource limits, and a single correlated operations timeline.
 7. **Observability and alert quality** — health-based alerts, deduplication, escalation, quiet hours, Prometheus/OpenTelemetry export, and clear readiness/service-level history.
 
-## v0.9 — Transactional Rust maintenance
+## v0.9 — Production reliability and official release
 
-Planned integration order on `testing`:
+### v0.9.0 — Production release
 
-### v0.9.0 — Maintenance policy and preflight
+Delivered and promoted from `testing`:
+
+- Production-ready deterministic lifecycle, multi-server port isolation, portable layout, and process reattachment
+- Per-server RogueRust Stable/Testing channels with verified transactional installation
+- Framework-specific live console handling: Carbon process streams and a single authoritative Oxide logfile
+- Official public Oxide updates with correct Rust-extension version reporting
+- Startup, periodic, title-bar, and manual About-page application update checks with verified in-place installation
+- Minimal CI-verified portable package containing only the executable, assets, and changelog
+
+Planned integration order after v0.9.0:
+
+### v0.9.1 — Maintenance policy and preflight
 
 - Add per-server maintenance windows with player thresholds, bounded deferral, operator override, quiet-hours handling, and cancellable countdowns
 - Preflight disk space, install ownership, Steam build identity, backup destination, framework state, and writable rollback storage before stopping Rust
 - Persist one maintenance operation ID across countdown, save, stop, stage, commit, framework verification, and return-to-service
 
-### v0.9.1 — Staged update transaction
+### v0.9.2 — Staged update transaction
 
 - Download and validate SteamCMD updates in a sibling staging directory without mutating the live server
 - Commit staged files with an exact rollback manifest; reject path traversal, cross-volume non-atomic assumptions, and incomplete manifests

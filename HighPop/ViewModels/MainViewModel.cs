@@ -238,12 +238,12 @@ public partial class MainViewModel : BaseViewModel
         Servers.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SortedServers));
         RemoteServers.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SortedRemoteServers));
         LoadServers();
-        _ = CheckForUpdateAsync();
+        _ = CheckForUpdateAsync(promptOnDetection: true);
 
         // Re-check for updates periodically — the startup-only check meant anyone leaving
         // HighPop running for days never saw the "update available" badge until next restart.
         _updateCheckTimer = new System.Timers.Timer(TimeSpan.FromHours(4).TotalMilliseconds) { AutoReset = true };
-        _updateCheckTimer.Elapsed += async (_, _) => await CheckForUpdateAsync();
+        _updateCheckTimer.Elapsed += async (_, _) => await CheckForUpdateAsync(promptOnDetection: false);
         _updateCheckTimer.Start();
 
         // A 15-second interval avoids repeatedly serializing every profile while the user is
@@ -605,7 +605,7 @@ public partial class MainViewModel : BaseViewModel
             await vm.CreateBackupCommand.ExecuteAsync(null);
     }
 
-    private async Task CheckForUpdateAsync()
+    private async Task CheckForUpdateAsync(bool promptOnDetection)
     {
         var (hasUpdate, latest, url) = await Services.UpdateCheckerService.CheckAsync();
         if (!hasUpdate) return;
@@ -627,7 +627,28 @@ public partial class MainViewModel : BaseViewModel
                     "#A855F7");
             }
             catch { }
+
+            if (promptOnDetection)
+                await PromptForStartupUpdateAsync();
         }
+    }
+
+    private async Task PromptForStartupUpdateAsync()
+    {
+        var running = Servers.Count(server => server.IsRunning);
+        var runningWarning = running > 0
+            ? $"\n\n{running} running server{(running == 1 ? "" : "s")} will be saved and stopped before the manager update."
+            : string.Empty;
+        var result = System.Windows.MessageBox.Show(
+            $"HighPop {LatestVersion} is available. You are running {AppInfo.VersionDisplay}." +
+            runningWarning +
+            "\n\nInstall the verified update now? HighPop will restart automatically.",
+            "HighPop update available",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Information);
+
+        if (result == System.Windows.MessageBoxResult.Yes)
+            await PerformUpdateCoreAsync(requireConfirmation: false);
     }
 
     [ObservableProperty] private string _wgsUpdateCheckResult = string.Empty;
@@ -648,12 +669,16 @@ public partial class MainViewModel : BaseViewModel
         }
         else
         {
-            WgsUpdateCheckResult = "✅ You're on the latest version";
+            WgsUpdateCheckResult = string.IsNullOrWhiteSpace(latest)
+                ? "⚠️ Could not reach the release service — try again shortly"
+                : $"✅ {AppInfo.VersionDisplay} is the latest version";
         }
     }
 
     [RelayCommand]
-    private async Task PerformUpdateAsync()
+    private Task PerformUpdateAsync() => PerformUpdateCoreAsync(requireConfirmation: true);
+
+    private async Task PerformUpdateCoreAsync(bool requireConfirmation)
     {
         // Count running servers
         var running = Servers.Where(s => s.IsRunning).ToList();
@@ -687,13 +712,16 @@ public partial class MainViewModel : BaseViewModel
               "HighPop will restart automatically after the update."
             : $"HighPop will update to {LatestVersion} and restart automatically.";
 
-        var result = System.Windows.MessageBox.Show(
-            msg,
-            "Update HighPop",
-            System.Windows.MessageBoxButton.OKCancel,
-            System.Windows.MessageBoxImage.Information);
+        if (requireConfirmation)
+        {
+            var result = System.Windows.MessageBox.Show(
+                msg,
+                "Update HighPop",
+                System.Windows.MessageBoxButton.OKCancel,
+                System.Windows.MessageBoxImage.Information);
 
-        if (result != System.Windows.MessageBoxResult.OK) return;
+            if (result != System.Windows.MessageBoxResult.OK) return;
+        }
 
         UpdateDownloading = true;
         UpdateStatusText  = "Stopping servers...";

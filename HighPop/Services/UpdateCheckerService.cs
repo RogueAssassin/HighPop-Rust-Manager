@@ -36,15 +36,8 @@ public static class UpdateCheckerService
                 return (false, "", "");
 
             var tag = tagEl.GetString() ?? "";
-            var latestStr = tag.TrimStart('v');
 
-            if (!Version.TryParse(latestStr, out var latest))
-                return (false, tag, "");
-
-            if (!Version.TryParse(GetCurrentVersion(), out var current))
-                return (false, tag, "");
-
-            if (latest <= current)
+            if (!IsNewerVersion(tag, GetCurrentVersion()))
                 return (false, tag, "");
 
             // Find the zip asset URL
@@ -78,4 +71,9 @@ public static class UpdateCheckerService
         Assembly.GetExecutingAssembly()
                 .GetName().Version?
                 .ToString(3) ?? "0.0.0";
+
+    internal static bool IsNewerVersion(string latestTag, string currentVersion)
+        => Version.TryParse(latestTag.Trim().TrimStart('v', 'V'), out var latest)
+           && Version.TryParse(currentVersion, out var current)
+           && latest > current;
 }

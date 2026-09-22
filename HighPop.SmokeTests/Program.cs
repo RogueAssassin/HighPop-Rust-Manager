@@ -11,6 +11,13 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
+Check(AppInfo.Version == "0.9.0", "application and release metadata report v0.9.0");
+Check(UpdateCheckerService.IsNewerVersion("v0.9.0", "0.8.5")
+      && UpdateCheckerService.IsNewerVersion("0.10.0", "0.9.0")
+      && !UpdateCheckerService.IsNewerVersion("v0.9.0", "0.9.0")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "0.9.0"),
+    "application update version comparison handles tags, equality, and invalid releases");
+
 using (var disconnectedRcon = new RconService())
 {
     await disconnectedRcon.DisconnectAsync();

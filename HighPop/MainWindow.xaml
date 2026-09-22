@@ -135,7 +135,7 @@
                                 </Button>
                                 <Button Style="{StaticResource GhostButton}" FontSize="15" Height="32" Padding="0"
                                         Command="{Binding OpenSupportCommand}">
-                                    <Button.ToolTip><ToolTip Content="Info / Support"/></Button.ToolTip>
+                                    <Button.ToolTip><ToolTip Content="About / Support"/></Button.ToolTip>
                                     <TextBlock Text="ℹ" FontSize="15"/>
                                 </Button>
                             </UniformGrid>

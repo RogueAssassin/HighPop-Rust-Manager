@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+- Promoted the tested multi-server, lifecycle, portable-layout, RogueRust channel, performance, and framework-management work to the production release line.
+- Added an explicit startup update prompt while retaining four-hour background checks, the title-bar update badge, and the manual About-page check.
+- Kept in-place updates SHA-256 verified, with graceful running-server shutdown, executable replacement, automatic restart, failed-swap detection, and a manual-release fallback.
+- Fixed Oxide console duplication at its source by launching it with valid hidden Windows console handles and using one fresh `RustDedicated.log` feed; Carbon retains its process-stream console.
+- Corrected Oxide version reporting to use the current Rust compatibility extension and pinned framework installation to uMod's public Rust channel.
+- Finalized the minimal `HPRM/HighPop.exe`, `HPRM/assets/**`, and `HPRM/CHANGELOG.md` portable release package.
+
 ## 0.8.5
 
 - Added a persisted per-server RogueRust release channel: Stable for production servers and Testing for development servers.

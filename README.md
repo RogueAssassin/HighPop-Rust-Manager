@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.8.5-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.9.0-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -29,6 +29,7 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 | Monitoring | CPU, memory, network, players, readiness signals, health checks, log watches, crash-risk warnings, local telemetry, and support bundles with secret redaction |
 | Remote operations | Optional token-protected REST API and dashboard, Discord status/admin controls, webhooks, SMTP notifications, and multi-machine views |
 | Windows integration | Portable storage, system tray, per-user logon task, Windows Explorer shortcuts, firewall rules, and optional UPnP mappings |
+| Application updates | Startup release check and install prompt, four-hour background checks, manual About-page check, SHA-256 verification, in-place replacement, and automatic restart |
 
 ## Install
 
