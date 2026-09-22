@@ -31,14 +31,12 @@ public sealed record ModFrameworkPaths(
     string ConfigDirectory,
     string ExtensionDirectory);
 
-internal sealed record ModReleaseAsset(string Version, string Name, string DownloadUrl);
-
 /// <summary>Installs and manages the two supported Rust server frameworks: Oxide/uMod and Carbon.</summary>
 public sealed class ModManagerService
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
-    private const string OxideLatestReleaseApi =
-        "https://api.github.com/repos/OxideMod/Oxide.Rust/releases/latest";
+    internal const string OxidePublicDownloadUrl =
+        "https://umod.org/games/rust/download?tag=public";
     private const string CarbonLatestReleaseApi =
         "https://api.github.com/repos/CarbonCommunity/Carbon/releases/latest";
     internal const string RogueRustStableManifestUrl =
@@ -55,16 +53,8 @@ public sealed class ModManagerService
             throw new InvalidOperationException("HighPop only installs Oxide for Rust.");
         EnsureRustInstalled(installPath);
 
-        Report(progress, 0, "Resolving the latest official Oxide/uMod Windows release...");
-        using var releaseRequest = new HttpRequestMessage(HttpMethod.Get, OxideLatestReleaseApi);
-        releaseRequest.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
-        using var releaseResponse = await Http.SendAsync(releaseRequest);
-        releaseResponse.EnsureSuccessStatusCode();
-        using var release = JsonDocument.Parse(await releaseResponse.Content.ReadAsStringAsync());
-        var asset = SelectOxideWindowsAsset(release.RootElement);
-
-        Report(progress, 15, $"Downloading official Oxide/uMod {asset.Version} for Windows...");
-        using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, asset.DownloadUrl);
+        Report(progress, 0, "Downloading the latest public Oxide/uMod build for Rust...");
+        using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, OxidePublicDownloadUrl);
         downloadRequest.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
         using var downloadResponse = await Http.SendAsync(downloadRequest);
         downloadResponse.EnsureSuccessStatusCode();
@@ -72,39 +62,9 @@ public sealed class ModManagerService
         ValidateOxideArchive(bytes);
         await ExtractArchiveAsync(bytes, installPath, "oxide", progress);
         var installedVersion = GetInstalledOxideVersion(installPath)
-            ?? throw new InvalidDataException("Oxide extraction completed but Oxide.Core.dll was not installed.");
+            ?? throw new InvalidDataException("Oxide extraction completed but Oxide.Rust.dll was not installed.");
         Report(progress, 100,
-            $"Oxide/uMod {installedVersion} installed from official release {asset.Version}. Restart Rust to load it.");
-    }
-
-    internal static ModReleaseAsset SelectOxideWindowsAsset(JsonElement release)
-    {
-        var version = release.TryGetProperty("tag_name", out var tag)
-            ? tag.GetString()
-            : null;
-        if (string.IsNullOrWhiteSpace(version))
-            throw new InvalidDataException("The latest Oxide release does not contain a version tag.");
-
-        var asset = release.GetProperty("assets").EnumerateArray()
-            .Select(item => new
-            {
-                Name = item.GetProperty("name").GetString() ?? string.Empty,
-                Url = item.GetProperty("browser_download_url").GetString() ?? string.Empty,
-            })
-            .FirstOrDefault(item =>
-                item.Name.Equals("Oxide.Rust.zip", StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidDataException(
-                $"Oxide {version} does not contain the required Windows asset Oxide.Rust.zip.");
-
-        if (!Uri.TryCreate(asset.Url, UriKind.Absolute, out var uri)
-            || uri.Scheme != Uri.UriSchemeHttps
-            || !uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
-            || !uri.AbsolutePath.StartsWith(
-                "/OxideMod/Oxide.Rust/releases/download/", StringComparison.OrdinalIgnoreCase)
-            || !uri.AbsolutePath.EndsWith("/Oxide.Rust.zip", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("The latest Oxide release contains an untrusted Windows download URL.");
-
-        return new ModReleaseAsset(version, asset.Name, asset.Url);
+            $"Oxide/uMod Rust {installedVersion} installed from the public channel. Restart Rust to load it.");
     }
 
     internal static void ValidateOxideArchive(byte[] bytes)
@@ -358,7 +318,12 @@ public sealed class ModManagerService
 
     public static string? GetInstalledOxideVersion(string installPath)
     {
-        var dll = Path.Combine(installPath, "RustDedicated_Data", "Managed", "Oxide.Core.dll");
+        // Oxide.Core has an independent, slower-moving version (for example 2.0.4143).
+        // The Rust extension version tracks current Rust compatibility and is the version
+        // published on the uMod Rust download page (for example 2.0.7723).
+        var dll = Path.Combine(installPath, "RustDedicated_Data", "Managed", "Oxide.Rust.dll");
+        if (!File.Exists(dll))
+            dll = Path.Combine(installPath, "RustDedicated_Data", "Managed", "Oxide.Core.dll");
         if (!File.Exists(dll)) dll = Path.Combine(installPath, "oxide", "Oxide.Core.dll");
         if (!File.Exists(dll)) return null;
         try

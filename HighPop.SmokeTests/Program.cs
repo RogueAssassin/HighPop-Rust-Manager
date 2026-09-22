@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Text.Json;
 using HighPop.Games;
 using HighPop.Models;
 using HighPop.Services;
@@ -53,22 +52,9 @@ Check(server.RconAutoConnectDelaySeconds == 60
 Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
     "production profiles default to always-on recovery without empty-player shutdown");
 
-using (var oxideRelease = JsonDocument.Parse("""
-{
-  "tag_name": "2.0.7723",
-  "assets": [
-    { "name": "Oxide.Rust-linux.zip", "browser_download_url": "https://github.com/OxideMod/Oxide.Rust/releases/download/2.0.7723/Oxide.Rust-linux.zip" },
-    { "name": "Oxide.Rust.zip", "browser_download_url": "https://github.com/OxideMod/Oxide.Rust/releases/download/2.0.7723/Oxide.Rust.zip" }
-  ]
-}
-"""))
-{
-    var oxideAsset = ModManagerService.SelectOxideWindowsAsset(oxideRelease.RootElement);
-    Check(oxideAsset.Version == "2.0.7723"
-          && oxideAsset.Name == "Oxide.Rust.zip"
-          && !oxideAsset.DownloadUrl.Contains("linux", StringComparison.OrdinalIgnoreCase),
-        "Oxide updater resolves the exact latest official Windows release asset");
-}
+Check(ModManagerService.OxidePublicDownloadUrl
+          == "https://umod.org/games/rust/download?tag=public",
+    "Oxide updater uses the official latest public Rust download channel");
 
 using (var oxideArchiveBytes = new MemoryStream())
 {
@@ -208,6 +194,9 @@ Check(signalInstance.ProcessObservedUtc.HasValue
       && signalInstance.RconReadyUtc.HasValue
       && signalInstance.LastPlayerSampleUtc.HasValue,
     "process, Rust, WebRCON, and player freshness signals are tracked independently");
+signalInstance.MarkRustLogActive();
+Check(signalInstance.IsRustLogActive,
+    "Oxide live logfile activation is tracked independently from process readiness");
 
 Check(signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stdout")
       && !signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stderr")

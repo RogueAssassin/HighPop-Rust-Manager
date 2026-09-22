@@ -24,7 +24,9 @@ public class ServerInstance
     public volatile bool IntentionalStop;
     public string StopReason { get; set; } = string.Empty;
     private int _ready;
+    private int _rustLogActive;
     public bool IsReady => Volatile.Read(ref _ready) == 1;
+    public bool IsRustLogActive => Volatile.Read(ref _rustLogActive) == 1;
     public DateTime? ReadyTime { get; private set; }
     public string ReadySource { get; private set; } = string.Empty;
     public DateTime? ProcessObservedUtc { get; private set; }
@@ -53,6 +55,7 @@ public class ServerInstance
 
     public void MarkProcessObserved() => ProcessObservedUtc = DateTime.UtcNow;
     public void MarkPlayerSample() => LastPlayerSampleUtc = DateTime.UtcNow;
+    public void MarkRustLogActive() => Interlocked.Exchange(ref _rustLogActive, 1);
 
     /// <summary>
     /// Suppresses a line only when a different Rust output transport mirrors it within two
@@ -518,6 +521,9 @@ public class ServerManagerService
             ModManagerService.GetRogueRustManifestUrl(server.RogueRustChannel);
 
         var inst = inst0;
+        var oxideInstalled = ModManagerService.GetInstalledOxideVersion(server.InstallPath) != null;
+        var carbonInstalled = ModManagerService.IsCarbonInstalled(server.InstallPath);
+        var useOxideLiveLog = oxideInstalled && !carbonInstalled;
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
@@ -555,6 +561,9 @@ public class ServerManagerService
         {
             if (e.Data == null) return;
             if (plugin.IsNoiseLine(e.Data)) return;
+            // Drain redirected output during Oxide startup, but once RustDedicated.log is
+            // live it becomes the single authoritative console source.
+            if (useOxideLiveLog && inst.IsRustLogActive) return;
             AddLog(e.Data, fromStandardError: false);
         };
 
@@ -562,6 +571,7 @@ public class ServerManagerService
         {
             if (e.Data == null) return;
             if (plugin.IsNoiseLine(e.Data)) return;
+            if (useOxideLiveLog && inst.IsRustLogActive) return;
             AddLog(e.Data, fromStandardError: true);
         };
 
@@ -683,19 +693,17 @@ public class ServerManagerService
         server.LastStarted = DateTime.Now;
         RememberRunningIdentity(server, proc);
 
-        proc.BeginOutputReadLine();
-        proc.BeginErrorReadLine();
-
-        // RustDedicated always receives a -logfile path. Tailing new logfile output as a
-        // third transport keeps Oxide consoles useful when its redirected streams are sparse.
-        // Existing content is skipped here because stdout/stderr already cover startup; a
-        // reattached process intentionally loads recent history instead.
-        if (server.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase))
+        // Establish Oxide's logfile baseline before redirected reads begin. Carbon retains
+        // its process-stream console, which carries Carbon's richer formatted reporting.
+        if (useOxideLiveLog)
         {
             inst.RustLogTailCts = new CancellationTokenSource();
             _ = TailRustLogAsync(server, inst, includeRecentHistory: false,
                 cancellationToken: inst.RustLogTailCts.Token);
         }
+
+        proc.BeginOutputReadLine();
+        proc.BeginErrorReadLine();
 
         // Rust output is captured in HighPop, so hide any window the process creates.
         // CreateNoWindow suppresses the console host, while this also handles a window
@@ -1366,6 +1374,17 @@ public class ServerManagerService
         var initialized = false;
         var previousType = ConsoleMessageType.Info;
 
+        // For a newly launched Oxide server, remember the end of any previous log. If the
+        // file does not exist yet, position zero ensures the first newly-created log is read
+        // from its beginning. Reattachment instead loads a bounded recent history below.
+        if (!includeRecentHistory)
+        {
+            try { position = File.Exists(logPath) ? new FileInfo(logPath).Length : 0; }
+            catch (IOException) { position = 0; }
+            catch (UnauthorizedAccessException) { position = 0; }
+            initialized = true;
+        }
+
         while (!cancellationToken.IsCancellationRequested
                && IsCurrentInstance(server.Id, instance)
                && instance.Process?.HasExited == false)
@@ -1404,12 +1423,13 @@ public class ServerManagerService
                     var parsed = ConsoleOutputParser.Parse(line, fromStandardError: false, previousType);
                     if (parsed == null) continue;
                     previousType = parsed.Type;
+                    instance.MarkRustLogActive();
                     if (!instance.TryAcceptConsoleLine(parsed.Text, "logfile")) continue;
                     var message = new ConsoleMessage
                     {
                         Text = parsed.Text,
                         Type = parsed.Type,
-                        Source = "Rust log",
+                        Source = parsed.Source,
                     };
                     instance.AddToLog(message);
                     LogReceived?.Invoke(server.Id, message);

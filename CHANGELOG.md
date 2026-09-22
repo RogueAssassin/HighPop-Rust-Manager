@@ -12,8 +12,9 @@
 - Removed the legacy “optimize system RAM” launch option, which forced a blocking full garbage collection and trimmed every Windows process working set before starting Rust; Windows and .NET now manage memory normally without the launch pause or system-wide churn.
 - Fixed Oxide console reporting by de-duplicating lines mirrored across stdout, stderr, and `RustDedicated.log`, while retaining legitimate repeated messages from the same source.
 - Added live `RustDedicated.log` tailing as a console fallback so Oxide output remains visible when its redirected process streams are incomplete.
-- Replaced the generic Oxide redirect with GitHub's official latest-release API, selecting only the exact Windows `Oxide.Rust.zip` asset and reporting the resolved release and installed assembly versions.
-- Added trust and archive-content validation before Oxide extraction so Linux, stale, malformed, or unexpected downloads cannot be reported as successful Windows updates.
+- Pinned Oxide installation to uMod's official latest public Rust channel (`download?tag=public`) and retained archive-content validation before extraction.
+- Corrected Oxide detection to report the current `Oxide.Rust.dll` compatibility version instead of the independently versioned Oxide Core assembly.
+- Split live console ingestion by framework: Carbon retains its formatted process-stream console, while Oxide switches to the authoritative live `RustDedicated.log` feed as soon as it becomes available.
 
 ## 0.8.2
 
