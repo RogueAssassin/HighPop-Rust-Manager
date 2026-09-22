@@ -503,27 +503,31 @@ public class ServerManagerService
         }
 
         var exeDir = Path.GetDirectoryName(exe) ?? server.InstallPath;
+        var oxideInstalled = ModManagerService.GetInstalledOxideVersion(server.InstallPath) != null;
+        var carbonInstalled = ModManagerService.IsCarbonInstalled(server.InstallPath);
+        var useOxideLiveLog = ShouldUseOxideLiveLog(oxideInstalled, carbonInstalled);
+        var captureProcessStreams = !useOxideLiveLog;
         var psi = new ProcessStartInfo
         {
             FileName               = exe,
             Arguments              = args,
             WorkingDirectory       = exeDir,
             UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
+            RedirectStandardOutput = captureProcessStreams,
+            RedirectStandardError  = captureProcessStreams,
             RedirectStandardInput  = true,
             CreateNoWindow         = true,
             WindowStyle            = ProcessWindowStyle.Hidden,
-            StandardOutputEncoding = System.Text.Encoding.UTF8,
-            StandardErrorEncoding  = System.Text.Encoding.UTF8,
         };
+        if (captureProcessStreams)
+        {
+            psi.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            psi.StandardErrorEncoding = System.Text.Encoding.UTF8;
+        }
         psi.Environment["ROGUERUST_UPDATE_MANIFEST_URL"] =
             ModManagerService.GetRogueRustManifestUrl(server.RogueRustChannel);
 
         var inst = inst0;
-        var oxideInstalled = ModManagerService.GetInstalledOxideVersion(server.InstallPath) != null;
-        var carbonInstalled = ModManagerService.IsCarbonInstalled(server.InstallPath);
-        var useOxideLiveLog = oxideInstalled && !carbonInstalled;
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
@@ -557,21 +561,17 @@ public class ServerManagerService
                 MarkServerReady(server, inst, "Rust startup log");
         }
 
-        proc.OutputDataReceived += (_, e) =>
+        if (captureProcessStreams) proc.OutputDataReceived += (_, e) =>
         {
             if (e.Data == null) return;
             if (plugin.IsNoiseLine(e.Data)) return;
-            // Drain redirected output during Oxide startup, but once RustDedicated.log is
-            // live it becomes the single authoritative console source.
-            if (useOxideLiveLog && inst.IsRustLogActive) return;
             AddLog(e.Data, fromStandardError: false);
         };
 
-        proc.ErrorDataReceived += (_, e) =>
+        if (captureProcessStreams) proc.ErrorDataReceived += (_, e) =>
         {
             if (e.Data == null) return;
             if (plugin.IsNoiseLine(e.Data)) return;
-            if (useOxideLiveLog && inst.IsRustLogActive) return;
             AddLog(e.Data, fromStandardError: true);
         };
 
@@ -669,6 +669,12 @@ public class ServerManagerService
 
         operationToken.ThrowIfCancellationRequested();
 
+        // Oxide's logger can mirror messages into RustDedicated.log when both of its process
+        // streams are redirected. Match the clean batch-file launch: leave stdout/stderr
+        // unredirected and make a fresh logfile the sole console source for this run.
+        if (useOxideLiveLog)
+            RotateOxideLogForLaunch(server);
+
         try
         {
             proc.Start();
@@ -702,8 +708,11 @@ public class ServerManagerService
                 cancellationToken: inst.RustLogTailCts.Token);
         }
 
-        proc.BeginOutputReadLine();
-        proc.BeginErrorReadLine();
+        if (captureProcessStreams)
+        {
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+        }
 
         // Rust output is captured in HighPop, so hide any window the process creates.
         // CreateNoWindow suppresses the console host, while this also handles a window
@@ -1354,6 +1363,28 @@ public class ServerManagerService
     private bool IsCurrentInstance(string serverId, ServerInstance instance)
         => _running.TryGetValue(serverId, out var current) && ReferenceEquals(current, instance);
 
+    internal static bool ShouldUseOxideLiveLog(bool oxideInstalled, bool carbonInstalled)
+        => oxideInstalled && !carbonInstalled;
+
+    private static void RotateOxideLogForLaunch(GameServer server)
+    {
+        var logDirectory = RustPlugin.GetEffectiveLogDirectory(server);
+        Directory.CreateDirectory(logDirectory);
+        var current = Path.Combine(logDirectory, "RustDedicated.log");
+        if (!File.Exists(current)) return;
+
+        var previous = Path.Combine(logDirectory, "RustDedicated.previous.log");
+        try
+        {
+            File.Move(current, previous, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new IOException(
+                $"HighPop could not rotate the previous Oxide log before startup: {current}", ex);
+        }
+    }
+
     private bool RemoveInstanceIfCurrent(string serverId, ServerInstance instance)
     {
         var removed = ((ICollection<KeyValuePair<string, ServerInstance>>)_running)
@@ -1374,14 +1405,11 @@ public class ServerManagerService
         var initialized = false;
         var previousType = ConsoleMessageType.Info;
 
-        // For a newly launched Oxide server, remember the end of any previous log. If the
-        // file does not exist yet, position zero ensures the first newly-created log is read
-        // from its beginning. Reattachment instead loads a bounded recent history below.
+        // A newly launched Oxide server receives a freshly rotated logfile, so consume it
+        // from byte zero. Reattachment instead loads a bounded recent history below.
         if (!includeRecentHistory)
         {
-            try { position = File.Exists(logPath) ? new FileInfo(logPath).Length : 0; }
-            catch (IOException) { position = 0; }
-            catch (UnauthorizedAccessException) { position = 0; }
+            position = 0;
             initialized = true;
         }
 

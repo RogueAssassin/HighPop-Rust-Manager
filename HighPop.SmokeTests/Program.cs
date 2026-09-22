@@ -197,6 +197,10 @@ Check(signalInstance.ProcessObservedUtc.HasValue
 signalInstance.MarkRustLogActive();
 Check(signalInstance.IsRustLogActive,
     "Oxide live logfile activation is tracked independently from process readiness");
+Check(ServerManagerService.ShouldUseOxideLiveLog(oxideInstalled: true, carbonInstalled: false)
+      && !ServerManagerService.ShouldUseOxideLiveLog(oxideInstalled: false, carbonInstalled: true)
+      && !ServerManagerService.ShouldUseOxideLiveLog(oxideInstalled: true, carbonInstalled: true),
+    "Oxide alone uses live logfile capture while Carbon and framework conflicts retain process capture");
 
 Check(signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stdout")
       && !signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stderr")
