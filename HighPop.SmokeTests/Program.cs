@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.Json;
 using HighPop.Games;
 using HighPop.Models;
 using HighPop.Services;
@@ -51,6 +52,34 @@ Check(server.RconAutoConnectDelaySeconds == 60
     "slow Rust startup and WebRCON timing defaults");
 Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
     "production profiles default to always-on recovery without empty-player shutdown");
+
+using (var oxideRelease = JsonDocument.Parse("""
+{
+  "tag_name": "2.0.7723",
+  "assets": [
+    { "name": "Oxide.Rust-linux.zip", "browser_download_url": "https://github.com/OxideMod/Oxide.Rust/releases/download/2.0.7723/Oxide.Rust-linux.zip" },
+    { "name": "Oxide.Rust.zip", "browser_download_url": "https://github.com/OxideMod/Oxide.Rust/releases/download/2.0.7723/Oxide.Rust.zip" }
+  ]
+}
+"""))
+{
+    var oxideAsset = ModManagerService.SelectOxideWindowsAsset(oxideRelease.RootElement);
+    Check(oxideAsset.Version == "2.0.7723"
+          && oxideAsset.Name == "Oxide.Rust.zip"
+          && !oxideAsset.DownloadUrl.Contains("linux", StringComparison.OrdinalIgnoreCase),
+        "Oxide updater resolves the exact latest official Windows release asset");
+}
+
+using (var oxideArchiveBytes = new MemoryStream())
+{
+    using (var oxideArchive = new ZipArchive(oxideArchiveBytes, ZipArchiveMode.Create, leaveOpen: true))
+    {
+        oxideArchive.CreateEntry("RustDedicated_Data/Managed/Oxide.Core.dll");
+        oxideArchive.CreateEntry("RustDedicated_Data/Managed/Oxide.Rust.dll");
+    }
+    ModManagerService.ValidateOxideArchive(oxideArchiveBytes.ToArray());
+    Check(true, "Oxide updater validates required framework assemblies before extraction");
+}
 
 var firstPortSet = new ServerPortSet(28015, 28017, 28016, 28083);
 var secondPortSet = ServerPortAllocator.FindAvailable(
