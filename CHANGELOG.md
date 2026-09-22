@@ -16,6 +16,7 @@
 - Corrected Oxide detection to report the current `Oxide.Rust.dll` compatibility version instead of the independently versioned Oxide Core assembly.
 - Split live console ingestion by framework: Carbon retains its formatted process-stream console, while Oxide switches to the authoritative live `RustDedicated.log` feed as soon as it becomes available.
 - Stopped redirecting stdout and stderr for Oxide launches after confirming that Oxide mirrored those redirected streams back into `RustDedicated.log`; each launch now preserves the previous log and consumes one fresh logfile from byte zero.
+- Gave Oxide a real hidden Windows console with no redirected standard handles, eliminating its `ERROR_NOT_SUPPORTED` output fallback that registered duplicate logfile reporting; Oxide commands now use WebRCON while Carbon retains redirected console input/output.
 
 ## 0.8.2
 

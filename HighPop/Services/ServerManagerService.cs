@@ -515,8 +515,11 @@ public class ServerManagerService
             UseShellExecute        = false,
             RedirectStandardOutput = captureProcessStreams,
             RedirectStandardError  = captureProcessStreams,
-            RedirectStandardInput  = true,
-            CreateNoWindow         = true,
+            RedirectStandardInput  = captureProcessStreams,
+            // Oxide expects valid Windows console handles. CREATE_NO_WINDOW leaves them
+            // unsupported and makes Oxide install a second output-redirection path.
+            // WindowStyle.Hidden supplies real handles without exposing the console window.
+            CreateNoWindow         = captureProcessStreams,
             WindowStyle            = ProcessWindowStyle.Hidden,
         };
         if (captureProcessStreams)
@@ -669,9 +672,8 @@ public class ServerManagerService
 
         operationToken.ThrowIfCancellationRequested();
 
-        // Oxide's logger can mirror messages into RustDedicated.log when both of its process
-        // streams are redirected. Match the clean batch-file launch: leave stdout/stderr
-        // unredirected and make a fresh logfile the sole console source for this run.
+        // Match the clean batch-file launch for Oxide: use real hidden console handles with
+        // no redirected standard streams and make a fresh logfile HPRM's sole console source.
         if (useOxideLiveLog)
             RotateOxideLogForLaunch(server);
 
@@ -714,9 +716,9 @@ public class ServerManagerService
             proc.BeginErrorReadLine();
         }
 
-        // Rust output is captured in HighPop, so hide any window the process creates.
-        // CreateNoWindow suppresses the console host, while this also handles a window
-        // created later by RustDedicated via AllocConsole/CreateWindow.
+        // Rust output is captured in HighPop, so hide any window the process creates. Carbon
+        // uses CreateNoWindow; Oxide receives a real but hidden console because its logger
+        // duplicates output when Windows reports unsupported standard handles.
         _ = ApplyWindowStyleAsync(proc, SW_HIDE, 30);
 
         // Apply CPU affinity
@@ -1158,7 +1160,6 @@ public class ServerManagerService
         {
             for (int i = 0; i < maxAttempts && !proc.HasExited; i++)
             {
-                await Task.Delay(500);
                 try
                 {
                     proc.Refresh();
@@ -1166,6 +1167,7 @@ public class ServerManagerService
                     if (hwnd != IntPtr.Zero) { ShowWindow(hwnd, showCmd); return; }
                 }
                 catch { return; }
+                await Task.Delay(i < 5 ? 100 : 500);
             }
         }
         catch { }
