@@ -4,6 +4,7 @@
 
 - Added transactional start/restart log archiving for Rust, Oxide, and Carbon. Completed logs are zipped beneath `assets/logsbackup/<server>/` with date-and-time filenames, source files are removed only after the ZIP succeeds, and only the latest two start archives are retained per server.
 - Centralized the shared SteamCMD installation at `assets/SteamCMD` for every managed server, including automatic migration from the previous `assets/data/steamcmd` location.
+- Updated the source-build guide with a safe process-scoped PowerShell execution-policy bypass for unsigned local build scripts.
 
 ## 0.9.0
 

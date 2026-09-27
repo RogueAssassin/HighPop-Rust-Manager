@@ -102,10 +102,22 @@ cd HighPop-Rust-Manager
 dotnet restore HighPop.sln
 dotnet build HighPop.sln -c Release
 dotnet run --project HighPop.SmokeTests/HighPop.SmokeTests.csproj -c Release
-./Build-HighPop.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-HighPop.ps1
 ```
 
 The build script creates the self-contained executable, minimal portable ZIP, checksums, and release manifest under `artifacts/`.
+
+If you are already inside Windows PowerShell and it reports that `Build-HighPop.ps1` is not
+digitally signed, use a process-only bypass and then run the script normally:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\Build-HighPop.ps1
+```
+
+The `Process` scope lasts only for the current PowerShell window and does not weaken the
+machine-wide or current-user execution policy. Do not change `LocalMachine` to `Unrestricted`
+just to build HighPop.
 
 ## Project information
 
