@@ -18,7 +18,9 @@ public class ConfigService
         Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
         ?? AppContext.BaseDirectory;
 
+    public string AssetsPath { get; }
     public string AppDataPath { get; }
+    public string SteamCmdPath { get; }
     public string ServersFile { get; }
     public string SettingsFile { get; }
     public string DefaultInstallRoot { get; set; }
@@ -54,7 +56,9 @@ public class ConfigService
         // HighPop is intentionally portable. Application state lives under assets/** and
         // managed Rust installations live under Servers/** beside HighPop.exe, so the HPRM
         // directory can be moved, backed up, or removed without leaving state in AppData.
-        AppDataPath        = Path.Combine(ExeDir, "assets", "data");
+        AssetsPath         = Path.Combine(ExeDir, "assets");
+        AppDataPath        = Path.Combine(AssetsPath, "data");
+        SteamCmdPath       = Path.Combine(AssetsPath, "SteamCMD");
         ServersFile        = Path.Combine(AppDataPath, "servers.json");
         SettingsFile       = Path.Combine(AppDataPath, "settings.json");
         _legacyDefaultInstallRoot = Path.Combine(ExeDir, "assets", "servers");
@@ -62,6 +66,8 @@ public class ConfigService
         DefaultInstallRoot = _portableDefaultInstallRoot;
         BackupPath         = Path.Combine(ExeDir, "assets", "backups");
         Directory.CreateDirectory(AppDataPath);
+        PortableLayoutService.MigrateDirectoryContents(
+            Path.Combine(AppDataPath, "steamcmd"), SteamCmdPath);
         PortableLayoutService.MigrateServerRoot(
             _legacyDefaultInstallRoot, _portableDefaultInstallRoot);
         LoadSettings();

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — testing
+
+- Added transactional start/restart log archiving for Rust, Oxide, and Carbon. Completed logs are zipped beneath `assets/logsbackup/<server>/` with date-and-time filenames, source files are removed only after the ZIP succeeds, and only the latest two start archives are retained per server.
+- Centralized the shared SteamCMD installation at `assets/SteamCMD` for every managed server, including automatic migration from the previous `assets/data/steamcmd` location.
+
 ## 0.9.0
 
 - Promoted the tested multi-server, lifecycle, portable-layout, RogueRust channel, performance, and framework-management work to the production release line.

@@ -23,9 +23,14 @@ seconds. Direct Install/Update is locked while Rust is running; safe live update
 checks build IDs first and broadcasts the configured countdown before maintenance.
 
 - data/       encrypted settings, databases, schedules, update staging, and opt-in telemetry
+- SteamCMD/   one shared SteamCMD installation used by every managed server
 - backups/    automatic and manual server backups
 - logs/       HighPop diagnostics
+- logsbackup/ latest two dated Rust, Oxide, and Carbon start archives per server
 - presets/    editable Rust configuration presets
+
+Before every server start or restart, completed Rust, Oxide, and Carbon logs are archived into
+logsbackup/<server>/<date_time>.zip. Source logs are removed only after the ZIP succeeds.
 
 Back up the complete HPRM folder, including HighPop.exe, assets, and Servers. Secrets are protected
 with Windows DPAPI for the current Windows user. Do not publish the data folder.

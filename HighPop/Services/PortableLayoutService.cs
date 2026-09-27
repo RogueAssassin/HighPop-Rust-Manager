@@ -9,20 +9,25 @@ public static class PortableLayoutService
     public static PortableLayoutMigrationResult MigrateServerRoot(
         string legacyRoot,
         string serverRoot)
+        => MigrateDirectoryContents(legacyRoot, serverRoot);
+
+    public static PortableLayoutMigrationResult MigrateDirectoryContents(
+        string legacyRoot,
+        string destinationRoot)
     {
         if (!Directory.Exists(legacyRoot))
         {
-            Directory.CreateDirectory(serverRoot);
+            Directory.CreateDirectory(destinationRoot);
             return new PortableLayoutMigrationResult(0, 0);
         }
 
-        Directory.CreateDirectory(serverRoot);
+        Directory.CreateDirectory(destinationRoot);
         var moved = 0;
         var conflicts = 0;
 
         foreach (var source in Directory.EnumerateFileSystemEntries(legacyRoot))
         {
-            var destination = Path.Combine(serverRoot, Path.GetFileName(source));
+            var destination = Path.Combine(destinationRoot, Path.GetFileName(source));
             if (File.Exists(destination) || Directory.Exists(destination))
             {
                 conflicts++;

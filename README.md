@@ -59,10 +59,16 @@ On first use, HighPop creates runtime data below `assets/` and managed servers b
 HPRM/
 ├─ Servers/          # one independent Rust installation per profile
 └─ assets/
-   ├─ data/          # settings, profiles, schedules, databases, SteamCMD, telemetry
+   ├─ SteamCMD/      # one shared SteamCMD installation for every server location
+   ├─ data/          # settings, profiles, schedules, databases, telemetry
    ├─ backups/       # full and incremental backups
+   ├─ logsbackup/    # latest two dated Rust/Oxide/Carbon start archives per server
    └─ logs/          # HighPop diagnostics
 ```
+
+Before each start or restart, HighPop writes the completed Rust, Oxide, and Carbon logs to a
+dated ZIP under `assets/logsbackup/<server>/`. It removes the source logs only after the ZIP is
+successfully closed and retains exactly the latest two archives for troubleshooting.
 
 Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up an installation. Secrets are protected with Windows DPAPI for the current Windows user and machine; do not publish `assets/data`.
 

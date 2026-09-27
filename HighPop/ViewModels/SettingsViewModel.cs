@@ -135,7 +135,7 @@ public partial class SettingsViewModel : BaseViewModel
         EmailTo            = s.EmailTo      ?? string.Empty;
         DefaultInstallRoot = _config.DefaultInstallRoot;
         BackupPath         = _config.BackupPath;
-        SteamCmdPath       = System.IO.Path.Combine(_config.AppDataPath, "steamcmd");
+        SteamCmdPath       = _config.SteamCmdPath;
         SteamLogin         = _config.SteamLogin;
         SteamPassword      = _config.SteamPassword;
         BotStatus          = _bot.IsRunning ? "🟢 Running" : "⚫ Stopped";

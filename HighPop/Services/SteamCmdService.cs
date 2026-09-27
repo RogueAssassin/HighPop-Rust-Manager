@@ -23,7 +23,7 @@ public class SteamCmdService
 
     public SteamCmdService(ConfigService config)
     {
-        _steamCmdDir = Path.Combine(config.AppDataPath, "steamcmd");
+        _steamCmdDir = config.SteamCmdPath;
         _steamCmdExe = Path.Combine(_steamCmdDir, "steamcmd.exe");
     }
 

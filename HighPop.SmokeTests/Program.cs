@@ -332,6 +332,17 @@ try
               == conflictingLegacyPath,
         "portable layout preserves both installations and the legacy path on a name conflict");
 
+    var legacySteamCmd = Path.Combine(testRoot, "legacy-data", "steamcmd");
+    var sharedSteamCmd = Path.Combine(testRoot, "assets", "SteamCMD");
+    Directory.CreateDirectory(legacySteamCmd);
+    File.WriteAllText(Path.Combine(legacySteamCmd, "steamcmd.exe"), "test");
+    var steamCmdMigration = PortableLayoutService.MigrateDirectoryContents(
+        legacySteamCmd, sharedSteamCmd);
+    Check(steamCmdMigration.MovedEntries == 1
+          && File.Exists(Path.Combine(sharedSteamCmd, "steamcmd.exe"))
+          && !Directory.Exists(legacySteamCmd),
+        "portable layout migrates the shared SteamCMD install into assets/SteamCMD");
+
     var nestedGeneratedPath = Path.Combine(portableServerRoot, "rust", "OxideTest");
     Directory.CreateDirectory(nestedGeneratedPath);
     File.WriteAllText(Path.Combine(nestedGeneratedPath, "RustDedicated.exe"), "test");
@@ -344,6 +355,75 @@ try
 
     server.InstallPath = Path.Combine(testRoot, "server");
     Directory.CreateDirectory(server.InstallPath);
+
+    var serverLogRoot = RustPlugin.GetEffectiveLogDirectory(server);
+    var oxideLogRoot = Path.Combine(server.InstallPath, "oxide", "logs");
+    var carbonLogRoot = Path.Combine(server.InstallPath, "carbon", "logs");
+    Directory.CreateDirectory(serverLogRoot);
+    Directory.CreateDirectory(oxideLogRoot);
+    Directory.CreateDirectory(carbonLogRoot);
+    File.WriteAllText(Path.Combine(serverLogRoot, "RustDedicated.log"), "server generation one");
+    File.WriteAllText(Path.Combine(oxideLogRoot, "oxide_2026-09-28.log"), "oxide generation one");
+    File.WriteAllText(Path.Combine(carbonLogRoot, "carbon.log"), "carbon generation one");
+
+    var logArchiveService = new ServerHygieneService(Path.Combine(testRoot, "assets", "logsbackup"));
+    var firstLogArchive = logArchiveService.ArchiveLogsForStart(
+        server, new DateTimeOffset(2026, 9, 28, 7, 0, 0, TimeSpan.FromHours(10)));
+    var firstEntries = new List<string>();
+    if (firstLogArchive.ArchivePath != null)
+    {
+        using var firstArchive = ZipFile.OpenRead(firstLogArchive.ArchivePath);
+        firstEntries.AddRange(firstArchive.Entries.Select(entry => entry.FullName));
+    }
+    Check(firstLogArchive.Succeeded
+          && firstLogArchive.ArchivedFiles == 3
+          && firstLogArchive.DeleteFailures == 0
+          && firstLogArchive.ArchivePath != null
+          && firstEntries.Contains("server/RustDedicated.log")
+          && firstEntries.Contains("oxide/oxide_2026-09-28.log")
+          && firstEntries.Contains("carbon/carbon.log")
+          && !File.Exists(Path.Combine(serverLogRoot, "RustDedicated.log"))
+          && !File.Exists(Path.Combine(oxideLogRoot, "oxide_2026-09-28.log"))
+          && !File.Exists(Path.Combine(carbonLogRoot, "carbon.log")),
+        "server, Oxide, and Carbon logs archive transactionally before startup");
+
+    File.WriteAllText(Path.Combine(serverLogRoot, "RustDedicated.log"), "server generation two");
+    var secondLogArchive = logArchiveService.ArchiveLogsForStart(
+        server, new DateTimeOffset(2026, 9, 28, 8, 0, 0, TimeSpan.FromHours(10)));
+    File.WriteAllText(Path.Combine(serverLogRoot, "RustDedicated.log"), "server generation three");
+    var thirdLogArchive = logArchiveService.ArchiveLogsForStart(
+        server, new DateTimeOffset(2026, 9, 28, 9, 0, 0, TimeSpan.FromHours(10)));
+    var retainedArchives = thirdLogArchive.ArchivePath == null
+        ? []
+        : Directory.GetFiles(Path.GetDirectoryName(thirdLogArchive.ArchivePath)!, "*.zip");
+    Check(secondLogArchive.Succeeded
+          && thirdLogArchive.Succeeded
+          && retainedArchives.Length == ServerHygieneService.RetainedLogArchives
+          && firstLogArchive.ArchivePath != null
+          && !File.Exists(firstLogArchive.ArchivePath)
+          && secondLogArchive.ArchivePath != null
+          && File.Exists(secondLogArchive.ArchivePath)
+          && File.Exists(thirdLogArchive.ArchivePath!),
+        "log archive retention keeps exactly the latest two server starts");
+
+    var lockedLogPath = Path.Combine(serverLogRoot, "RustDedicated.log");
+    File.WriteAllText(lockedLogPath, "must survive a failed archive");
+    LogArchiveResult failedLogArchive;
+    using (var lockedLog = new FileStream(lockedLogPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+    {
+        failedLogArchive = logArchiveService.ArchiveLogsForStart(
+            server, new DateTimeOffset(2026, 9, 28, 10, 0, 0, TimeSpan.FromHours(10)));
+    }
+    var archiveDirectory = thirdLogArchive.ArchivePath == null
+        ? null
+        : Path.GetDirectoryName(thirdLogArchive.ArchivePath);
+    Check(!failedLogArchive.Succeeded
+          && File.Exists(lockedLogPath)
+          && archiveDirectory != null
+          && Directory.GetFiles(archiveDirectory, "*.zip").Length
+              == ServerHygieneService.RetainedLogArchives
+          && !Directory.EnumerateFiles(archiveDirectory, "*.tmp").Any(),
+        "a failed log archive never deletes the only diagnostic copy");
 
     var oxideManaged = Path.Combine(server.InstallPath, "RustDedicated_Data", "Managed");
     Directory.CreateDirectory(oxideManaged);

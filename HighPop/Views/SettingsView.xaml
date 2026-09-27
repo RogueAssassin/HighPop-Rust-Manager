@@ -39,6 +39,8 @@
                     <TextBox Style="{StaticResource DarkTextBox}"
                              Text="{Binding SteamCmdPath}" IsReadOnly="True"
                              Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="Shared by every managed server, including servers installed outside the HPRM folder."
+                               FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"/>
                     <CheckBox IsChecked="{Binding StartWithWindows}" Style="{StaticResource DarkCheckBox}"
                               Content="Start HighPop automatically with Windows" Margin="0,14,0,0"/>
                     <TextBlock Text="Creates a current-user Windows logon task and starts HighPop directly in background/tray mode."

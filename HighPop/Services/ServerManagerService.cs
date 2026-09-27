@@ -118,6 +118,7 @@ public class ServerManagerService
     private readonly ConfigService _config;
     private readonly RustTelemetryService _telemetry;
     private readonly ServerLifecycleCoordinator _lifecycle;
+    private readonly ServerHygieneService _hygiene;
     private readonly ConcurrentDictionary<string, ServerInstance> _running = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _lifecycleGates = new();
     private readonly ConcurrentDictionary<string, ConcurrentQueue<DateTime>> _crashHistory = new();
@@ -135,12 +136,14 @@ public class ServerManagerService
         ConfigService config,
         NetworkMonitorService network,
         RustTelemetryService telemetry,
-        ServerLifecycleCoordinator lifecycle)
+        ServerLifecycleCoordinator lifecycle,
+        ServerHygieneService hygiene)
     {
         _config  = config;
         _network = network;
         _telemetry = telemetry;
         _lifecycle = lifecycle;
+        _hygiene = hygiene;
         _lifecycle.Transitioned += transition => LifecycleChanged?.Invoke(transition);
     }
 
@@ -419,6 +422,38 @@ public class ServerManagerService
                 await Task.Delay(1000); // brief pause so OS releases ports
         }
 
+        // Start every Rust generation with fresh server/framework logs. The previous
+        // generation is first committed to a bounded ZIP archive, so a failed archive can
+        // never destroy the only diagnostic copy.
+        var logArchive = await Task.Run(() => _hygiene.ArchiveLogsForStart(server), operationToken);
+        operationToken.ThrowIfCancellationRequested();
+        if (!logArchive.Succeeded)
+        {
+            var warning = new ConsoleMessage
+            {
+                Text = $"[LOG ARCHIVE] ⚠ {logArchive.Error}",
+                Type = ConsoleMessageType.Warning,
+            };
+            inst0.AddToLog(warning);
+            LogReceived?.Invoke(server.Id, warning);
+        }
+        else if (logArchive.ArchivePath != null)
+        {
+            var archived = new ConsoleMessage
+            {
+                Text = $"[LOG ARCHIVE] Saved {logArchive.ArchivedFiles} file(s) " +
+                       $"({FormatByteCount(logArchive.ArchivedBytes)}) to {logArchive.ArchivePath}. " +
+                       $"Keeping the latest {ServerHygieneService.RetainedLogArchives} start archives.",
+                Type = logArchive.DeleteFailures == 0
+                    ? ConsoleMessageType.System
+                    : ConsoleMessageType.Warning,
+            };
+            if (logArchive.DeleteFailures > 0)
+                archived.Text += $" {logArchive.DeleteFailures} source file(s) could not be removed and will be retried next start.";
+            inst0.AddToLog(archived);
+            LogReceived?.Invoke(server.Id, archived);
+        }
+
         // Pre-flight: auto-reassign ports if any are in use
         var conflictingPorts = PortCheckerService.CheckServerPorts(server).Where(r => !r.IsAvailable).ToList();
         if (conflictingPorts.Any() && server.LastStarted == null)
@@ -671,11 +706,6 @@ public class ServerManagerService
         };
 
         operationToken.ThrowIfCancellationRequested();
-
-        // Match the clean batch-file launch for Oxide: use real hidden console handles with
-        // no redirected standard streams and make a fresh logfile HPRM's sole console source.
-        if (useOxideLiveLog)
-            RotateOxideLogForLaunch(server);
 
         try
         {
@@ -1368,24 +1398,12 @@ public class ServerManagerService
     internal static bool ShouldUseOxideLiveLog(bool oxideInstalled, bool carbonInstalled)
         => oxideInstalled && !carbonInstalled;
 
-    private static void RotateOxideLogForLaunch(GameServer server)
-    {
-        var logDirectory = RustPlugin.GetEffectiveLogDirectory(server);
-        Directory.CreateDirectory(logDirectory);
-        var current = Path.Combine(logDirectory, "RustDedicated.log");
-        if (!File.Exists(current)) return;
-
-        var previous = Path.Combine(logDirectory, "RustDedicated.previous.log");
-        try
-        {
-            File.Move(current, previous, overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            throw new IOException(
-                $"HighPop could not rotate the previous Oxide log before startup: {current}", ex);
-        }
-    }
+    private static string FormatByteCount(long bytes)
+        => bytes >= 1024L * 1024 * 1024
+            ? $"{bytes / (1024d * 1024 * 1024):F2} GB"
+            : bytes >= 1024L * 1024
+                ? $"{bytes / (1024d * 1024):F1} MB"
+                : $"{bytes / 1024d:F1} KB";
 
     private bool RemoveInstanceIfCurrent(string serverId, ServerInstance instance)
     {
