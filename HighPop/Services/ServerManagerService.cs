@@ -425,6 +425,13 @@ public class ServerManagerService
         // Start every Rust generation with fresh server/framework logs. The previous
         // generation is first committed to a bounded ZIP archive, so a failed archive can
         // never destroy the only diagnostic copy.
+        var archiveStatus = new ConsoleMessage
+        {
+            Text = "[LOG ARCHIVE] Checking and archiving previous Rust, Oxide, and Carbon logs before startup...",
+            Type = ConsoleMessageType.System,
+        };
+        inst0.AddToLog(archiveStatus);
+        LogReceived?.Invoke(server.Id, archiveStatus);
         var logArchive = await Task.Run(() => _hygiene.ArchiveLogsForStart(server), operationToken);
         operationToken.ThrowIfCancellationRequested();
         if (!logArchive.Succeeded)
