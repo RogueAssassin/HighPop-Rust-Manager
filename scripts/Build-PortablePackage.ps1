@@ -42,7 +42,9 @@ try {
         "HPRM/HighPop.exe",
         "HPRM/CHANGELOG.md",
         "HPRM/assets/README.txt",
-        "HPRM/assets/presets/rust_highpop.json"
+        "HPRM/assets/presets/rust_highpop.json",
+        "HPRM/assets/presets/rust_vanilla_1000.json",
+        "HPRM/assets/presets/rust_vanilla_6000.json"
     )) {
         if ($entries -notcontains $required) { throw "Portable ZIP is missing $required" }
     }

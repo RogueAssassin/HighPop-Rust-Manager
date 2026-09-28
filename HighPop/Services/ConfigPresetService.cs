@@ -11,6 +11,8 @@ public class ConfigPreset
     public string Description { get; set; } = string.Empty;
     /// <summary>Config file path relative to the server install directory.</summary>
     public string ConfigFile  { get; set; } = string.Empty;
+    /// <summary>Optional Rust procedural map size used to order and describe map presets.</summary>
+    public int? MapSize { get; set; }
     /// <summary>Key-value pairs to merge into the config file (KEY=VALUE format).</summary>
     public Dictionary<string, string> Values { get; set; } = [];
 }
@@ -35,7 +37,11 @@ public class ConfigPresetService
             }
             catch { }
         }
-        return result;
+        return result
+            .OrderBy(preset => preset.MapSize.HasValue ? 1 : 0)
+            .ThenBy(preset => preset.MapSize ?? 0)
+            .ThenBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
@@ -105,6 +111,24 @@ public class ConfigPresetService
         }
 
         File.WriteAllLines(configPath, lines);
+        SynchronizeLaunchSettings(server, preset);
         return string.IsNullOrEmpty(backupPath) ? configPath : backupPath;
+    }
+
+    private static void SynchronizeLaunchSettings(GameServer server, ConfigPreset preset)
+    {
+        if (preset.Values.TryGetValue("server.maxplayers", out var maxPlayersText)
+            && int.TryParse(maxPlayersText, out var maxPlayers) && maxPlayers > 0)
+            server.MaxPlayers = maxPlayers;
+
+        var mapSizeText = preset.Values.TryGetValue("server.worldsize", out var configuredMapSize)
+            ? configuredMapSize
+            : preset.MapSize?.ToString();
+        if (int.TryParse(mapSizeText, out var mapSize) && mapSize is >= 1000 and <= 6000)
+            server.GameSpecificSettings["worldSize"] = mapSize.ToString();
+
+        if (preset.Values.TryGetValue("server.saveinterval", out var saveIntervalText)
+            && int.TryParse(saveIntervalText, out var saveInterval) && saveInterval > 0)
+            server.GameSpecificSettings["saveInterval"] = saveInterval.ToString();
     }
 }

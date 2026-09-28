@@ -753,6 +753,20 @@ try
           }, "portable moderation records persist");
 
     var presetService = new ConfigPresetService();
+    var mapPresets = presetService.GetPresetsForGame("rust")
+        .Where(candidate => candidate.MapSize.HasValue)
+        .ToList();
+    Check(mapPresets.Count == 11
+          && mapPresets.Select(candidate => candidate.MapSize!.Value)
+              .SequenceEqual(Enumerable.Range(0, 11).Select(index => 1000 + (index * 500))),
+        "all map-size presets load in deterministic order");
+
+    var map4500 = mapPresets.SingleOrDefault(candidate => candidate.MapSize == 4500);
+    Check(map4500 != null
+          && map4500.Values["motorrowboat.population"] == "12"
+          && map4500.Values["modularcar.population"] == "10",
+        "4500 map preset retains supplied area-scaled vehicle targets");
+
     var preset = new ConfigPreset
     {
         GameId = "rust",
@@ -762,6 +776,15 @@ try
     };
     var applied = presetService.ApplyPreset(server, preset);
     Check(applied != null && File.Exists(applied), "preset creates config");
+
+    if (map4500 != null)
+    {
+        presetService.ApplyPreset(server, map4500);
+        Check(server.MaxPlayers == 150
+              && server.GameSpecificSettings["worldSize"] == "4500"
+              && server.GameSpecificSettings["saveInterval"] == "300",
+            "map preset synchronizes command-line launch settings");
+    }
 
     var traversalRejected = false;
     try

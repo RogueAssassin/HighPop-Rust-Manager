@@ -1,0 +1,9 @@
+{
+  "GameId": "rust", "Name": "Vanilla map 2000 (50 players)", "Description": "Conservative 2000-map baseline with density-safe wildlife and area-scaled vehicle targets. All values remain editable after applying.", "ConfigFile": "server\\{identity}\\cfg\\server.cfg", "MapSize": 2000,
+  "Values": {
+    "server.worldsize": "2000", "server.maxplayers": "50", "server.saveinterval": "300", "server.secure": "true", "server.encryption": "1", "server.pve": "false", "server.radiation": "true", "server.printReportsToConsole": "true",
+    "bear.population": "2", "boar.population": "7", "chicken.population": "5", "stag.population": "5", "wolf2.population": "3", "ridablehorse.population": "4",
+    "motorrowboat.population": "2", "rhib.rhibpopulation": "1", "minicopter.population": "1", "scraptransporthelicopter.population": "0", "modularcar.population": "2", "hotairballoon.population": "1",
+    "npc.vendor_minicopter_enabled": "true", "npc.vendor_scrap_heli_enabled": "true", "npc.vendor_rowboat_enabled": "true", "npc.vendor_rhib_enabled": "true", "npc.vendor_sub_solo_enabled": "true", "npc.vendor_sub_duo_enabled": "true"
+  }
+}

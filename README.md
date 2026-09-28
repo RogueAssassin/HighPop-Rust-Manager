@@ -28,7 +28,7 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 | Automation | Once, daily, weekly, and repeating schedules for lifecycle, update, backup, wipe, broadcast, and console actions |
 | Monitoring | CPU, memory, network, players, readiness signals, health checks, log watches, crash-risk warnings, local telemetry, and support bundles with secret redaction |
 | Remote operations | Optional token-protected REST API and dashboard, Discord status/admin controls, webhooks, SMTP notifications, and multi-machine views |
-| Windows integration | Portable storage, system tray, per-user logon task, Windows Explorer shortcuts, firewall rules, and optional UPnP mappings |
+| Windows integration | Portable storage, system tray, per-user logon task, Windows Explorer shortcuts, elevation-aware firewall rules, and optional UPnP mappings |
 | Application updates | Startup release check and install prompt, four-hour background checks, manual About-page check, SHA-256 verification, in-place replacement, and automatic restart |
 
 ## Install
@@ -38,7 +38,9 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 3. Extract the complete `HPRM` folder to a writable location.
 4. Run `HighPop.exe`, add a server, review its four ports, and select **Install**.
 
-The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes.
+The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
+
+HPRM v0.9 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
 
 ## Portable layout
 

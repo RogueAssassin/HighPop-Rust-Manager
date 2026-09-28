@@ -806,7 +806,8 @@ public class ServerManagerService
         {
             var firewall = FirewallService.AddRules(server);
             if (!firewall.Success)
-                InjectLogLine(server.Id, $"[Firewall] {firewall.Message}", ConsoleMessageType.Error);
+                InjectLogLine(server.Id, $"[Firewall] {firewall.Message}",
+                    firewall.RequiresElevation ? ConsoleMessageType.Warning : ConsoleMessageType.Error);
         }
 
         SetStatus(server, ServerStatus.Running);

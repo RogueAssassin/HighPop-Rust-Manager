@@ -46,6 +46,9 @@ jobs:
           if (-not (Test-Path publish_out/HighPop.exe)) { throw "HighPop.exe was not produced" }
           if (-not (Test-Path publish_out/assets/README.txt)) { throw "assets/README.txt was not produced" }
           if (-not (Test-Path publish_out/assets/presets/rust_highpop.json)) { throw "Rust presets were not produced" }
+          $mapPresets = @(Get-ChildItem publish_out/assets/presets/rust_vanilla_*.json |
+            Where-Object { $_.BaseName -match '^rust_vanilla_(1000|1500|2000|2500|3000|3500|4000|4500|5000|5500|6000)$' })
+          if ($mapPresets.Count -ne 11) { throw "Expected 11 Rust map-size presets, found $($mapPresets.Count)" }
 
       - name: Assemble and verify HPRM portable package
         shell: pwsh
