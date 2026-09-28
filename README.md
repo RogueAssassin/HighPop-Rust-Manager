@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.0-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.1-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -41,11 +41,11 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 
 The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
 
-HPRM v1.0.0 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
+HPRM v1.0.1 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
 
 ### Supported server software
 
-| Component | v1.0.0 support |
+| Component | v1.0.1 support |
 |---|---|
 | Rust Dedicated Server | Steam public and staging branches through SteamCMD |
 | Carbon | Current installed/released Carbon framework with process-stream console reporting |
@@ -84,6 +84,10 @@ HPRM/
 Before each start or restart, HighPop writes the completed Rust, Oxide, and Carbon logs to a
 dated ZIP under `assets/logsbackup/<server>/`. It removes the source logs only after the ZIP is
 successfully closed and retains exactly the latest two archives for troubleshooting.
+
+Official presets are embedded in `HighPop.exe` as well as included in the portable ZIP. HighPop
+restores missing preset files at startup and updates unchanged built-in presets when their bundled
+revision changes. Custom preset files and locally edited built-in presets are never overwritten.
 
 Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up an installation. Secrets are protected with Windows DPAPI for the current Windows user and machine; do not publish `assets/data`.
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1
+
+- Fixed in-app updates installing only `HighPop.exe` and omitting new external assets such as the eleven map-size presets.
+- Embedded the shipped presets in the executable so existing v1.0.0 installations automatically restore missing preset files on their first v1.0.1 start.
+- Added managed preset hash tracking: missing and unchanged built-in presets update automatically, while custom and locally edited presets remain untouched.
+- Updated the self-updater to validate and stage `HPRM/assets/**` from the release ZIP and merge missing packaged assets without deleting runtime data or operator-created files.
+
 ## 1.0.0
 
 - Promoted the completed testing work as the v1 stable HighPop Rust Manager release line.

@@ -1,7 +1,7 @@
 HighPop runtime assets
 ======================
 
-HighPop Rust Manager v1.0.0
+HighPop Rust Manager v1.0.1
 
 HighPop.exe is self-contained. This folder contains HighPop application state; managed Rust
 installations are stored separately in the sibling HPRM/Servers folder:
@@ -9,6 +9,8 @@ installations are stored separately in the sibling HPRM/Servers folder:
 HighPop checks for a newer official release when it starts and every four hours while running.
 Available releases can be installed from the startup prompt, title-bar badge, or the manual
 Check for update action on the About page. Downloads are SHA-256 verified before replacement.
+Bundled presets are also embedded in HighPop.exe. Missing presets are restored at startup, while
+custom files and locally edited presets are preserved.
 
 Production Rust profiles use the Always-on recovery policy by default. Always-on retries an
 unexpected exit only after HighPop deliberately started or reattached the server. It never starts

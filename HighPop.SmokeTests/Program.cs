@@ -12,11 +12,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.0", "application and release metadata report v1.0.0");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.0", "0.9.0")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.0")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.0", "1.0.0")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.0"),
+Check(AppInfo.Version == "1.0.1", "application and release metadata report v1.0.1");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.1", "1.0.0")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.1")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.1", "1.0.1")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.1"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -304,6 +304,35 @@ var testRoot = Path.Combine(Path.GetTempPath(), "highpop-smoke-" + Guid.NewGuid(
 try
 {
     Directory.CreateDirectory(testRoot);
+
+    var assetRepairRoot = Path.Combine(testRoot, "asset-repair");
+    var restoredPresetCount = BundledAssetService.EnsurePresets(assetRepairRoot);
+    var repairedPresetsDir = Path.Combine(assetRepairRoot, "assets", "presets");
+    Check(restoredPresetCount == 13
+          && Directory.GetFiles(repairedPresetsDir, "*.json").Length == 13
+          && File.Exists(Path.Combine(assetRepairRoot, "assets", "data", "bundled-presets.json")),
+        "embedded application presets restore into a missing assets folder");
+
+    var locallyEditedPreset = Path.Combine(repairedPresetsDir, "rust_vanilla_1000.json");
+    await File.AppendAllTextAsync(locallyEditedPreset, "\n// local operator edit");
+    Check(BundledAssetService.EnsurePresets(assetRepairRoot) == 0
+          && (await File.ReadAllTextAsync(locallyEditedPreset)).Contains("local operator edit"),
+        "embedded preset repair preserves locally edited files");
+
+    var missingPreset = Path.Combine(repairedPresetsDir, "rust_vanilla_1500.json");
+    File.Delete(missingPreset);
+    Check(BundledAssetService.EnsurePresets(assetRepairRoot) == 1 && File.Exists(missingPreset),
+        "embedded preset repair restores a deleted built-in preset");
+
+    Check(SelfUpdateService.TryGetSafeAssetRelativePath(
+              "HPRM/assets/presets/rust_vanilla_6000.json", out var safeAssetPath)
+          && safeAssetPath.EndsWith(Path.Combine("presets", "rust_vanilla_6000.json"))
+          && !SelfUpdateService.TryGetSafeAssetRelativePath(
+              "HPRM/assets/../Servers/escaped.json", out _)
+          && !SelfUpdateService.TryGetSafeAssetRelativePath(
+              "/HPRM/assets/presets/escaped.json", out _),
+        "self-update asset staging accepts packaged assets and rejects traversal");
+
     var legacyServerRoot = Path.Combine(testRoot, "assets", "servers");
     var portableServerRoot = Path.Combine(testRoot, "Servers");
     var legacyServerPath = Path.Combine(legacyServerRoot, "server-one");

@@ -21,6 +21,7 @@ public static class SelfUpdateService
         Directory.CreateDirectory(updateDir);
         var tempZip    = Path.Combine(updateDir, "_highpop_update.zip");
         var newExePath = Path.Combine(updateDir, "_highpop_new.exe");
+        var stagedAssetsPath = Path.Combine(updateDir, "_highpop_assets");
         var batPath    = Path.Combine(updateDir, "_highpop_update.bat");
 
         try
@@ -42,9 +43,12 @@ public static class SelfUpdateService
             await File.WriteAllBytesAsync(tempZip, bytes);
             Report(progress, 60, "Extracting...");
 
+            if (Directory.Exists(stagedAssetsPath))
+                Directory.Delete(stagedAssetsPath, recursive: true);
+
             using var zip = ZipFile.OpenRead(tempZip);
             var entry = zip.Entries.FirstOrDefault(e =>
-                e.Name.Equals("HighPop.exe", StringComparison.OrdinalIgnoreCase));
+                NormalizeEntry(e.FullName).Equals("HPRM/HighPop.exe", StringComparison.OrdinalIgnoreCase));
 
             if (entry == null)
                 throw new InvalidOperationException("HighPop.exe was not found inside the release zip.");
@@ -53,6 +57,28 @@ public static class SelfUpdateService
 
             if (File.Exists(newExePath)) File.Delete(newExePath);
             entry.ExtractToFile(newExePath);
+
+            var stagedAssetCount = 0;
+            foreach (var assetEntry in zip.Entries)
+            {
+                if (!TryGetSafeAssetRelativePath(assetEntry.FullName, out var relativePath)
+                    || string.IsNullOrEmpty(assetEntry.Name))
+                    continue;
+
+                var destination = Path.GetFullPath(Path.Combine(stagedAssetsPath, relativePath));
+                var stagingRoot = Path.GetFullPath(stagedAssetsPath)
+                                  .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                                  + Path.DirectorySeparatorChar;
+                if (!destination.StartsWith(stagingRoot, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("The release contains an unsafe asset path.");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                assetEntry.ExtractToFile(destination, overwrite: true);
+                stagedAssetCount++;
+            }
+
+            if (stagedAssetCount == 0)
+                throw new InvalidDataException("The release ZIP does not contain application assets.");
             Report(progress, 80, "Preparing update script...");
 
             var pid = Environment.ProcessId;
@@ -63,10 +89,18 @@ if not errorlevel 1 (
     timeout /t 1 /nobreak >nul
     goto wait
 )
+robocopy ""{stagedAssetsPath}"" ""{Path.Combine(exeDir, "assets")}"" /E /XC /XN /XO /COPY:DAT /DCOPY:DAT /R:2 /W:1 >nul
+if errorlevel 8 goto update_failed
 move /y ""{newExePath}"" ""{exePath}""
+if errorlevel 1 goto update_failed
+rmdir /s /q ""{stagedAssetsPath}"" 2>nul
 start """" ""{exePath}""
 del ""{tempZip}"" 2>nul
 del ""%~f0""
+exit /b 0
+:update_failed
+start """" ""{exePath}""
+exit /b 1
 ";
             await File.WriteAllTextAsync(batPath, bat);
             Report(progress, 100, "Ready — restarting...");
@@ -78,6 +112,7 @@ del ""%~f0""
             Report(progress, 0, $"Error: {ex.Message}");
             try { if (File.Exists(tempZip))    File.Delete(tempZip); }    catch { }
             try { if (File.Exists(newExePath)) File.Delete(newExePath); } catch { }
+            try { if (Directory.Exists(stagedAssetsPath)) Directory.Delete(stagedAssetsPath, true); } catch { }
             try { if (File.Exists(batPath))    File.Delete(batPath); }    catch { }
             return false;
         }
@@ -138,8 +173,35 @@ del ""%~f0""
             catch { }
         }
 
+        try
+        {
+            var stagedAssetsPath = Path.Combine(updateDir, "_highpop_assets");
+            if (Directory.Exists(stagedAssetsPath)) Directory.Delete(stagedAssetsPath, recursive: true);
+        }
+        catch { }
+
         return updateFailed;
     }
+
+    internal static bool TryGetSafeAssetRelativePath(string entryName, out string relativePath)
+    {
+        relativePath = string.Empty;
+        var normalized = NormalizeEntry(entryName);
+        const string prefix = "HPRM/assets/";
+        if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+
+        var candidate = normalized[prefix.Length..];
+        if (string.IsNullOrWhiteSpace(candidate)
+            || candidate.StartsWith('/')
+            || candidate.Split('/').Any(part => part is "" or "." or ".."))
+            return false;
+
+        relativePath = candidate.Replace('/', Path.DirectorySeparatorChar);
+        return true;
+    }
+
+    private static string NormalizeEntry(string entryName) =>
+        entryName.Replace('\\', '/');
 
     private static void Report(IProgress<(int, string)>? p, int pct, string msg)
         => p?.Report((pct, msg));

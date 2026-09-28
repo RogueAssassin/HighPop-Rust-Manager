@@ -69,6 +69,22 @@ public partial class App : System.Windows.Application
 
         WriteLog("=== HighPop starting ===");
 
+        try
+        {
+            var restoredPresets = BundledAssetService.EnsurePresets(exeDir);
+            if (restoredPresets > 0)
+                WriteLog($"Restored {restoredPresets} bundled preset file(s).");
+        }
+        catch (Exception ex)
+        {
+            WriteLog($"BUNDLED ASSETS: {ex}");
+            System.Windows.MessageBox.Show(
+                $"HighPop could not restore its bundled presets: {ex.Message}",
+                "HighPop — Asset repair",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+
         if (SelfUpdateService.CleanupLeftovers())
         {
             System.Windows.MessageBox.Show(

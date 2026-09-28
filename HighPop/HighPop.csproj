@@ -6,10 +6,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>HighPop</RootNamespace>
     <AssemblyName>HighPop</AssemblyName>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
-    <InformationalVersion>1.0.0</InformationalVersion>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
+    <InformationalVersion>1.0.1</InformationalVersion>
     <AssemblyTitle>HighPop Rust Manager</AssemblyTitle>
     <Product>HighPop Rust Manager</Product>
     <Description>Local-first Windows management and administration for high-population Rust servers.</Description>
@@ -49,6 +49,8 @@
   <ItemGroup>
     <Content Include="assets\README.txt" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <Content Include="assets\presets\**\*.json" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <EmbeddedResource Include="assets\presets\**\*.json"
+                      LogicalName="HighPop.assets.presets.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
