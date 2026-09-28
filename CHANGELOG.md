@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased — testing
+## 1.0.0
 
+- Promoted the completed testing work as the v1 stable HighPop Rust Manager release line.
 - Added eleven editable vanilla map presets from 1000 through 6000 in 500-unit increments, with the independent 150-player vanilla default, fixed wildlife densities, area-scaled vehicle targets, vendor defaults, and synchronized profile/launch settings.
 - Made preset ordering deterministic, expanded the preset UI guidance and new-map warning, and added build/package checks for the full preset set.
 - Hardened Windows Firewall setup with an explicit elevation preflight, friendly Windows service/Group Policy/COM diagnostics, bounded rule names, COM cleanup, per-server opt-out controls, and warning-level reporting when elevation is the only blocker.
@@ -9,6 +10,7 @@
 - Added transactional start/restart log archiving for Rust, Oxide, and Carbon. Completed logs are zipped beneath `assets/logsbackup/<server>/` with date-and-time filenames, source files are removed only after the ZIP succeeds, and only the latest two start archives are retained per server.
 - Centralized the shared SteamCMD installation at `assets/SteamCMD` for every managed server, including automatic migration from the previous `assets/data/steamcmd` location.
 - Updated the source-build guide with a safe process-scoped PowerShell execution-policy bypass for unsigned local build scripts.
+- Confirmed the self-contained .NET 10 Windows x64 build for Windows 10/11 and Windows Server 2012 through 2025 where the selected .NET/Windows lifecycle combination remains supported; Windows 7 and Windows Server 2008 R2 are not supported by the current runtime.
 
 ## 0.9.0
 

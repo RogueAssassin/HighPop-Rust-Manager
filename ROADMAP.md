@@ -115,42 +115,56 @@ Delivered and promoted from `testing`:
 - Startup, periodic, title-bar, and manual About-page application update checks with verified in-place installation
 - Minimal CI-verified portable package containing only the executable, assets, and changelog
 
-Planned integration order after v0.9.0:
+## v1.0.0 — Stable HighPop release
 
-### v0.9.1 — Maintenance policy and preflight
+Delivered from the tested v0.9 production baseline:
+
+- Bounded Rust, Oxide, and Carbon log archival with two dated recovery archives per server
+- One shared portable SteamCMD installation beneath `assets/SteamCMD`
+- Eleven editable world-size presets from 1000 through 6000 with world-size-based spawning
+- Hardened Windows Firewall setup and per-server automatic firewall controls
+- Portable per-server HPRM profile export/import with moved-install relinking, safe runtime reset, secret omission, and conflict-free ports
+- Self-contained Windows x64 delivery, verified application updates, and the minimal `HPRM` portable package
+- Documented support for Windows 10/11 and Windows Server 2012 through 2025 within supported .NET/Windows lifecycle combinations
+
+## Post-v1.0 roadmap
+
+### v1.1 — Transactional maintenance and recovery
+
+Maintenance policy and preflight:
 
 - Add per-server maintenance windows with player thresholds, bounded deferral, operator override, quiet-hours handling, and cancellable countdowns
 - Preflight disk space, install ownership, Steam build identity, backup destination, framework state, and writable rollback storage before stopping Rust
 - Persist one maintenance operation ID across countdown, save, stop, stage, commit, framework verification, and return-to-service
 
-### v0.9.2 — Staged update transaction
+Staged update transaction:
 
 - Download and validate SteamCMD updates in a sibling staging directory without mutating the live server
 - Commit staged files with an exact rollback manifest; reject path traversal, cross-volume non-atomic assumptions, and incomplete manifests
 - Resume or roll back interrupted operations after manager/host restart, with explicit terminal results in the lifecycle journal
 
-### v0.9.2 — Framework-safe return to service
+Framework-safe return to service:
 
 - Snapshot and verify Carbon, Oxide/uMod, RogueRust, plugin, and config state before maintenance
 - Reapply only artifacts invalidated by the Rust update, then run framework/RogueRust readiness probes before admitting players
 - Broadcast reason, remaining time, save start, shutdown, rollback, and return-to-service through Rust with RogueRust enrichment when available
 
-### v0.9.3 — Verified recovery points
+Verified recovery points:
 
 - Verify every maintenance backup by reading the archive, validating its manifest/hash set, and enforcing path safety before destructive work
 - Add opt-in scheduled restore drills into an isolated directory with recovery-point and recovery-time reporting
 - Add retention and disk-pressure policies that never delete the last verified full recovery chain
 
-### v0.9 release gates
+Release gates:
 
 - Failure injection at every transaction boundary proves either the old or new installation remains bootable
 - Host/manager restart tests cover countdown, download, staging, commit, rollback, framework verification, and restart
 - Multi-server tests prove disk/network/process concurrency stays bounded and one server's maintenance cannot block unrelated lifecycle work
-- The full v0.8 lifecycle/manual-stop matrix remains green on the final v0.9 `testing` head
+- The full lifecycle/manual-stop matrix remains green on the final `testing` head
 
 Performance benefit: non-destructive build-ID checks remain lightweight; downloads and validation run with bounded disk/network concurrency; update work cannot block the UI or leave half-replaced server files.
 
-## v0.10 — Complete operator-interface overhaul
+## v1.2 — Complete operator-interface overhaul
 
 - Split the server workspace into focused Operations, Console, Rust, Automation, Mods, Players, Map, Telemetry, and Files modules
 - Carry the Rogue identity through consistent typography, iconography, cards, dialogs, selection states, and progress surfaces
@@ -161,7 +175,7 @@ Performance benefit: non-destructive build-ID checks remain lightweight; downloa
 
 Performance benefit: smaller view models, lower initial visual-tree cost, less retained UI state, and smoother large-server operation. Target no background-operation UI stall over 250 ms.
 
-## v0.11 — Secure RogueRust live map
+## v1.3 — Secure RogueRust live map
 
 RogueRust bridge:
 
@@ -182,7 +196,7 @@ Map experience:
 
 Performance targets: delta rather than full-state updates, coalesced UI rendering, configurable 1–5 second sampling, bounded queues, and less than 1% average Rust main-thread overhead in the test profile. A 72-hour player/entity churn soak must show no unbounded memory, queue, or disk growth.
 
-## v1.0 — Service-grade HighPop
+## v2.0 — Service-grade HighPop
 
 - Move lifecycle, scheduling, health, update, and recovery ownership from the current tray/background host into a true headless Windows service
 - Use authenticated local IPC with least privilege, operator roles, and tamper-evident audit records
