@@ -758,7 +758,8 @@ try
         .ToList();
     Check(mapPresets.Count == 11
           && mapPresets.Select(candidate => candidate.MapSize!.Value)
-              .SequenceEqual(Enumerable.Range(0, 11).Select(index => 1000 + (index * 500))),
+              .SequenceEqual(Enumerable.Range(0, 11).Select(index => 1000 + (index * 500)))
+          && mapPresets.All(candidate => candidate.Values["server.maxplayers"] == "150"),
         "all map-size presets load in deterministic order");
 
     var map4500 = mapPresets.SingleOrDefault(candidate => candidate.MapSize == 4500);
@@ -785,6 +786,30 @@ try
               && server.GameSpecificSettings["saveInterval"] == "300",
             "map preset synchronizes command-line launch settings");
     }
+
+    var profileTransfer = new ServerProfileTransferService();
+    var profilePath = Path.Combine(testRoot, "portable.hprm-server.json");
+    server.RconPassword = "rcon-secret-value";
+    server.ServerPassword = "join-secret-value";
+    server.DiscordWebhookUrl = "https://discord.invalid/secret-value";
+    server.RunningPid = 4242;
+    server.DesiredState = ServerDesiredState.Running;
+    profileTransfer.Export(server, profilePath);
+    var exportedText = File.ReadAllText(profilePath);
+    Check(!exportedText.Contains("rcon-secret-value", StringComparison.Ordinal)
+          && !exportedText.Contains("join-secret-value", StringComparison.Ordinal)
+          && !exportedText.Contains("secret-value", StringComparison.Ordinal),
+        "portable server profile excludes credentials");
+    var importedDocument = profileTransfer.Read(profilePath);
+    var movedInstallPath = Path.Combine(testRoot, "moved-rust-server");
+    var importedServer = profileTransfer.PrepareImport(importedDocument, movedInstallPath);
+    Check(importedServer.Id != server.Id
+          && importedServer.InstallPath == Path.GetFullPath(movedInstallPath)
+          && importedServer.RunningPid == 0
+          && importedServer.DesiredState == ServerDesiredState.Stopped
+          && importedServer.RconPassword.Length == 0
+          && importedServer.GameSpecificSettings["worldSize"] == "4500",
+        "portable server profile relinks moved installs and resets runtime state");
 
     var traversalRejected = false;
     try

@@ -29,6 +29,7 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 | Monitoring | CPU, memory, network, players, readiness signals, health checks, log watches, crash-risk warnings, local telemetry, and support bundles with secret redaction |
 | Remote operations | Optional token-protected REST API and dashboard, Discord status/admin controls, webhooks, SMTP notifications, and multi-machine views |
 | Windows integration | Portable storage, system tray, per-user logon task, Windows Explorer shortcuts, elevation-aware firewall rules, and optional UPnP mappings |
+| Profile portability | Per-server HPRM settings export/import, moved-install relinking, conflict-safe port reassignment, and plaintext-secret exclusion |
 | Application updates | Startup release check and install prompt, four-hour background checks, manual About-page check, SHA-256 verification, in-place replacement, and automatic restart |
 
 ## Install

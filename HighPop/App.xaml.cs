@@ -176,6 +176,7 @@ public partial class App : System.Windows.Application
         s.AddSingleton<DiscordBotService>();
         s.AddSingleton<ConfigEditorService>();
         s.AddSingleton<ConfigPresetService>();
+        s.AddSingleton<ServerProfileTransferService>();
         s.AddSingleton<PlayerStatsService>();
         s.AddSingleton<PerfHistoryService>();
         s.AddSingleton<UPnPService>();

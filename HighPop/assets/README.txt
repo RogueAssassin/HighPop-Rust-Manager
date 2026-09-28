@@ -29,6 +29,10 @@ checks build IDs first and broadcasts the configured countdown before maintenanc
 - logsbackup/ latest two dated Rust, Oxide, and Carbon start archives per server
 - presets/    editable Rust configuration presets
 
+Each server can export a portable .hprm-server.json settings profile. Import asks for the current
+Rust installation folder so a moved server can be relinked. Server files are not embedded, and
+RCON/server passwords and Discord webhooks are intentionally omitted from plaintext exports.
+
 Before every server start or restart, completed Rust, Oxide, and Carbon logs are archived into
 logsbackup/<server>/<date_time>.zip. Source logs are removed only after the ZIP succeeds.
 

@@ -38,6 +38,7 @@ public partial class MainViewModel : BaseViewModel
     private readonly CrashPredictionService    _crashPrediction;
     private readonly LogWatcherService         _logWatcher;
     private readonly ServerHealthService       _healthCheck;
+    private readonly ServerProfileTransferService _profileTransfer;
     private readonly UPnPService               _upnp;
     private readonly WakeOnDemandService       _wakeOnDemand;
     private readonly System.Timers.Timer       _autoSaveTimer;
@@ -164,7 +165,8 @@ public partial class MainViewModel : BaseViewModel
         UPnPService upnp, WakeOnDemandService wakeOnDemand, GroupBanListService groupBans,
         RustModerationService moderation, ServerHygieneService hygiene,
         ConfigPresetService presets, LogWatcherService logWatcher,
-        ServerHealthService healthCheck, RustTelemetryService telemetry)
+        ServerHealthService healthCheck, RustTelemetryService telemetry,
+        ServerProfileTransferService profileTransfer)
     {
         _groupBans = groupBans;
         _moderation = moderation;
@@ -195,6 +197,7 @@ public partial class MainViewModel : BaseViewModel
         _crashPrediction = crashPrediction;
         _logWatcher      = logWatcher;
         _healthCheck     = healthCheck;
+        _profileTransfer = profileTransfer;
         _upnp            = upnp;
         _wakeOnDemand    = wakeOnDemand;
         Settings         = settings;
@@ -1020,6 +1023,130 @@ public partial class MainViewModel : BaseViewModel
         Save();
         RefreshCounts();
         source.CopyCustomImageTo(clone.Id);
+    }
+
+    [RelayCommand]
+    private void ExportServerProfile(ServerViewModel? source)
+    {
+        if (source == null) return;
+        var safeName = string.Join("_", source.Server.DisplayName.Split(
+            System.IO.Path.GetInvalidFileNameChars()));
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Export HPRM server profile",
+            Filter = "HPRM server profile (*.hprm-server.json)|*.hprm-server.json|JSON files (*.json)|*.json",
+            FileName = safeName + ServerProfileTransferService.FileExtension,
+            AddExtension = true,
+            DefaultExt = ServerProfileTransferService.FileExtension,
+        };
+        if (dialog.ShowDialog(WpfApplication.Current.MainWindow) != true) return;
+
+        try
+        {
+            _profileTransfer.Export(source.Server, dialog.FileName);
+            System.Windows.MessageBox.Show(
+                "The server settings were exported. Server files and credentials (RCON password, server password, and Discord webhook) are intentionally excluded. Re-enter them after import.",
+                "Server profile exported", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"The server profile could not be exported: {ex.Message}",
+                "Export failed", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    [RelayCommand]
+    private void ImportServerProfile()
+    {
+        var fileDialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Import HPRM server profile",
+            Filter = "HPRM server profile (*.hprm-server.json)|*.hprm-server.json|JSON files (*.json)|*.json",
+            CheckFileExists = true,
+        };
+        if (fileDialog.ShowDialog(WpfApplication.Current.MainWindow) != true) return;
+
+        try
+        {
+            var document = _profileTransfer.Read(fileDialog.FileName);
+            using var folderDialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "Select this server's Rust installation folder. Choose its new location if it was moved.",
+                UseDescriptionForTitle = true,
+                ShowNewFolderButton = true,
+                SelectedPath = System.IO.Directory.Exists(document.OriginalInstallPath)
+                    ? document.OriginalInstallPath
+                    : _config.DefaultInstallRoot,
+            };
+            if (folderDialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+
+            var imported = _profileTransfer.PrepareImport(document, folderDialog.SelectedPath);
+            if (Servers.Any(existing => PathsEqual(existing.Server.InstallPath, imported.InstallPath)))
+                throw new InvalidOperationException(
+                    "Another HPRM profile already uses that installation folder. Choose the moved server's unique folder.");
+
+            imported.DisplayName = UniqueImportedName(imported.DisplayName);
+            var preferredPorts = PortSetFor(imported);
+            var portErrors = ServerPortAllocator.Validate(
+                preferredPorts, ExistingPortSets(), PortCheckerService.IsAvailable);
+            var portsChanged = portErrors.Count > 0;
+            if (portsChanged)
+            {
+                var allocated = ServerPortAllocator.FindAvailable(
+                    preferredPorts, ExistingPortSets(), PortCheckerService.IsAvailable)
+                    ?? throw new InvalidOperationException("No free four-port set was available for the imported profile.");
+                imported.ServerPort = allocated.Game;
+                imported.QueryPort = allocated.Query;
+                imported.RconPort = allocated.Rcon;
+                imported.GameSpecificSettings["appPort"] = allocated.RustPlus.ToString();
+            }
+
+            var viewModel = MakeVm(imported);
+            viewModel.ServerNumber = Servers.Count + 1;
+            Servers.Add(viewModel);
+            SelectedServer = viewModel;
+            Save();
+            RefreshCounts();
+
+            var portNote = portsChanged
+                ? " Conflicting ports were reassigned to a free set."
+                : string.Empty;
+            System.Windows.MessageBox.Show(
+                "The server profile was imported and linked to the selected folder." + portNote +
+                " Re-enter its RCON/server passwords and Discord webhook before starting it.",
+                "Server profile imported", System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"The server profile could not be imported: {ex.Message}",
+                "Import failed", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
+    private string UniqueImportedName(string requested)
+    {
+        var baseName = string.IsNullOrWhiteSpace(requested) ? "Imported Rust server" : requested.Trim();
+        if (!Servers.Any(server => string.Equals(server.Server.DisplayName, baseName,
+                StringComparison.OrdinalIgnoreCase))) return baseName;
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{baseName} (Imported {suffix})";
+            if (!Servers.Any(server => string.Equals(server.Server.DisplayName, candidate,
+                    StringComparison.OrdinalIgnoreCase))) return candidate;
+        }
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        try
+        {
+            return string.Equals(System.IO.Path.GetFullPath(left).TrimEnd('\\', '/'),
+                System.IO.Path.GetFullPath(right).TrimEnd('\\', '/'),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     [RelayCommand]

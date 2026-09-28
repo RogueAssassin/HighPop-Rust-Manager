@@ -111,6 +111,10 @@
                             <Button Content="{Binding Loc.AddServer}" Style="{StaticResource PrimaryButton}"
                                     HorizontalAlignment="Stretch" Margin="0,0,0,8"
                                     Command="{Binding OpenAddDialogCommand}"/>
+                            <Button Content="Import server profile" Style="{StaticResource GhostButton}"
+                                    HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                                    Command="{Binding ImportServerProfileCommand}"
+                                    ToolTip="Import portable HPRM settings and relink a moved Rust installation"/>
                             <!-- Rust operations shortcuts -->
                             <UniformGrid Rows="1" Columns="5">
                                 <Button Style="{StaticResource GhostButton}" FontSize="15" Height="32" Padding="0"

@@ -1,7 +1,7 @@
 {
-  "GameId": "rust", "Name": "Vanilla map 1500 (35 players)", "Description": "Conservative 1500-map baseline with density-safe wildlife and area-scaled vehicle targets. All values remain editable after applying.", "ConfigFile": "server\\{identity}\\cfg\\server.cfg", "MapSize": 1500,
+  "GameId": "rust", "Name": "Vanilla map 1500", "Description": "Conservative 1500-map baseline with density-safe wildlife and area-scaled vehicle targets. All values remain editable after applying.", "ConfigFile": "server\\{identity}\\cfg\\server.cfg", "MapSize": 1500,
   "Values": {
-    "server.worldsize": "1500", "server.maxplayers": "35", "server.saveinterval": "300", "server.secure": "true", "server.encryption": "1", "server.pve": "false", "server.radiation": "true", "server.printReportsToConsole": "true",
+    "server.worldsize": "1500", "server.maxplayers": "150", "server.saveinterval": "300", "server.secure": "true", "server.encryption": "1", "server.pve": "false", "server.radiation": "true", "server.printReportsToConsole": "true",
     "bear.population": "2", "boar.population": "7", "chicken.population": "5", "stag.population": "5", "wolf2.population": "3", "ridablehorse.population": "4",
     "motorrowboat.population": "1", "rhib.rhibpopulation": "0", "minicopter.population": "1", "scraptransporthelicopter.population": "0", "modularcar.population": "1", "hotairballoon.population": "0",
     "npc.vendor_minicopter_enabled": "true", "npc.vendor_scrap_heli_enabled": "true", "npc.vendor_rowboat_enabled": "true", "npc.vendor_rhib_enabled": "true", "npc.vendor_sub_solo_enabled": "true", "npc.vendor_sub_duo_enabled": "true"
