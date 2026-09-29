@@ -7,9 +7,12 @@ namespace HighPop.Services;
 public static class PlayerParserService
 {
     public static List<OnlinePlayer> ParseRustPlayerList(string response)
+        => TryParseRustPlayerList(response, out var players) ? players : [];
+
+    public static bool TryParseRustPlayerList(string response, out List<OnlinePlayer> result)
     {
-        var result = new List<OnlinePlayer>();
-        if (string.IsNullOrWhiteSpace(response)) return result;
+        result = [];
+        if (string.IsNullOrWhiteSpace(response)) return false;
 
         try
         {
@@ -21,7 +24,28 @@ public static class PlayerParserService
                 nested = JsonDocument.Parse(root.GetString() ?? "[]");
                 root = nested.RootElement;
             }
-            if (root.ValueKind != JsonValueKind.Array) return result;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (TryGetProperty(root, "Message", out var message))
+                {
+                    nested?.Dispose();
+                    nested = message.ValueKind == JsonValueKind.String
+                        ? JsonDocument.Parse(message.GetString() ?? "[]")
+                        : JsonDocument.Parse(message.GetRawText());
+                    root = nested.RootElement;
+                }
+                else if (TryGetProperty(root, "Players", out var players))
+                {
+                    nested?.Dispose();
+                    nested = JsonDocument.Parse(players.GetRawText());
+                    root = nested.RootElement;
+                }
+            }
+            if (root.ValueKind != JsonValueKind.Array)
+            {
+                nested?.Dispose();
+                return false;
+            }
 
             foreach (var item in root.EnumerateArray())
             {
@@ -37,15 +61,33 @@ public static class PlayerParserService
                 });
             }
             nested?.Dispose();
+            return true;
         }
-        catch { }
+        catch
+        {
+            result = [];
+            return false;
+        }
+    }
 
-        return result;
+    private static bool TryGetProperty(JsonElement item, string property, out JsonElement value)
+    {
+        if (item.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var candidate in item.EnumerateObject())
+            {
+                if (!candidate.Name.Equals(property, StringComparison.OrdinalIgnoreCase)) continue;
+                value = candidate.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
     }
 
     private static string ReadText(JsonElement item, string property)
     {
-        if (!item.TryGetProperty(property, out var value)) return string.Empty;
+        if (!TryGetProperty(item, property, out var value)) return string.Empty;
         return value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? string.Empty
             : value.ToString();
@@ -53,7 +95,7 @@ public static class PlayerParserService
 
     private static int ReadInt(JsonElement item, string property)
     {
-        if (!item.TryGetProperty(property, out var value)) return 0;
+        if (!TryGetProperty(item, property, out var value)) return 0;
         if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number;
         return int.TryParse(value.ToString(), out number) ? number : 0;
     }

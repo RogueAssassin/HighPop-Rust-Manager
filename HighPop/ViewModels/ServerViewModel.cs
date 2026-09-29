@@ -89,6 +89,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private List<Services.PlayerStats>   _mostActivePlayers = [];
     [ObservableProperty] private List<Services.RustPlayerModerationRecord> _moderationProfiles = [];
     [ObservableProperty] private List<HourBar> _hourlyActivity = [];
+    [ObservableProperty] private string _playerQueryStatus = "Waiting for the server player query.";
 
     public class HourBar
     {
@@ -114,6 +115,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private string _moderationStatus = string.Empty;
 
     private System.Timers.Timer? _playerRefreshTimer;
+    private readonly SemaphoreSlim _playerRefreshGate = new(1, 1);
 
     // Performance history
     [ObservableProperty] private OxyPlot.PlotModel _perfPlot = CreateEmptyPlot();
@@ -1981,18 +1983,65 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task FetchOnlinePlayersAsync()
     {
         if (Plugin == null) return;
+        if (!await _playerRefreshGate.WaitAsync(0)) return;
 
-        var cmd = Plugin.GetPlayersCommand();
-        if (cmd == null || !RconConnected || _rcon == null) return;
+        try
+        {
+            var parsed = new List<Models.OnlinePlayer>();
+            var querySource = string.Empty;
+            var cmd = Plugin.GetPlayersCommand();
 
-        string response;
-        await _rconLock.WaitAsync();
-        try   { response = await _rcon.SendCommandAsync(cmd); }
-        catch { return; }
-        finally { _rconLock.Release(); }
+            if (cmd != null && RconConnected && _rcon != null)
+            {
+                string response = string.Empty;
+                await _rconLock.WaitAsync();
+                try { response = await _rcon.SendCommandAsync(cmd); }
+                catch
+                {
+                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    {
+                        RconConnected = false;
+                        RconStatusText = "Connection lost — reconnecting";
+                    });
+                    if (Server.AutoConnectRcon) StartAutoRconConnect();
+                }
+                finally { _rconLock.Release(); }
 
-        if (string.IsNullOrWhiteSpace(response)) return;
-        var parsed = Services.PlayerParserService.ParseRustPlayerList(response);
+                if (Services.PlayerParserService.TryParseRustPlayerList(response, out var rconPlayers))
+                {
+                    parsed = rconPlayers;
+                    querySource = "WebRCON";
+                }
+            }
+
+            if (querySource.Length == 0 && Server.QueryPort > 0)
+            {
+                var queryHost = Server.ServerIp is "" or "0.0.0.0" or "::" or "[::]"
+                    ? "127.0.0.1"
+                    : Server.ServerIp;
+                parsed = await A2SQueryService.QueryPlayersAsync(queryHost, Server.QueryPort);
+                if (parsed.Count > 0) querySource = "Steam query fallback";
+            }
+
+            if (querySource.Length == 0)
+            {
+                WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    PlayerQueryStatus = RconConnected
+                        ? "The server returned an unreadable player list; retrying automatically."
+                        : "Player query unavailable — waiting for WebRCON or the Steam query port.");
+                return;
+            }
+
+            UpdateOnlinePlayers(parsed, querySource);
+        }
+        finally
+        {
+            _playerRefreshGate.Release();
+        }
+    }
+
+    private void UpdateOnlinePlayers(List<Models.OnlinePlayer> parsed, string querySource)
+    {
         var selectedSteamIds = OnlinePlayers
             .Where(p => p.IsSelected && RustModerationCommands.IsSteamId(p.SteamId))
             .Select(p => p.SteamId)
@@ -2016,7 +2065,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             _ = _telemetry.AppendAsync(
                 Server,
                 "players.count_changed",
-                "webrcon",
+                querySource.Equals("WebRCON", StringComparison.OrdinalIgnoreCase)
+                    ? "webrcon"
+                    : "steam-query",
                 new Dictionary<string, string>
                 {
                     ["players"] = parsed.Count.ToString(),
@@ -2050,6 +2101,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         WpfApplication.Current?.Dispatcher?.Invoke(() =>
         {
             OnlinePlayers = parsed;
+            PlayerQueryStatus = $"{querySource} • refreshed {DateTime.Now:HH:mm:ss}";
             PlayerHistory = _playerStats.GetSessions(Server.Id, 50);
             PlayerStatsList = _playerStats.GetPlayerStats(Server.Id, 50);
             RefreshModerationProfiles();

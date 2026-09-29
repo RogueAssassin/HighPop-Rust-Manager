@@ -205,10 +205,9 @@ Check(signalInstance.ProcessObservedUtc.HasValue
 signalInstance.MarkRustLogActive();
 Check(signalInstance.IsRustLogActive,
     "Oxide live logfile activation is tracked independently from process readiness");
-Check(ServerManagerService.ShouldUseOxideLiveLog(oxideInstalled: true, carbonInstalled: false)
-      && !ServerManagerService.ShouldUseOxideLiveLog(oxideInstalled: false, carbonInstalled: true)
-      && !ServerManagerService.ShouldUseOxideLiveLog(oxideInstalled: true, carbonInstalled: true),
-    "Oxide alone uses live logfile capture while Carbon and framework conflicts retain process capture");
+Check(ServerManagerService.ShouldUseRustLiveLog(carbonInstalled: false)
+      && !ServerManagerService.ShouldUseRustLiveLog(carbonInstalled: true),
+    "Vanilla and Oxide use live logfile capture while Carbon retains process capture");
 
 Check(signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stdout")
       && !signalInstance.TryAcceptConsoleLine("Oxide mirrored output", "stderr")
@@ -299,6 +298,11 @@ var players = PlayerParserService.ParseRustPlayerList(
     "[{\"DisplayName\":\"Ferris\",\"SteamID\":76561198000000000,\"Ping\":42,\"ConnectedSeconds\":120}]");
 Check(players.Count == 1 && players[0].Name == "Ferris" && players[0].Ping == 42,
     "Rust playerlist parser");
+Check(PlayerParserService.TryParseRustPlayerList(
+          "{\"message\":[{\"displayname\":\"Wrapped\",\"steamid\":\"76561198000000001\",\"ping\":25}]}",
+          out var wrappedPlayers)
+      && wrappedPlayers.Count == 1 && wrappedPlayers[0].Name == "Wrapped",
+    "Rust playerlist parser accepts wrapped and case-insensitive WebRCON payloads");
 
 var testRoot = Path.Combine(Path.GetTempPath(), "highpop-smoke-" + Guid.NewGuid().ToString("N"));
 try
@@ -804,8 +808,21 @@ try
         ConfigFile = @"server\{identity}\cfg\server.cfg",
         Values = new() { ["server.maxplayers"] = "500" },
     };
+    var presetIdentity = server.GameSpecificSettings.TryGetValue("identity", out var configuredPresetIdentity)
+        ? configuredPresetIdentity
+        : "highpop";
+    var presetConfigPath = Path.Combine(server.InstallPath, "server", presetIdentity, "cfg", "server.cfg");
+    Directory.CreateDirectory(Path.GetDirectoryName(presetConfigPath)!);
+    await File.WriteAllLinesAsync(presetConfigPath,
+        ["server.maxplayers 25", "server.maxplayers=50", "server.secure true"]);
     var applied = presetService.ApplyPreset(server, preset);
-    Check(applied != null && File.Exists(applied), "preset creates config");
+    var activeMaxPlayerLines = File.ReadAllLines(presetConfigPath)
+        .Where(line => line.TrimStart().StartsWith("server.maxplayers", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    Check(applied != null && File.Exists(applied)
+          && activeMaxPlayerLines.Count == 1
+          && activeMaxPlayerLines[0].Contains("500", StringComparison.Ordinal),
+        "preset applies one authoritative server.cfg assignment and comments duplicates");
 
     if (map4500 != null)
     {

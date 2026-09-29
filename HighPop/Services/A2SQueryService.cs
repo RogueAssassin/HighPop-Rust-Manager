@@ -20,10 +20,14 @@ public static class A2SQueryService
         udp.Client.ReceiveTimeout = timeoutMs;
         udp.Client.SendTimeout    = timeoutMs;
 
-        var endpoint = new IPEndPoint(IPAddress.Parse(host), port);
-
         try
         {
+            var addresses = await Dns.GetHostAddressesAsync(host);
+            var address = addresses.FirstOrDefault(candidate => candidate.AddressFamily == AddressFamily.InterNetwork)
+                          ?? addresses.FirstOrDefault()
+                          ?? throw new SocketException((int)SocketError.HostNotFound);
+            var endpoint = new IPEndPoint(address, port);
+
             // Step 1: send challenge request
             await udp.SendAsync(ChallengeRequest, ChallengeRequest.Length, endpoint);
 

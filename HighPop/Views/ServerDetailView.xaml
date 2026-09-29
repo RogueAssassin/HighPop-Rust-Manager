@@ -2050,6 +2050,8 @@
                                         </TextBlock>
                                         <TextBlock Text="  • updates every 15 s" FontSize="11"
                                                    Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding PlayerQueryStatus}" FontSize="11" Margin="12,0,0,0"
+                                                   Foreground="{StaticResource AccentBlueBrush}" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
                                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16,8">

@@ -547,8 +547,9 @@ public class ServerManagerService
         var exeDir = Path.GetDirectoryName(exe) ?? server.InstallPath;
         var oxideInstalled = ModManagerService.GetInstalledOxideVersion(server.InstallPath) != null;
         var carbonInstalled = ModManagerService.IsCarbonInstalled(server.InstallPath);
-        var useOxideLiveLog = ShouldUseOxideLiveLog(oxideInstalled, carbonInstalled);
-        var captureProcessStreams = !useOxideLiveLog;
+        var useRustLiveLog = ShouldUseRustLiveLog(carbonInstalled);
+        var captureProcessStreams = !useRustLiveLog;
+        var redirectStandardInput = !oxideInstalled;
         var psi = new ProcessStartInfo
         {
             FileName               = exe,
@@ -557,7 +558,9 @@ public class ServerManagerService
             UseShellExecute        = false,
             RedirectStandardOutput = captureProcessStreams,
             RedirectStandardError  = captureProcessStreams,
-            RedirectStandardInput  = captureProcessStreams,
+            // Vanilla and Carbon retain direct process commands. Oxide uses WebRCON because
+            // redirected standard handles trigger its duplicate output fallback.
+            RedirectStandardInput  = redirectStandardInput,
             // Oxide expects valid Windows console handles. CREATE_NO_WINDOW leaves them
             // unsupported and makes Oxide install a second output-redirection path.
             // WindowStyle.Hidden supplies real handles without exposing the console window.
@@ -738,9 +741,9 @@ public class ServerManagerService
         server.LastStarted = DateTime.Now;
         RememberRunningIdentity(server, proc);
 
-        // Establish Oxide's logfile baseline before redirected reads begin. Carbon retains
-        // its process-stream console, which carries Carbon's richer formatted reporting.
-        if (useOxideLiveLog)
+        // Vanilla and Oxide use one authoritative Rust logfile, preventing mirrored process
+        // stream lines. Carbon retains its richer formatted process-stream console.
+        if (useRustLiveLog)
         {
             inst.RustLogTailCts = new CancellationTokenSource();
             _ = TailRustLogAsync(server, inst, includeRecentHistory: false,
@@ -754,8 +757,8 @@ public class ServerManagerService
         }
 
         // Rust output is captured in HighPop, so hide any window the process creates. Carbon
-        // uses CreateNoWindow; Oxide receives a real but hidden console because its logger
-        // duplicates output when Windows reports unsupported standard handles.
+        // uses CreateNoWindow; Vanilla/Oxide receive a real but hidden console and publish
+        // their reporting through the single logfile source above.
         _ = ApplyWindowStyleAsync(proc, SW_HIDE, 30);
 
         // Apply CPU affinity
@@ -1403,8 +1406,8 @@ public class ServerManagerService
     private bool IsCurrentInstance(string serverId, ServerInstance instance)
         => _running.TryGetValue(serverId, out var current) && ReferenceEquals(current, instance);
 
-    internal static bool ShouldUseOxideLiveLog(bool oxideInstalled, bool carbonInstalled)
-        => oxideInstalled && !carbonInstalled;
+    internal static bool ShouldUseRustLiveLog(bool carbonInstalled)
+        => !carbonInstalled;
 
     private static string FormatByteCount(long bytes)
         => bytes >= 1024L * 1024 * 1024
@@ -1433,8 +1436,8 @@ public class ServerManagerService
         var initialized = false;
         var previousType = ConsoleMessageType.Info;
 
-        // A newly launched Oxide server receives a freshly rotated logfile, so consume it
-        // from byte zero. Reattachment instead loads a bounded recent history below.
+        // A newly launched Vanilla/Oxide server receives a freshly rotated logfile, so consume
+        // it from byte zero. Reattachment instead loads a bounded recent history below.
         if (!includeRecentHistory)
         {
             position = 0;

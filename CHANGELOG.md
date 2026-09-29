@@ -6,6 +6,9 @@
 - Embedded the shipped presets in the executable so existing v1.0.0 installations automatically restore missing preset files on their first v1.0.1 start.
 - Added managed preset hash tracking: missing and unchanged built-in presets update automatically, while custom and locally edited presets remain untouched.
 - Updated the self-updater to validate and stage `HPRM/assets/**` from the release ZIP and merge missing packaged assets without deleting runtime data or operator-created files.
+- Made preset application retain exactly one active assignment per managed `server.cfg` key, comment older duplicates for auditability, and synchronize HighPop's variable workspace before the next launch.
+- Moved Vanilla console reporting to the same single authoritative `RustDedicated.log` path as Oxide; Carbon retains its richer process-stream console.
+- Hardened online-player discovery with case-insensitive/wrapped WebRCON payload parsing, tolerant response identifiers, serialized refreshes, Steam A2S fallback, reconnect handling, and a visible player-query status.
 
 ## 1.0.0
 

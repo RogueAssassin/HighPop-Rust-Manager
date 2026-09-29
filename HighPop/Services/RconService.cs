@@ -69,15 +69,16 @@ public sealed class RconService : IDisposable
                 {
                     using var document = JsonDocument.Parse(payload);
                     var root = document.RootElement;
-                    var responseId = root.TryGetProperty("Identifier", out var identifier)
-                        ? identifier.GetInt32()
+                    var responseId = TryReadIdentifier(root, out var identifier)
+                        ? identifier
                         : -1;
                     if (responseId != id) continue;
-                    return root.TryGetProperty("Message", out var message)
+                    if (!TryGetProperty(root, "Message", out var message)) return payload;
+                    return message.ValueKind == JsonValueKind.String
                         ? message.GetString() ?? string.Empty
-                        : payload;
+                        : message.GetRawText();
                 }
-                catch (JsonException)
+                catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
                 {
                     return payload;
                 }
@@ -86,6 +87,30 @@ public sealed class RconService : IDisposable
         catch (OperationCanceledException) { }
 
         return "[RCON] Timed out waiting for the Rust server response";
+    }
+
+    private static bool TryReadIdentifier(JsonElement root, out int identifier)
+    {
+        identifier = -1;
+        if (!TryGetProperty(root, "Identifier", out var value)) return false;
+        if (value.ValueKind == JsonValueKind.Number) return value.TryGetInt32(out identifier);
+        return value.ValueKind == JsonValueKind.String
+               && int.TryParse(value.GetString(), out identifier);
+    }
+
+    private static bool TryGetProperty(JsonElement root, string name, out JsonElement value)
+    {
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in root.EnumerateObject())
+            {
+                if (!property.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) continue;
+                value = property.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
     }
 
     private static async Task<string> ReceiveTextAsync(ClientWebSocket socket, CancellationToken token)

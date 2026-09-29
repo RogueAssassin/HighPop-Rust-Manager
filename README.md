@@ -47,7 +47,7 @@ HPRM v1.0.1 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 thro
 
 | Component | v1.0.1 support |
 |---|---|
-| Rust Dedicated Server | Steam public and staging branches through SteamCMD |
+| Rust Dedicated Server | Steam public and staging branches through SteamCMD; Vanilla uses the authoritative live Rust logfile |
 | Carbon | Current installed/released Carbon framework with process-stream console reporting |
 | Oxide/uMod | Latest public Rust build from uMod with authoritative live-log console reporting |
 | RogueRust | Independently selectable Stable or Testing channel per server |

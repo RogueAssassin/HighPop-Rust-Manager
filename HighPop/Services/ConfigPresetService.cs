@@ -79,7 +79,7 @@ public class ConfigPresetService
 
         foreach (var (key, value) in preset.Values)
         {
-            bool found = false;
+            var matches = new List<int>();
             for (int i = 0; i < lines.Count; i++)
             {
                 var trimmed = lines[i].TrimStart();
@@ -95,23 +95,35 @@ public class ConfigPresetService
                 var lineKey = trimmed[..sep].Trim();
                 if (!lineKey.Equals(key, StringComparison.OrdinalIgnoreCase)) continue;
 
-                // Preserve original line indent
-                var indent = lines[i].Length - lines[i].TrimStart().Length;
-                var leadingSpaces = lines[i][..indent];
-                var usesEquals = trimmed.IndexOf('=') >= 0;
-                lines[i] = usesEquals
-                    ? $"{leadingSpaces}{key}={value}"
-                    : $"{leadingSpaces}{key} {value}";
-                found = true;
-                break;
+                matches.Add(i);
             }
 
-            if (!found)
+            if (matches.Count == 0)
+            {
                 lines.Add($"{key} {value}");
+                continue;
+            }
+
+            // Rust uses the last active assignment. Keep that location authoritative and
+            // preserve older duplicates as audit comments instead of leaving two live values.
+            foreach (var duplicateIndex in matches.Take(matches.Count - 1))
+                lines[duplicateIndex] = $"# Duplicate removed by HighPop preset: {lines[duplicateIndex].Trim()}";
+
+            var authoritativeIndex = matches[^1];
+            var authoritative = lines[authoritativeIndex];
+            var authoritativeTrimmed = authoritative.TrimStart();
+            var indent = authoritative.Length - authoritativeTrimmed.Length;
+            var leadingSpaces = authoritative[..indent];
+            var usesEquals = authoritativeTrimmed.IndexOf('=') >= 0;
+            lines[authoritativeIndex] = usesEquals
+                    ? $"{leadingSpaces}{key}={value}"
+                    : $"{leadingSpaces}{key} {value}";
         }
 
         File.WriteAllLines(configPath, lines);
         SynchronizeLaunchSettings(server, preset);
+        if (server.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase))
+            RustPlugin.LoadServerConfigVariables(server);
         return string.IsNullOrEmpty(backupPath) ? configPath : backupPath;
     }
 
