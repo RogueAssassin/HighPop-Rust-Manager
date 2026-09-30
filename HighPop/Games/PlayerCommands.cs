@@ -10,7 +10,7 @@ internal static class RustRcon
     public static string Ban(string player) => $"ban \"{Clean(player)}\" \"Banned by admin\"";
     public static string Ban(string player, string reason) => $"ban \"{Clean(player)}\" \"{Clean(reason)}\"";
     public static string Unban(string player) => $"unban \"{Clean(player)}\"";
-    public static string Players() => "playerlist";
+    public static string Players() => "global.playerlist";
     public static string Broadcast(string message) => $"say \"{Clean(message)}\"";
 
     private static string Clean(string? value) => (value ?? string.Empty)

@@ -1,7 +1,7 @@
 HighPop runtime assets
 ======================
 
-HighPop Rust Manager v1.0.1
+HighPop Rust Manager v1.0.2
 
 HighPop.exe is self-contained. This folder contains HighPop application state; managed Rust
 installations are stored separately in the sibling HPRM/Servers folder:

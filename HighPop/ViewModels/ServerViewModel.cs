@@ -2012,6 +2012,15 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     parsed = rconPlayers;
                     querySource = "WebRCON";
                 }
+                else if (!_rcon.IsConnected)
+                {
+                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    {
+                        RconConnected = false;
+                        RconStatusText = "Connection lost — reconnecting";
+                    });
+                    if (Server.AutoConnectRcon) StartAutoRconConnect();
+                }
             }
 
             if (querySource.Length == 0 && Server.QueryPort > 0)

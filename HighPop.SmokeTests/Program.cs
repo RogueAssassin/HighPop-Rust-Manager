@@ -12,11 +12,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.1", "application and release metadata report v1.0.1");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.1", "1.0.0")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.1")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.1", "1.0.1")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.1"),
+Check(AppInfo.Version == "1.0.2", "application and release metadata report v1.0.2");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.2", "1.0.1")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.2")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.2", "1.0.2")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.2"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -303,6 +303,18 @@ Check(PlayerParserService.TryParseRustPlayerList(
           out var wrappedPlayers)
       && wrappedPlayers.Count == 1 && wrappedPlayers[0].Name == "Wrapped",
     "Rust playerlist parser accepts wrapped and case-insensitive WebRCON payloads");
+Check(PlayerParserService.TryParseRustPlayerList(
+          "global.playerlist\\r\\n[{\"Name\":\"Prefixed\",\"Steam64ID\":\"76561198000000002\",\"Latency\":31,\"Duration\":90.5}]",
+          out var prefixedPlayers)
+      && prefixedPlayers.Count == 1
+      && prefixedPlayers[0].SteamId == "76561198000000002"
+      && prefixedPlayers[0].ConnectedSeconds == 90,
+    "Rust playerlist parser tolerates prefixed proxy payloads and compatible field aliases");
+Check(PlayerParserService.TryParseRustPlayerList("[]", out var emptyPlayers)
+      && emptyPlayers.Count == 0,
+    "an empty Rust playerlist is treated as a successful online-player sample");
+Check(rust.GetPlayersCommand() == "global.playerlist",
+    "Rust online-player polling uses the fully-qualified playerlist command");
 
 var testRoot = Path.Combine(Path.GetTempPath(), "highpop-smoke-" + Guid.NewGuid().ToString("N"));
 try

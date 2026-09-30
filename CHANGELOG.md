@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2
+
+- Replaced command-local WebRCON reads with a continuous receive loop and request-ID correlation, keeping unsolicited Rust console/chat packets separate from command responses like established Rust RCON clients.
+- Switched online-player polling to the fully qualified `global.playerlist` command and retained WebRCON as the authoritative source for player identities, Steam IDs, ping, and connected time.
+- Hardened player-list parsing for wrapped, nested, case-insensitive, prefixed, numeric-ID, proxy-alias, and empty-array responses without weakening malformed-payload rejection.
+- Made a dropped player-query connection immediately update the visible WebRCON state and enter the existing bounded reconnect workflow instead of remaining falsely connected.
+- Kept Steam A2S as a fallback only when WebRCON cannot provide a readable player list, and removed the remaining nullable firewall build warning.
+
 ## 1.0.1
 
 - Fixed in-app updates installing only `HighPop.exe` and omitting new external assets such as the eleven map-size presets.

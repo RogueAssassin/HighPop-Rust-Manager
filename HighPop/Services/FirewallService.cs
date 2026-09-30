@@ -202,7 +202,7 @@ public static class FirewallService
     private static NetworkRuleUpdateResult Failure(string prefix, Exception exception)
     {
         var root = exception is TargetInvocationException { InnerException: not null } invocation
-            ? invocation.InnerException
+            ? invocation.InnerException!
             : exception;
         var hresult = root.HResult;
         var message = hresult switch
