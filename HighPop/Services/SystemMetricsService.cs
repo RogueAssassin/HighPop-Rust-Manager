@@ -11,7 +11,7 @@ public record DriveStats(string Name, double UsedGb, double TotalGb)
     public double UsedPercent => TotalGb > 0 ? UsedGb / TotalGb * 100.0 : 0;
 }
 
-public class SystemMetricsService
+public class SystemMetricsService : IDisposable
 {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     private struct MEMORYSTATUSEX
@@ -32,6 +32,9 @@ public class SystemMetricsService
 
     private PerformanceCounter? _cpuCounter;
     private readonly System.Timers.Timer _timer;
+    private int _refreshing;
+    private DateTime _nextDriveRefreshUtc = DateTime.MinValue;
+    private static readonly TimeSpan DriveRefreshInterval = TimeSpan.FromSeconds(30);
 
     public float CpuPercent { get; private set; }
     public long RamUsedMb { get; private set; }
@@ -64,38 +67,51 @@ public class SystemMetricsService
 
     private void Refresh()
     {
+        if (Interlocked.Exchange(ref _refreshing, 1) != 0) return;
         try
         {
-            if (_cpuCounter != null)
-                CpuPercent = Math.Clamp(_cpuCounter.NextValue(), 0f, 100f);
-        }
-        catch { }
-
-        try
-        {
-            var mem = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
-            if (GlobalMemoryStatusEx(ref mem))
+            try
             {
-                RamTotalMb = (long)(mem.ullTotalPhys / 1024 / 1024);
-                var availMb = (long)(mem.ullAvailPhys / 1024 / 1024);
-                RamUsedMb  = RamTotalMb - availMb;
+                if (_cpuCounter != null)
+                    CpuPercent = Math.Clamp(_cpuCounter.NextValue(), 0f, 100f);
             }
-        }
-        catch { }
+            catch { }
 
-        try
+            try
+            {
+                var mem = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
+                if (GlobalMemoryStatusEx(ref mem))
+                {
+                    RamTotalMb = (long)(mem.ullTotalPhys / 1024 / 1024);
+                    var availMb = (long)(mem.ullAvailPhys / 1024 / 1024);
+                    RamUsedMb  = RamTotalMb - availMb;
+                }
+            }
+            catch { }
+
+            var now = DateTime.UtcNow;
+            if (now >= _nextDriveRefreshUtc)
+            {
+                _nextDriveRefreshUtc = now + DriveRefreshInterval;
+                try
+                {
+                    Drives = DriveInfo.GetDrives()
+                        .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
+                        .Select(d => new DriveStats(
+                            d.Name,
+                            Math.Round((d.TotalSize - d.AvailableFreeSpace) / 1_073_741_824.0, 1),
+                            Math.Round(d.TotalSize / 1_073_741_824.0, 1)))
+                        .ToList();
+                }
+                catch { }
+            }
+
+            MetricsUpdated?.Invoke();
+        }
+        finally
         {
-            Drives = DriveInfo.GetDrives()
-                .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
-                .Select(d => new DriveStats(
-                    d.Name,
-                    Math.Round((d.TotalSize - d.AvailableFreeSpace) / 1_073_741_824.0, 1),
-                    Math.Round(d.TotalSize / 1_073_741_824.0, 1)))
-                .ToList();
+            Volatile.Write(ref _refreshing, 0);
         }
-        catch { }
-
-        MetricsUpdated?.Invoke();
     }
 
     public void Dispose()

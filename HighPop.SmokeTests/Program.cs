@@ -12,11 +12,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.2", "application and release metadata report v1.0.2");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.2", "1.0.1")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.2")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.2", "1.0.2")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.2"),
+Check(AppInfo.Version == "1.0.3", "application and release metadata report v1.0.3");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.3", "1.0.2")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.3")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.3", "1.0.3")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.3"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -330,6 +330,23 @@ try
         "embedded application presets restore into a missing assets folder");
 
     var locallyEditedPreset = Path.Combine(repairedPresetsDir, "rust_vanilla_1000.json");
+    var locallyEditedJson = System.Text.Json.Nodes.JsonNode.Parse(
+        await File.ReadAllTextAsync(locallyEditedPreset))!.AsObject();
+    var locallyEditedValues = locallyEditedJson["Values"]!.AsObject();
+    locallyEditedValues["server.maxplayers"] = "321";
+    locallyEditedValues.Remove("cow.population");
+    locallyEditedValues.Remove("sheep.population");
+    await File.WriteAllTextAsync(locallyEditedPreset, locallyEditedJson.ToJsonString(
+        new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Check(BundledAssetService.EnsurePresets(assetRepairRoot) == 1,
+        "embedded preset upgrade merges newly introduced values into an edited built-in preset");
+    var mergedPreset = System.Text.Json.Nodes.JsonNode.Parse(
+        await File.ReadAllTextAsync(locallyEditedPreset))!.AsObject()["Values"]!.AsObject();
+    Check(mergedPreset["server.maxplayers"]?.GetValue<string>() == "321"
+          && mergedPreset["cow.population"]?.GetValue<string>() == "2"
+          && mergedPreset["sheep.population"]?.GetValue<string>() == "2",
+        "preset upgrade preserves operator values while adding cow and sheep density controls");
+
     await File.AppendAllTextAsync(locallyEditedPreset, "\n// local operator edit");
     Check(BundledAssetService.EnsurePresets(assetRepairRoot) == 0
           && (await File.ReadAllTextAsync(locallyEditedPreset)).Contains("local operator edit"),
@@ -804,8 +821,10 @@ try
     Check(mapPresets.Count == 11
           && mapPresets.Select(candidate => candidate.MapSize!.Value)
               .SequenceEqual(Enumerable.Range(0, 11).Select(index => 1000 + (index * 500)))
-          && mapPresets.All(candidate => candidate.Values["server.maxplayers"] == "150"),
-        "all map-size presets load in deterministic order");
+          && mapPresets.All(candidate => candidate.Values["server.maxplayers"] == "150")
+          && mapPresets.All(candidate => candidate.Values["cow.population"] == "2")
+          && mapPresets.All(candidate => candidate.Values["sheep.population"] == "2"),
+        "all map-size presets load in deterministic order with livestock densities");
 
     var map4500 = mapPresets.SingleOrDefault(candidate => candidate.MapSize == 4500);
     Check(map4500 != null

@@ -50,6 +50,7 @@ public class PerformanceMonitorService : IDisposable
 {
     private readonly System.Timers.Timer _timer;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ProcessMonitor> _monitors = new();
+    private int _sampling;
 
     public PerformanceMonitorService()
     {
@@ -71,7 +72,15 @@ public class PerformanceMonitorService : IDisposable
 
     private void SampleAll()
     {
-        foreach (var m in _monitors.Values) m.Sample();
+        if (Interlocked.Exchange(ref _sampling, 1) != 0) return;
+        try
+        {
+            foreach (var m in _monitors.Values) m.Sample();
+        }
+        finally
+        {
+            Volatile.Write(ref _sampling, 0);
+        }
     }
 
     public void Dispose()

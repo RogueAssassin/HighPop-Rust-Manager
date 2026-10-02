@@ -2,7 +2,7 @@
   "GameId": "rust", "Name": "Vanilla map 2500", "Description": "Conservative 2500-map baseline with density-safe wildlife and area-scaled vehicle targets. All values remain editable after applying.", "ConfigFile": "server\\{identity}\\cfg\\server.cfg", "MapSize": 2500,
   "Values": {
     "server.worldsize": "2500", "server.maxplayers": "150", "server.saveinterval": "300", "server.secure": "true", "server.encryption": "1", "server.pve": "false", "server.radiation": "true", "server.printReportsToConsole": "true",
-    "bear.population": "2", "boar.population": "7", "chicken.population": "5", "stag.population": "5", "wolf2.population": "3", "ridablehorse.population": "4",
+    "bear.population": "2", "boar.population": "7", "chicken.population": "5", "cow.population": "2", "sheep.population": "2", "stag.population": "5", "wolf2.population": "3", "ridablehorse.population": "4",
     "motorrowboat.population": "4", "rhib.rhibpopulation": "1", "minicopter.population": "2", "scraptransporthelicopter.population": "1", "modularcar.population": "3", "hotairballoon.population": "1",
     "npc.vendor_minicopter_enabled": "true", "npc.vendor_scrap_heli_enabled": "true", "npc.vendor_rowboat_enabled": "true", "npc.vendor_rhib_enabled": "true", "npc.vendor_sub_solo_enabled": "true", "npc.vendor_sub_duo_enabled": "true"
   }

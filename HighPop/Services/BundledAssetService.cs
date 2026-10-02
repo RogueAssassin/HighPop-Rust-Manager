@@ -2,6 +2,7 @@ using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace HighPop.Services;
 
@@ -44,16 +45,26 @@ public static class BundledAssetService
             var targetPath = Path.Combine(presetsDir, fileName);
 
             var shouldWrite = !File.Exists(targetPath);
+            byte[]? mergedBytes = null;
             if (!shouldWrite && previousState.TryGetValue(fileName, out var previousHash))
             {
-                var installedHash = Hash(File.ReadAllBytes(targetPath));
+                var installedBytes = File.ReadAllBytes(targetPath);
+                var installedHash = Hash(installedBytes);
                 shouldWrite = installedHash.Equals(previousHash, StringComparison.OrdinalIgnoreCase)
                               && !installedHash.Equals(bundledHash, StringComparison.OrdinalIgnoreCase);
+
+                // An operator-edited built-in remains authoritative, but new keys introduced by
+                // a later HighPop release still need to become available. Merge only missing
+                // Values entries; never replace or remove an existing operator value.
+                if (!shouldWrite
+                    && !installedHash.Equals(bundledHash, StringComparison.OrdinalIgnoreCase)
+                    && TryMergeMissingValues(installedBytes, bundledBytes, out mergedBytes))
+                    shouldWrite = true;
             }
 
             if (shouldWrite)
             {
-                WriteAtomic(targetPath, bundledBytes);
+                WriteAtomic(targetPath, mergedBytes ?? bundledBytes);
                 deployed++;
             }
 
@@ -90,4 +101,35 @@ public static class BundledAssetService
 
     private static string Hash(byte[] bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes));
+
+    private static bool TryMergeMissingValues(byte[] installedBytes, byte[] bundledBytes, out byte[]? mergedBytes)
+    {
+        mergedBytes = null;
+        try
+        {
+            var installed = JsonNode.Parse(installedBytes) as JsonObject;
+            var bundled = JsonNode.Parse(bundledBytes) as JsonObject;
+            if (installed?["Values"] is not JsonObject installedValues
+                || bundled?["Values"] is not JsonObject bundledValues)
+                return false;
+
+            var changed = false;
+            foreach (var (key, value) in bundledValues)
+            {
+                if (installedValues.ContainsKey(key)) continue;
+                installedValues[key] = value?.DeepClone();
+                changed = true;
+            }
+
+            if (!changed) return false;
+            mergedBytes = JsonSerializer.SerializeToUtf8Bytes(installed,
+                new JsonSerializerOptions { WriteIndented = true });
+            return true;
+        }
+        catch (JsonException)
+        {
+            // Preserve hand-edited or commented JSON exactly when it cannot be merged safely.
+            return false;
+        }
+    }
 }

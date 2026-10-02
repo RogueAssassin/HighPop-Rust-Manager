@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.3
+
+- Added the Rust Livestock Update's verified `cow.population` and `sheep.population` controls to every vanilla map preset from 1000 through 6000 while retaining every existing preset value.
+- Kept livestock population independent of player slots: both controls use Rust's per-square-kilometre density model, so total herds scale naturally with map area.
+- Extended bundled preset upgrades to merge newly introduced keys into operator-edited built-in presets without replacing or removing any existing local value.
+- Reduced idle monitoring overhead by refreshing fixed-drive capacity every 30 seconds instead of every two seconds and preventing overlapping system/process metric samples.
+- Advanced application, package, documentation, and smoke-test metadata to v1.0.3.
+
 ## 1.0.2
 
 - Replaced command-local WebRCON reads with a continuous receive loop and request-ID correlation, keeping unsolicited Rust console/chat packets separate from command responses like established Rust RCON clients.
