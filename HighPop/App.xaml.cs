@@ -17,6 +17,8 @@ public partial class App : System.Windows.Application
     // conflicts and duplicate process management of the same servers (reported by a user
     // running multiple copies without realizing it).
     private static System.Threading.Mutex? _singleInstanceMutex;
+    private static DateTime _lastTextRenderingFailureUtc = DateTime.MinValue;
+    private static int _textRecoveryScheduled;
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
@@ -99,6 +101,41 @@ public partial class App : System.Windows.Application
         // UI-säikeen poikkeukset
         DispatcherUnhandledException += (_, ex) =>
         {
+            if (IsTextRenderingFailure(ex.Exception))
+            {
+                var now = DateTime.UtcNow;
+                if (now - _lastTextRenderingFailureUtc > TimeSpan.FromSeconds(30))
+                {
+                    _lastTextRenderingFailureUtc = now;
+                    WriteLog("TEXT RENDERING: Windows rejected a console-style text run. " +
+                             "The unsafe in-memory display entries were quarantined; server logs remain on disk.");
+                }
+
+                if (Interlocked.Exchange(ref _textRecoveryScheduled, 1) == 0)
+                {
+                    Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ContextIdle,
+                        new Action(() =>
+                        {
+                            try
+                            {
+                                if (Services?.GetService<MainViewModel>() is { } main)
+                                    main.RecoverFromTextRenderingFailure();
+                            }
+                            catch (Exception recoveryException)
+                            {
+                                WriteLog($"TEXT RENDERING RECOVERY: {recoveryException.Message}");
+                            }
+                            finally
+                            {
+                                Interlocked.Exchange(ref _textRecoveryScheduled, 0);
+                            }
+                        }));
+                }
+
+                ex.Handled = true;
+                return;
+            }
+
             WriteLog($"DISPATCHER: {ex.Exception}");
             System.Windows.MessageBox.Show(
                 $"Error:\n{ex.Exception.Message}\n\nLog: {logPath}",
@@ -160,6 +197,18 @@ public partial class App : System.Windows.Application
         // A full manager exit detaches from live Rust processes. Stop/Force Stop are the only
         // operations that terminate a server; reopening HighPop verifies and reattaches by PID.
         Exit += OnApplicationExit;
+    }
+
+    private static bool IsTextRenderingFailure(Exception exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current.StackTrace?.Contains(
+                    "MS.Internal.Text.TextInterface.TextAnalyzer.GetGlyphs",
+                    StringComparison.Ordinal) == true)
+                return true;
+        }
+        return false;
     }
 
     private static void OnApplicationExit(object sender, System.Windows.ExitEventArgs e)

@@ -12,11 +12,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.3", "application and release metadata report v1.0.3");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.3", "1.0.2")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.3")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.3", "1.0.3")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.3"),
+Check(AppInfo.Version == "1.0.4", "application and release metadata report v1.0.4");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.4", "1.0.3")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.4")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.4", "1.0.4")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.4"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -116,6 +116,18 @@ Check(normalStderr?.Type == ConsoleMessageType.Info
       && rogueLine?.Source == "RogueRust"
       && rogueLine.Text == "[RogueRust] readiness probe failed",
     "console parsing preserves stream source, stack severity, and strips ANSI output");
+var unsafeUiText = "safe\uD800text\uDC00\0tail";
+var sanitizedUiText = UiTextSanitizer.Normalize(unsafeUiText);
+Check(!sanitizedUiText.Any(char.IsSurrogate)
+      && !sanitizedUiText.Contains('\0')
+      && sanitizedUiText.Contains("safe\uFFFDtext\uFFFD", StringComparison.Ordinal),
+    "UI text sanitizer replaces unpaired UTF-16 surrogates and control characters");
+var oversizedConsole = ConsoleOutputParser.Parse(
+    new string('x', UiTextSanitizer.MaxConsoleTextLength * 3), fromStandardError: false);
+Check(oversizedConsole != null
+      && oversizedConsole.Text.Length <= UiTextSanitizer.MaxConsoleTextLength
+      && oversizedConsole.Text.EndsWith("[truncated by HPRM]", StringComparison.Ordinal),
+    "console rendering is bounded before oversized plugin output reaches WPF");
 foreach (var keepOnline in new[] { false, true })
 {
     server.KeepOnline = keepOnline;

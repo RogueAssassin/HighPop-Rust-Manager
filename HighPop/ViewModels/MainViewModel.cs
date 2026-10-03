@@ -1377,6 +1377,14 @@ public partial class MainViewModel : BaseViewModel
         OnPropertyChanged(nameof(StoppedCount));
     }
 
+    public void RecoverFromTextRenderingFailure()
+    {
+        foreach (var server in Servers)
+            server.ResetUiTextAfterRenderFailure();
+        foreach (var remote in RemoteServers)
+            remote.ResetUiTextAfterRenderFailure();
+    }
+
     private static void DebugLog(string msg)
     {
         try

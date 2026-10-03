@@ -27,11 +27,15 @@ public static class ConsoleOutputParser
         ConsoleMessageType previousType = ConsoleMessageType.Info)
     {
         if (string.IsNullOrEmpty(raw)) return null;
-        var withoutAnsi = Ansi.Replace(raw.Replace('\r', ' '), string.Empty);
+        // Bound parser and renderer work even when a plugin emits one enormous JSON/debug line.
+        var boundedRaw = raw.Length <= UiTextSanitizer.MaxConsoleTextLength * 2
+            ? raw
+            : raw[..(UiTextSanitizer.MaxConsoleTextLength * 2)];
+        var withoutAnsi = Ansi.Replace(boundedRaw.Replace('\r', ' '), string.Empty);
         var builder = new StringBuilder(withoutAnsi.Length);
         foreach (var ch in withoutAnsi)
             if (ch == '\t' || !char.IsControl(ch)) builder.Append(ch);
-        var text = builder.ToString().TrimEnd();
+        var text = UiTextSanitizer.Normalize(builder.ToString().TrimEnd());
         if (string.IsNullOrWhiteSpace(text)) return null;
 
         var continuation = text.StartsWith("   at ", StringComparison.Ordinal)

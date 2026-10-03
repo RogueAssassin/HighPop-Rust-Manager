@@ -110,6 +110,8 @@ public partial class RemoteServerViewModel : ObservableObject, IDisposable
         }
     }
 
+    public void ResetUiTextAfterRenderFailure() => Log.Clear();
+
     private async Task PollAsync()
     {
         if (!_isActive) return;

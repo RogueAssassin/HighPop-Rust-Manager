@@ -103,8 +103,10 @@ public static class PlayerParserService
 
     private static void AddPlayer(JsonElement item, List<OnlinePlayer> result)
     {
-        var name = ReadText(item, "DisplayName", "Name", "Username");
-        var steamId = ReadText(item, "SteamID", "SteamId", "Steam64ID", "Id");
+        var name = UiTextSanitizer.Normalize(
+            ReadText(item, "DisplayName", "Name", "Username"), UiTextSanitizer.MaxLabelLength);
+        var steamId = UiTextSanitizer.Normalize(
+            ReadText(item, "SteamID", "SteamId", "Steam64ID", "Id"), UiTextSanitizer.MaxLabelLength);
         if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(steamId)) return;
 
         result.Add(new OnlinePlayer

@@ -47,6 +47,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <TextBlock Text="{Binding Text}" FontFamily="Consolas" FontSize="12"
+                                   Typography.Kerning="False" Typography.StandardLigatures="False"
                                    TextWrapping="Wrap" Margin="0,1">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">

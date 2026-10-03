@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.4
+
+- Fixed the repeated WPF/DirectWrite `TextAnalyzer.GetGlyphs` crash loop reported by v1.0.3 when a virtualized console-style list receives text Windows cannot shape safely.
+- Added a shared UI text boundary that replaces malformed UTF-16 surrogate data, removes unsafe controls, and caps individual rendered console lines at 16 KiB while leaving authoritative Rust logs on disk untouched.
+- Simplified console shaping to the Windows-provided Consolas font with kerning and standard ligatures disabled, reducing font-fallback work under heavy server output.
+- Added non-modal, rate-limited recovery for DirectWrite text failures: HPRM quarantines only its in-memory console/audit display entries instead of producing a repeated error-dialog storm or affecting the Rust process.
+- Added smoke coverage for malformed UTF-16 and oversized plugin output, and advanced testing metadata to v1.0.4.
+
 ## 1.0.3
 
 - Added the Rust Livestock Update's verified `cow.population` and `sheep.population` controls to every vanilla map preset from 1000 through 6000 while retaining every existing preset value.
