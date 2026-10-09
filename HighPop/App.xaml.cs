@@ -252,6 +252,7 @@ public partial class App : System.Windows.Application
         s.AddSingleton<GroupBanListService>();
         s.AddSingleton<RustModerationService>();
         s.AddSingleton<ServerHygieneService>();
+        s.AddSingleton<RustReferenceService>();
         s.AddSingleton<WebApiService>();
         s.AddSingleton<RemoteMachineService>();
         s.AddSingleton<CrashPredictionService>();

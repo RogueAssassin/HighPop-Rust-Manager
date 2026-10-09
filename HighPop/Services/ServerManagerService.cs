@@ -121,6 +121,7 @@ public class ServerManagerService
     private readonly ServerHygieneService _hygiene;
     private readonly ConcurrentDictionary<string, ServerInstance> _running = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _lifecycleGates = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeGracefulStops = new();
     private readonly ConcurrentDictionary<string, ConcurrentQueue<DateTime>> _crashHistory = new();
     private readonly ConcurrentDictionary<string, long> _recoveryGenerations = new();
 
@@ -851,20 +852,34 @@ public class ServerManagerService
         // or stale Start observes the new generation and cannot resurrect this server.
         var operation = _lifecycle.RequestStop(server, initiator, reason);
         CancelRecovery(server.Id);
+        var escalation = new CancellationTokenSource();
+        _activeGracefulStops.AddOrUpdate(server.Id, escalation, (_, current) =>
+        {
+            current.Cancel();
+            return escalation;
+        });
         var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
         try
         {
             if (!_lifecycle.IsCurrent(server, operation.Generation)) return;
-            await StopCoreAsync(server, reason, operation);
+            await StopCoreAsync(server, reason, operation, escalation.Token);
         }
-        finally { gate.Release(); }
+        finally
+        {
+            if (_activeGracefulStops.TryGetValue(server.Id, out var current)
+                && ReferenceEquals(current, escalation))
+                _activeGracefulStops.TryRemove(server.Id, out _);
+            escalation.Dispose();
+            gate.Release();
+        }
     }
 
     private async Task StopCoreAsync(
         GameServer server,
         string reason,
-        ServerLifecycleTransition operation)
+        ServerLifecycleTransition operation,
+        CancellationToken escalationToken)
     {
         if (!_running.TryGetValue(server.Id, out var inst))
         {
@@ -884,16 +899,31 @@ public class ServerManagerService
         var plugin = GameRegistry.Get(server.GameId);
         var stopCmd = plugin?.GetStopCommand(server);
 
+        var gracefulCommandSent = false;
         if (stopCmd != null && inst.Process?.HasExited == false)
         {
-            await TrySendServerCommandAsync(server, inst, "server.save", "Saving Rust world before shutdown");
-            await Task.Delay(1000);
-            await TrySendServerCommandAsync(server, inst, stopCmd, "Requesting clean Rust shutdown");
+            using (var saveCommandCts = CancellationTokenSource.CreateLinkedTokenSource(escalationToken))
+            {
+                saveCommandCts.CancelAfter(TimeSpan.FromSeconds(8));
+                await TrySendServerCommandAsync(server, inst, "server.save",
+                    "Saving Rust world before shutdown", saveCommandCts.Token);
+            }
+            try { await Task.Delay(1000, escalationToken); }
+            catch (OperationCanceledException) { }
+            using (var stopCommandCts = CancellationTokenSource.CreateLinkedTokenSource(escalationToken))
+            {
+                stopCommandCts.CancelAfter(TimeSpan.FromSeconds(8));
+                gracefulCommandSent = await TrySendServerCommandAsync(server, inst, stopCmd,
+                    "Requesting clean Rust shutdown", stopCommandCts.Token);
+            }
             try
             {
                 var timeoutSeconds = ServerMaintenancePolicy.ClampGracefulStopTimeout(
                     server.GracefulStopTimeoutSeconds);
-                using var gracefulStopCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+                using var gracefulStopCts = CancellationTokenSource.CreateLinkedTokenSource(escalationToken);
+                gracefulStopCts.CancelAfter(gracefulCommandSent
+                    ? TimeSpan.FromSeconds(timeoutSeconds)
+                    : TimeSpan.FromSeconds(2));
                 await inst.Process.WaitForExitAsync(gracefulStopCts.Token);
             }
             catch (OperationCanceledException)
@@ -901,22 +931,28 @@ public class ServerManagerService
                 var timeoutSeconds = ServerMaintenancePolicy.ClampGracefulStopTimeout(
                     server.GracefulStopTimeoutSeconds);
                 InjectLogLine(server.Id,
-                    $"[HighPop] Rust did not exit within {timeoutSeconds} seconds; forcing the process to close.",
+                    escalationToken.IsCancellationRequested
+                        ? "[HighPop] Force Stop requested; escalating immediately to process-tree termination."
+                        : gracefulCommandSent
+                            ? $"[HighPop] Rust did not exit within {timeoutSeconds} seconds; forcing the process to close."
+                            : "[HighPop] No usable process-console or WebRCON shutdown channel was available; forcing the process to close.",
                     ConsoleMessageType.Warning);
             }
         }
 
-        RemoveInstanceIfCurrent(server.Id, inst);
-        _network.UnregisterServer(server.Id);
-        if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
+        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(12)))
+        {
+            SetStatus(server, ServerStatus.Error);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
+                operation.Initiator,
+                "Rust could not be terminated; process tracking was retained for another Force Stop attempt",
+                operation.OperationId);
+            throw new InvalidOperationException(
+                "Rust is still running after the shutdown and termination attempts. " +
+                "HighPop kept the process attached; run HighPop as Administrator and use Force Stop again.");
+        }
 
-        if (inst.Process?.HasExited == false)
-            inst.Process.Kill(entireProcessTree: true);
-
-        ClearRunningIdentity(server);
-        SetStatus(server, ServerStatus.Stopped);
-        _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
-            operation.Initiator, reason, operation.OperationId);
+        FinalizeStoppedServer(server, inst, operation, reason);
     }
 
     /// <summary>
@@ -969,6 +1005,8 @@ public class ServerManagerService
     {
         var operation = _lifecycle.RequestStop(server, initiator, reason);
         CancelRecovery(server.Id);
+        if (_activeGracefulStops.TryGetValue(server.Id, out var activeStop))
+            activeStop.Cancel();
         var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
         try
@@ -1000,8 +1038,9 @@ public class ServerManagerService
 
         if (inst.Process?.HasExited == false)
         {
-            await TrySendServerCommandAsync(server, inst, "server.save", "Force-saving Rust world");
-            await TrySendServerCommandAsync(server, inst, "quit", "Requesting immediate Rust exit");
+            using var commandCts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+            await TrySendServerCommandAsync(server, inst, "server.save", "Force-saving Rust world", commandCts.Token);
+            await TrySendServerCommandAsync(server, inst, "quit", "Requesting immediate Rust exit", commandCts.Token);
             try
             {
                 using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -1015,17 +1054,18 @@ public class ServerManagerService
             }
         }
 
-        JobObjectService.ReleaseJob(inst.JobHandle);
-        inst.JobHandle = nint.Zero;
-        _running.TryRemove(server.Id, out _);
-        _network.UnregisterServer(server.Id);
-        if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
-        try { inst.Process?.Kill(entireProcessTree: true); }
-        catch (InvalidOperationException) { /* process already dead — swallow */ }
-        ClearRunningIdentity(server);
-        SetStatus(server, ServerStatus.Stopped);
-        _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
-            operation.Initiator, operation.Reason, operation.OperationId);
+        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(12)))
+        {
+            SetStatus(server, ServerStatus.Error);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
+                operation.Initiator,
+                "Force Stop could not terminate Rust; process tracking was retained",
+                operation.OperationId);
+            throw new InvalidOperationException(
+                "Force Stop could not terminate Rust. HighPop kept the process attached so the action can be retried.");
+        }
+
+        FinalizeStoppedServer(server, inst, operation, operation.Reason);
     }
 
     /// <summary>Compatibility alias for older call sites; Force Stop is the defined operation.</summary>
@@ -1052,9 +1092,11 @@ public class ServerManagerService
         GameServer server,
         ServerInstance instance,
         string command,
-        string description)
+        string description,
+        CancellationToken cancellationToken = default)
     {
-        if (await TrySendProcessCommandAsync(instance, command))
+        if (!cancellationToken.IsCancellationRequested
+            && await TrySendProcessCommandAsync(instance, command))
         {
             InjectLogLine(server.Id, $"[HighPop] {description}.", ConsoleMessageType.System);
             return true;
@@ -1072,9 +1114,9 @@ public class ServerManagerService
                 var host = server.ServerIp is "0.0.0.0" or "::" or "[::]"
                     ? "127.0.0.1"
                     : server.ServerIp;
-                if (await rcon.ConnectAsync(host, server.RconPort, server.RconPassword))
+                if (await rcon.ConnectAsync(host, server.RconPort, server.RconPassword, cancellationToken))
                 {
-                    await rcon.SendCommandAsync(command);
+                    await rcon.SendCommandAsync(command, cancellationToken);
                     InjectLogLine(server.Id,
                         $"[HighPop] {description} via WebRCON.", ConsoleMessageType.System);
                     return true;
@@ -1087,6 +1129,93 @@ public class ServerManagerService
             $"[HighPop] Could not send '{command}' through the process console or WebRCON.",
             ConsoleMessageType.Warning);
         return false;
+    }
+
+    private async Task<bool> EnsureProcessTreeStoppedAsync(
+        GameServer server,
+        ServerInstance instance,
+        TimeSpan timeout)
+    {
+        var process = instance.Process;
+        if (process == null || SafeHasExited(process)) return true;
+
+        JobObjectService.ReleaseJob(instance.JobHandle);
+        instance.JobHandle = nint.Zero;
+
+        var deadline = DateTime.UtcNow + timeout;
+        for (var attempt = 1; attempt <= 3 && DateTime.UtcNow < deadline; attempt++)
+        {
+            try { process.Kill(entireProcessTree: true); }
+            catch (InvalidOperationException) { return true; }
+            catch (Win32Exception ex)
+            {
+                InjectLogLine(server.Id,
+                    $"[HighPop] Process-tree termination attempt {attempt} failed: {ex.Message}",
+                    ConsoleMessageType.Warning);
+            }
+
+            if (await WaitForProcessExitAsync(process, TimeSpan.FromSeconds(3))) return true;
+
+            // Refresh by PID in case the original Process handle became stale during Oxide unload.
+            try { process = Process.GetProcessById(process.Id); }
+            catch (ArgumentException) { return true; }
+        }
+
+        if (OperatingSystem.IsWindows() && process.Id > 0)
+        {
+            try
+            {
+                using var taskKill = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "taskkill.exe",
+                    Arguments = $"/PID {process.Id} /T /F",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                });
+                if (taskKill != null)
+                    await taskKill.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
+            }
+            catch (Exception ex) when (ex is Win32Exception
+                                       or InvalidOperationException
+                                       or TimeoutException) { }
+        }
+
+        return await WaitForProcessExitAsync(process, TimeSpan.FromSeconds(2));
+    }
+
+    private static bool SafeHasExited(Process process)
+    {
+        try { return process.HasExited; }
+        catch (InvalidOperationException) { return true; }
+    }
+
+    private static async Task<bool> WaitForProcessExitAsync(Process process, TimeSpan timeout)
+    {
+        if (SafeHasExited(process)) return true;
+        try
+        {
+            await process.WaitForExitAsync().WaitAsync(timeout);
+            return true;
+        }
+        catch (TimeoutException) { return SafeHasExited(process); }
+        catch (InvalidOperationException) { return true; }
+    }
+
+    private void FinalizeStoppedServer(
+        GameServer server,
+        ServerInstance instance,
+        ServerLifecycleTransition operation,
+        string reason)
+    {
+        RemoveInstanceIfCurrent(server.Id, instance);
+        _network.UnregisterServer(server.Id);
+        if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
+        ClearRunningIdentity(server);
+        SetStatus(server, ServerStatus.Stopped);
+        _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
+            operation.Initiator, reason, operation.OperationId);
     }
 
     /// <summary>

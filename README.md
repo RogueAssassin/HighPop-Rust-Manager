@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.4-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.5-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -21,7 +21,7 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 |---|---|
 | Server setup | SteamCMD bootstrap, Rust install/validate/update, independent server folders, templates, editable Game/Query/WebRCON/Rust+ ports, and collision checks |
 | Lifecycle | Start, safe stop, force stop, restart, auto-start, always-on recovery, crash-loop protection, verified process reattachment, and durable operation history |
-| Console and players | Facepunch WebRCON, reconnect handling, filtered live console, export, player sessions, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
+| Console and players | Facepunch WebRCON, reconnect handling, filtered live console, Rogue Rust Reference command/ConVar search, export, player sessions, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
 | Rust configuration | `server.cfg` variables, browser tags, Steam branch selection, custom maps, log paths, presets, launch arguments, CPU affinity, priority, and optional RAM limits |
 | Mods | Oxide/uMod and Carbon installation/detection, framework-aware folders, plugin/config inventory, live plugin reload, and verified RogueRust Stable/Testing channels |
 | Backups and wipes | Full and incremental ZIP backups, retention, pre-wipe safety backups, path-safe restore, map wipe, and full wipe |
@@ -41,11 +41,11 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 
 The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
 
-HPRM v1.0.4 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
+HPRM v1.0.5 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
 
 ### Supported server software
 
-| Component | v1.0.4 support |
+| Component | v1.0.5 support |
 |---|---|
 | Rust Dedicated Server | Steam public and staging branches through SteamCMD; Vanilla uses the authoritative live Rust logfile |
 | Carbon | Current installed/released Carbon framework with process-stream console reporting |
@@ -54,6 +54,14 @@ HPRM v1.0.4 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 thro
 
 HighPop tracks the selected release channel rather than hard-coding a short-lived Rust, Carbon,
 Oxide, or RogueRust build number.
+
+## Rust command reference
+
+The per-server **Reference** tab loads the current command and ConVar metadata from
+[Rogue Rust Reference](https://api.roguegaming.com.au). Search results show execution scope,
+descriptions, types, and defaults. **Insert** copies only the selected name into the Console input
+for operator review; reference entries are never executed automatically. The compact commands and
+ConVars dataset is fetched on demand, shared across server workspaces, and cached for offline use.
 
 ## Portable layout
 

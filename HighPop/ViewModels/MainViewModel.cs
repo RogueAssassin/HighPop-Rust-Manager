@@ -32,6 +32,7 @@ public partial class MainViewModel : BaseViewModel
     private readonly ServerHygieneService      _hygiene;
     private readonly ConfigPresetService       _presets;
     private readonly RustTelemetryService      _telemetry;
+    private readonly RustReferenceService      _rustReference;
     private readonly WebApiService             _webApi;
     private readonly ScheduledTaskService      _scheduler;
     private readonly RemoteMachineService      _remoteMachines;
@@ -166,13 +167,14 @@ public partial class MainViewModel : BaseViewModel
         RustModerationService moderation, ServerHygieneService hygiene,
         ConfigPresetService presets, LogWatcherService logWatcher,
         ServerHealthService healthCheck, RustTelemetryService telemetry,
-        ServerProfileTransferService profileTransfer)
+        ServerProfileTransferService profileTransfer, RustReferenceService rustReference)
     {
         _groupBans = groupBans;
         _moderation = moderation;
         _hygiene   = hygiene;
         _presets   = presets;
         _telemetry = telemetry;
+        _rustReference = rustReference;
         _config          = config;
         _sortMode        = config.SortMode; // restore last-used sort order without triggering a save
         _manager         = manager;
@@ -781,7 +783,8 @@ public partial class MainViewModel : BaseViewModel
     {
         var vm = new ServerViewModel(srv, _manager, _steamCmd, _backup, _notifications, _perfMonitor, _config, _mods,
                _configEditor, _playerStats, _perfHistory, _templates, _scheduler,
-               _network, _groupBans, _moderation, _hygiene, _presets, _telemetry);
+               _network, _groupBans, _moderation, _hygiene, _presets, _telemetry,
+               _rustReference);
         vm.BatchSelectionChanged = () => OnPropertyChanged(nameof(BatchSelectedCount));
         vm.ValidatePortSet = ValidatePortSetForServer;
         return vm;

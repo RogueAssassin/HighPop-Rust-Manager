@@ -30,6 +30,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private readonly ServerHygieneService   _hygiene;
     private readonly ConfigPresetService    _presets;
     private readonly RustTelemetryService   _telemetry;
+    private readonly RustReferenceService   _rustReference;
     private RconService? _rcon;
     private readonly SemaphoreSlim _rconLock  = new(1, 1);
     private CancellationTokenSource? _rconAutoConnectCts;
@@ -72,6 +73,17 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private bool _isOxideInstalled;
     [ObservableProperty] private bool _isCarbonInstalled;
     [ObservableProperty] private bool _isWorkspaceActive;
+
+    // Rogue Rust Reference — loaded on demand and shared across all server workspaces.
+    private List<RustReferenceEntry> _allRustReferenceEntries = [];
+    [ObservableProperty] private List<RustReferenceEntry> _rustReferenceEntries = [];
+    [ObservableProperty] private RustReferenceEntry? _selectedRustReferenceEntry;
+    [ObservableProperty] private string _rustReferenceSearch = string.Empty;
+    [ObservableProperty] private string _rustReferenceKind = "All";
+    [ObservableProperty] private string _rustReferenceStatus =
+        "Load the latest Rust commands and server variables from Rogue Rust Reference.";
+    [ObservableProperty] private bool _rustReferenceLoading;
+    public IReadOnlyList<string> RustReferenceKinds { get; } = ["All", "Commands", "ConVars"];
 
     // Config editor
     [ObservableProperty] private List<Services.ConfigFileEntry> _configFiles = [];
@@ -536,7 +548,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         PerfHistoryService perfHistory,
         TemplateService templates, ScheduledTaskService scheduler, NetworkMonitorService network,
         GroupBanListService groupBans, RustModerationService moderation, ServerHygieneService hygiene,
-        ConfigPresetService presets, RustTelemetryService telemetry)
+        ConfigPresetService presets, RustTelemetryService telemetry,
+        RustReferenceService rustReference)
     {
         Server         = server;
         Plugin         = GameRegistry.Get(server.GameId);
@@ -558,6 +571,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _hygiene       = hygiene;
         _presets       = presets;
         _telemetry     = telemetry;
+        _rustReference = rustReference;
         Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
         Server.RustServerVariables.CollectionChanged += (_, _) => TrackRustVariableChanges();
         if (IsRust)
@@ -938,6 +952,75 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         while (_pendingConsoleMessages.TryDequeue(out _)) { }
         Log.Clear();
         FilteredLog.Clear();
+    }
+
+    // ── Rogue Rust Reference ────────────────────────────────────────────────
+
+    [RelayCommand]
+    private async Task RefreshRustReferenceAsync()
+    {
+        if (RustReferenceLoading) return;
+        RustReferenceLoading = true;
+        RustReferenceStatus = "Downloading the current command and ConVar metadata…";
+        try
+        {
+            // The first load for another server reuses the singleton's in-memory snapshot.
+            // Once this workspace already has data, the same button performs an explicit refresh.
+            var snapshot = await _rustReference.LoadAsync(refresh: _allRustReferenceEntries.Count > 0);
+            _allRustReferenceEntries = snapshot.Entries.ToList();
+            ApplyRustReferenceFilter();
+            var updated = snapshot.UpdatedAt?.ToLocalTime().ToString("g") ?? "unknown time";
+            RustReferenceStatus = snapshot.FromCache
+                ? $"Offline cache loaded: {_allRustReferenceEntries.Count:N0} entries · source sync {updated}."
+                : $"Loaded {_allRustReferenceEntries.Count:N0} entries · source sync {updated}.";
+        }
+        catch (Exception ex)
+        {
+            RustReferenceStatus = ex.Message;
+        }
+        finally { RustReferenceLoading = false; }
+    }
+
+    [RelayCommand]
+    private void InsertRustReference(RustReferenceEntry? entry)
+    {
+        if (entry == null || string.IsNullOrWhiteSpace(entry.Name)) return;
+        ConsoleInput = entry.Name + " ";
+        AddActionLog($"Rust Reference inserted: {entry.Name}");
+    }
+
+    [RelayCommand]
+    private void OpenRustReference()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                RustReferenceService.ReferenceUrl) { UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    partial void OnRustReferenceSearchChanged(string value) => ApplyRustReferenceFilter();
+    partial void OnRustReferenceKindChanged(string value) => ApplyRustReferenceFilter();
+
+    private void ApplyRustReferenceFilter()
+    {
+        IEnumerable<RustReferenceEntry> filtered = _allRustReferenceEntries;
+        filtered = RustReferenceKind switch
+        {
+            "Commands" => filtered.Where(entry => entry.Kind == "Command"),
+            "ConVars" => filtered.Where(entry => entry.Kind == "ConVar"),
+            _ => filtered,
+        };
+        if (!string.IsNullOrWhiteSpace(RustReferenceSearch))
+        {
+            var search = RustReferenceSearch.Trim();
+            filtered = filtered.Where(entry =>
+                entry.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || entry.Description.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || entry.Scope.Contains(search, StringComparison.OrdinalIgnoreCase));
+        }
+        RustReferenceEntries = filtered.Take(750).ToList();
     }
 
     [RelayCommand]

@@ -50,7 +50,9 @@ public sealed class RconService : IDisposable
         }
     }
 
-    public async Task<string> SendCommandAsync(string command)
+    public async Task<string> SendCommandAsync(
+        string command,
+        CancellationToken cancellationToken = default)
     {
         var socket = _socket;
         var connectionToken = _connectionCts?.Token ?? CancellationToken.None;
@@ -62,7 +64,8 @@ public sealed class RconService : IDisposable
         if (!_pending.TryAdd(id, completion))
             return "[RCON] Could not allocate a command identifier";
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(connectionToken);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            connectionToken, cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
         using var registration = timeout.Token.Register(() =>
         {

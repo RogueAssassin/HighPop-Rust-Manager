@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.5
+
+- Fixed Oxide/uMod shutdowns becoming stuck in `Stopping` when redirected standard input is intentionally disabled and WebRCON cannot complete a clean exit.
+- Made Force Stop interrupt an active graceful-stop wait immediately instead of queuing behind its full timeout.
+- Retained live process identity until Rust is confirmed exited, added bounded process-tree retries plus a Windows `taskkill` fallback, and kept failed terminations attached so administrators can retry without restarting HPRM.
+- Added an on-demand Rogue Rust Reference tab backed by `api.roguegaming.com.au`, with searchable command/ConVar metadata, execution scopes, descriptions, defaults, safe console insertion, and an offline cache.
+- Advanced application, portable package, documentation, and smoke-test metadata to v1.0.5.
+
 ## 1.0.4
 
 - Fixed the repeated WPF/DirectWrite `TextAnalyzer.GetGlyphs` crash loop reported by v1.0.3 when a virtualized console-style list receives text Windows cannot shape safely.

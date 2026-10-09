@@ -12,11 +12,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.4", "application and release metadata report v1.0.4");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.4", "1.0.3")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.4")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.4", "1.0.4")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.4"),
+Check(AppInfo.Version == "1.0.5", "application and release metadata report v1.0.5");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.5", "1.0.4")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.5")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.5", "1.0.5")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.5"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -25,6 +25,20 @@ using (var disconnectedRcon = new RconService())
     Check(!disconnectedRcon.IsConnected,
         "WebRCON disconnect is safe and awaitable when no socket is active");
 }
+Check(RustReferenceService.ReferenceUrl == "https://api.roguegaming.com.au",
+    "Rogue Rust Reference uses the public read-only metadata endpoint");
+var referenceEntry = new RustReferenceEntry
+{
+    Name = "server.maxplayers",
+    Kind = "ConVar",
+    Serverside = true,
+    ServerAdmin = true,
+    DefaultValue = System.Text.Json.JsonSerializer.SerializeToElement(500),
+};
+Check(referenceEntry.Scope.Contains("Server", StringComparison.Ordinal)
+      && referenceEntry.Scope.Contains("Admin", StringComparison.Ordinal)
+      && referenceEntry.DefaultText == "500",
+    "Rust reference entries expose scope and default metadata without executing commands");
 
 var rust = new RustPlugin();
 Check(rust.SteamAppId == 258550, "Rust dedicated server AppID");
