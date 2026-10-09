@@ -3283,6 +3283,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ActionLog.Clear();
     }
 
+    public void ResetRustReferenceAfterBindingFailure()
+    {
+        _allRustReferenceEntries.Clear();
+        RustReferenceEntries = [];
+        SelectedRustReferenceEntry = null;
+        RustReferenceStatus = "Reference display was reset after a recoverable WPF binding error. Refresh to try again.";
+    }
+
     private static string SummarizeCommand(string command)
     {
         var first = command.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()

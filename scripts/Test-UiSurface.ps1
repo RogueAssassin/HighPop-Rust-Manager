@@ -24,6 +24,14 @@ foreach ($xamlFile in $xamlFiles) {
         }
     }
 
+    # Run.Text defaults can resolve as TwoWay in WPF. Calculated/read-only view-model
+    # properties therefore require an explicit OneWay mode or fail repeatedly at runtime.
+    foreach ($match in [regex]::Matches($xaml, '<Run\b[^>]*\bText="\{Binding[^\"]*"')) {
+        if ($match.Value -notmatch '\bMode\s*=\s*OneWay\b') {
+            $issues.Add("$xamlFile contains a Run.Text binding without explicit Mode=OneWay")
+        }
+    }
+
     $codeBehind = "$xamlFile.cs"
     $code = if (Test-Path $codeBehind) { Get-Content $codeBehind -Raw } else { '' }
     foreach ($match in [regex]::Matches(

@@ -1388,6 +1388,12 @@ public partial class MainViewModel : BaseViewModel
             remote.ResetUiTextAfterRenderFailure();
     }
 
+    public void RecoverFromUiBindingFailure()
+    {
+        foreach (var server in Servers)
+            server.ResetRustReferenceAfterBindingFailure();
+    }
+
     private static void DebugLog(string msg)
     {
         try

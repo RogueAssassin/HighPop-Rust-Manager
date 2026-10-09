@@ -18,6 +18,7 @@ public partial class App : System.Windows.Application
     // running multiple copies without realizing it).
     private static System.Threading.Mutex? _singleInstanceMutex;
     private static DateTime _lastTextRenderingFailureUtc = DateTime.MinValue;
+    private static DateTime _lastUiBindingFailureUtc = DateTime.MinValue;
     private static int _textRecoveryScheduled;
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
@@ -101,6 +102,41 @@ public partial class App : System.Windows.Application
         // UI-säikeen poikkeukset
         DispatcherUnhandledException += (_, ex) =>
         {
+            if (IsRecoverableUiBindingFailure(ex.Exception))
+            {
+                var now = DateTime.UtcNow;
+                if (now - _lastUiBindingFailureUtc > TimeSpan.FromSeconds(30))
+                {
+                    _lastUiBindingFailureUtc = now;
+                    WriteLog("UI BINDING: WPF rejected a read-only property binding. " +
+                             "The affected reference display was reset without interrupting Rust.");
+                }
+
+                if (Interlocked.Exchange(ref _textRecoveryScheduled, 1) == 0)
+                {
+                    Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ContextIdle,
+                        new Action(() =>
+                        {
+                            try
+                            {
+                                if (Services?.GetService<MainViewModel>() is { } main)
+                                    main.RecoverFromUiBindingFailure();
+                            }
+                            catch (Exception recoveryException)
+                            {
+                                WriteLog($"UI BINDING RECOVERY: {recoveryException.Message}");
+                            }
+                            finally
+                            {
+                                Interlocked.Exchange(ref _textRecoveryScheduled, 0);
+                            }
+                        }));
+                }
+
+                ex.Handled = true;
+                return;
+            }
+
             if (IsTextRenderingFailure(ex.Exception))
             {
                 var now = DateTime.UtcNow;
@@ -206,6 +242,19 @@ public partial class App : System.Windows.Application
             if (current.StackTrace?.Contains(
                     "MS.Internal.Text.TextInterface.TextAnalyzer.GetGlyphs",
                     StringComparison.Ordinal) == true)
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsRecoverableUiBindingFailure(Exception exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is InvalidOperationException
+                && current.Message.Contains(
+                    "binding cannot work on the read-only property",
+                    StringComparison.OrdinalIgnoreCase))
                 return true;
         }
         return false;

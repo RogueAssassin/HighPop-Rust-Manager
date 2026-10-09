@@ -2,6 +2,7 @@
 
 ## 1.0.5
 
+- Fixed the Reference result template's read-only `DefaultText` binding repeatedly throwing WPF dispatcher exceptions when command/ConVar results became visible, and added a non-modal recovery guard plus CI audit for inline `Run.Text` bindings.
 - Fixed Oxide/uMod shutdowns becoming stuck in `Stopping` when redirected standard input is intentionally disabled and WebRCON cannot complete a clean exit.
 - Made Force Stop interrupt an active graceful-stop wait immediately instead of queuing behind its full timeout.
 - Retained live process identity until Rust is confirmed exited, added bounded process-tree retries plus a Windows `taskkill` fallback, and kept failed terminations attached so administrators can retry without restarting HPRM.

@@ -490,7 +490,7 @@
                                                        Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                                             <TextBlock Margin="0,5,0,0" FontSize="11" FontFamily="Consolas"
                                                        Foreground="{StaticResource TextMutedBrush}">
-                                                <Run Text="Default: "/><Run Text="{Binding DefaultText}"/>
+                                                <Run Text="Default: "/><Run Text="{Binding DefaultText, Mode=OneWay}"/>
                                             </TextBlock>
                                         </StackPanel>
                                         <Button Grid.Column="1" Content="Insert" Style="{StaticResource GhostButton}"
@@ -2842,7 +2842,7 @@
                                                                        Foreground="{StaticResource TextMutedBrush}"
                                                                        Visibility="{Binding RconCommand, Converter={StaticResource NullToVis}}">
                                                                 <Run Text=" · RCON: "/>
-                                                                <Run Text="{Binding RconCommand}"
+                                                                <Run Text="{Binding RconCommand, Mode=OneWay}"
                                                                      Foreground="{StaticResource TextSecondaryBrush}"/>
                                                             </TextBlock>
                                                         </StackPanel>
