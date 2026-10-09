@@ -9,12 +9,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   build-and-test:
     runs-on: windows-latest
+    timeout-minutes: 35
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -84,5 +89,6 @@ jobs:
       - name: Upload testing package
         uses: actions/upload-artifact@v4
         with:
-          name: HighPop-testing-win-x64
+          name: HighPop-${{ github.ref_name }}-win-x64
           path: package_out/HighPop-v*-win-x64*
+          if-no-files-found: error

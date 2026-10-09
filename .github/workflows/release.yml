@@ -4,9 +4,13 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
   workflow_dispatch:
+
+# The main-branch run creates the version tag itself. Listening to that generated tag would
+# start a second release run for the same version.
+concurrency:
+  group: highpop-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -57,6 +61,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.publish == 'true'
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -71,6 +76,10 @@ jobs:
       - name: Restore
         run: dotnet restore HighPop.sln
 
+      - name: Audit XAML command surface
+        shell: pwsh
+        run: ./scripts/Test-UiSurface.ps1
+
       - name: Build
         run: dotnet build HighPop.sln -c Release --no-restore
 
@@ -79,6 +88,16 @@ jobs:
 
       - name: Publish self-contained single file
         run: dotnet publish HighPop/HighPop.csproj -c Release -r win-x64 --self-contained true -o publish_out
+
+      - name: Confirm portable output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path publish_out/HighPop.exe)) { throw "HighPop.exe was not produced" }
+          if (-not (Test-Path publish_out/assets/README.txt)) { throw "assets/README.txt was not produced" }
+          if (-not (Test-Path publish_out/assets/presets/rust_highpop.json)) { throw "Rust presets were not produced" }
+          $mapPresets = @(Get-ChildItem publish_out/assets/presets/rust_vanilla_*.json |
+            Where-Object { $_.BaseName -match '^rust_vanilla_(1000|1500|2000|2500|3000|3500|4000|4500|5000|5500|6000)$' })
+          if ($mapPresets.Count -ne 11) { throw "Expected 11 Rust map-size presets, found $($mapPresets.Count)" }
 
       - name: Verify release version and executable
         shell: pwsh
@@ -126,6 +145,43 @@ jobs:
             -Version "${{ needs.prepare.outputs.version }}" `
             -Commit "${{ github.sha }}"
 
+      - name: Verify release package and checksums
+        shell: pwsh
+        run: |
+          $tag = "${{ needs.prepare.outputs.tag }}"
+          $zip = Get-Item "HighPop-$tag-win-x64.zip"
+          $exe = Get-Item "HighPop-$tag-win-x64.exe"
+          foreach ($file in @($zip, $exe)) {
+            $checksumPath = "$($file.FullName).sha256"
+            if (-not (Test-Path $checksumPath)) { throw "Missing checksum for $($file.Name)" }
+            $expected = ((Get-Content $checksumPath -Raw).Trim() -split '\s+')[0]
+            $actual = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected.ToLowerInvariant()) {
+              throw "SHA-256 mismatch for $($file.Name)"
+            }
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip.FullName)
+          try {
+            $files = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') } |
+              Where-Object { -not $_.EndsWith('/') })
+            $required = @('HPRM/HighPop.exe', 'HPRM/CHANGELOG.md', 'HPRM/assets/README.txt')
+            foreach ($requiredFile in $required) {
+              if ($requiredFile -notin $files) { throw "ZIP is missing $requiredFile" }
+            }
+            $unexpected = @($files | Where-Object {
+              $_ -ne 'HPRM/HighPop.exe' -and
+              $_ -ne 'HPRM/CHANGELOG.md' -and
+              -not $_.StartsWith('HPRM/assets/')
+            })
+            if ($unexpected.Count -gt 0) {
+              throw "ZIP contains unexpected files: $($unexpected -join ', ')"
+            }
+          } finally {
+            $archive.Dispose()
+          }
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -136,6 +192,7 @@ jobs:
             HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip
             HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip.sha256
             HighPop-${{ needs.prepare.outputs.tag }}-win-x64.manifest.json
+          if-no-files-found: error
 
       - name: Create release tag
         if: github.ref_type != 'tag'
