@@ -242,7 +242,7 @@ public class ScheduledTaskService : IDisposable
                             LifecycleInitiator.Scheduler);
                         var stoppedGeneration = server.LifecycleGeneration;
                         if (server.BackupOnShutdown) await _backup.CreateBackupAsync(server);
-                        await Task.Delay(3000);
+                        await _manager.WaitForServerReleasedAsync(server, TimeSpan.FromSeconds(30));
                         if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
                             || server.DesiredState != ServerDesiredState.Stopped)
                         {
@@ -399,7 +399,8 @@ public class ScheduledTaskService : IDisposable
             }
             await _manager.StopAsync(server, fullWipe ? "Scheduled full wipe" : "Scheduled map wipe",
                 LifecycleInitiator.Scheduler);
-            await Task.Delay(3000);
+            // Wipes delete world files; wait until Rust has actually released them.
+            await _manager.WaitForServerReleasedAsync(server, TimeSpan.FromSeconds(30));
         }
         var stoppedGeneration = server.LifecycleGeneration;
 

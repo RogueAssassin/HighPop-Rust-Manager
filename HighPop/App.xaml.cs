@@ -204,15 +204,22 @@ public partial class App : System.Windows.Application
         webApi.DashboardEnabled = config.WebApiEnabled;
         if (config.WebApiRequired && config.WebApiPort > 0)
         {
-            try { webApi.Start(config.WebApiPort, config.WebApiToken); }
-            catch (Exception ex)
+            // netsh firewall/URL-ACL registration can take several seconds; start remote
+            // access in the background so it never delays the main window appearing.
+            var webApiPort = config.WebApiPort;
+            var webApiToken = config.WebApiToken;
+            _ = Task.Run(() =>
             {
-                WriteLog($"WEB API: {ex}");
-                System.Windows.MessageBox.Show(
-                    $"Remote access could not start: {ex.Message}\n\nHighPop will continue with remote access disabled.",
-                    "HighPop — Remote access", System.Windows.MessageBoxButton.OK,
-                    System.Windows.MessageBoxImage.Warning);
-            }
+                try { webApi.Start(webApiPort, webApiToken); }
+                catch (Exception ex)
+                {
+                    WriteLog($"WEB API: {ex}");
+                    HighPop.Services.UiDispatcher.Post(() => System.Windows.MessageBox.Show(
+                        $"Remote access could not start: {ex.Message}\n\nHighPop will continue with remote access disabled.",
+                        "HighPop — Remote access", System.Windows.MessageBoxButton.OK,
+                        System.Windows.MessageBoxImage.Warning));
+                }
+            });
         }
 
         // Start background services after DI is fully built

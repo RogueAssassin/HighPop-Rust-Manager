@@ -128,10 +128,11 @@ public class DiscordBotService : IDisposable
 
     public void Stop()
     {
+        // Stop is called from the Settings UI (ApplySettings) and on shutdown. It used to
+        // block the caller for up to 6 s (three sequential 2 s waits). Each loop owns the
+        // token it was started with, so cancelling is enough: the loops unwind on their own
+        // and a subsequent Start() creates a fresh token and fresh loops.
         _cts.Cancel();
-        try { _loop?.Wait(2000); } catch { }
-        try { _statusLoop?.Wait(2000); } catch { }
-        try { _gatewayLoop?.Wait(2000); } catch { }
         _loop = null;
         _statusLoop = null;
         _gatewayLoop = null;

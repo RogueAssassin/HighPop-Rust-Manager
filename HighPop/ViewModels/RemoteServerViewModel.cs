@@ -88,7 +88,7 @@ public partial class RemoteServerViewModel : ObservableObject, IDisposable
             if (_isActive) return;
             _isActive  = true;
             _logOffset = 0;
-            WpfApplication.Current?.Dispatcher?.Invoke(() => Log.Clear());
+            UiDispatcher.Post(() => Log.Clear());
             _pollTimer?.Stop();
             _pollTimer?.Dispose();
             _pollTimer = new System.Timers.Timer(2000);
@@ -124,7 +124,7 @@ public partial class RemoteServerViewModel : ObservableObject, IDisposable
             _logOffset = chunk.NextOffset;
             var app = WpfApplication.Current;
             if (app == null) return;
-            app.Dispatcher?.Invoke(() =>
+            UiDispatcher.Post(() =>
             {
                 for (int i = 0; i < chunk.Lines.Count; i++)
                 {

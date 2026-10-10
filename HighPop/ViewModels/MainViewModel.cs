@@ -209,18 +209,19 @@ public partial class MainViewModel : BaseViewModel
 
         manager.StatusChanged += (id, status) =>
         {
-            GameServer? server = null;
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            // StatusChanged is raised from process/lifecycle threads. Never block them on the
+            // UI thread: queue the UI refresh and resolve the server from the snapshot.
+            var server = FindServerSnapshot(id)?.Server;
+            UiDispatcher.Post(() =>
             {
                 OnPropertyChanged(nameof(RunningCount));
                 OnPropertyChanged(nameof(StoppedCount));
                 OnPropertyChanged(nameof(HasRunningServers));
                 OnPropertyChanged(nameof(CanInstallUpdate));
                 _tray.SetStatus(RunningCount, TotalServers);
-                server = Servers.FirstOrDefault(v => v.Server.Id == id)?.Server;
-                if (server != null)
-                    Save();
             });
+            if (server != null)
+                Save();
 
             if (server != null)
             {
@@ -240,7 +241,11 @@ public partial class MainViewModel : BaseViewModel
             }
         };
 
-        Servers.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SortedServers));
+        Servers.CollectionChanged += (_, _) =>
+        {
+            _serverSnapshot = [.. Servers];
+            OnPropertyChanged(nameof(SortedServers));
+        };
         RemoteServers.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SortedRemoteServers));
         LoadServers();
         _ = CheckForUpdateAsync(promptOnDetection: true);
@@ -260,9 +265,7 @@ public partial class MainViewModel : BaseViewModel
         _healthCheck.StartMonitoring();
 
         // Wire up Discord bot callbacks — same Dispatcher fix as WebAPI
-        _bot.GetServers    = () =>
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
-                Servers.Select(v => v.Server).ToList()) ?? [];
+        _bot.GetServers    = () => ServerSnapshot.Select(v => v.Server).ToList();
         _bot.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.Discord, "Discord start request") : Task.CompletedTask; });
         _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.Discord, "Discord stop request") : Task.CompletedTask; });
         _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.Discord, "Discord restart request") : Task.CompletedTask; });
@@ -280,9 +283,7 @@ public partial class MainViewModel : BaseViewModel
         _bot.ApplySettings(notifications.Settings);
 
         // Wire Scheduled Task callbacks
-        _scheduler.GetServers   = () =>
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
-                Servers.Select(v => v.Server).ToList()) ?? [];
+        _scheduler.GetServers   = () => ServerSnapshot.Select(v => v.Server).ToList();
         _scheduler.UpdateServer = id => DispatchCommandAndWait(() =>
         {
             var vm = FindServer(id);
@@ -294,7 +295,7 @@ public partial class MainViewModel : BaseViewModel
         // new file shows up without the user having to trigger something else first.
         _scheduler.TaskExecuted += (task, result) =>
         {
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            UiDispatcher.Post(() =>
             {
                 var vm = FindServer(task.ServerId);
                 if (vm == null) return;
@@ -308,7 +309,7 @@ public partial class MainViewModel : BaseViewModel
         // Same idea for idle-shutdown backups, which bypass the scheduler entirely
         _wakeOnDemand.ServerBackedUp += id =>
         {
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            UiDispatcher.Post(() =>
             {
                 var vm = FindServer(id);
                 vm?.RefreshBackups();
@@ -316,7 +317,9 @@ public partial class MainViewModel : BaseViewModel
         };
 
         // Wire Web API callbacks
-        _webApi.GetServers    = () => Servers.Select(v => v.Server);
+        // The Web API runs on HTTP worker threads; enumerate the immutable snapshot, never
+        // the live ObservableCollection (which may be mutated on the UI thread concurrently).
+        _webApi.GetServers    = () => ServerSnapshot.Select(v => v.Server).ToList();
         // AsyncRelayCommand.ExecuteAsync monitors task completion and calls
         // ButtonBase.UpdateCanExecute() — a DependencyProperty access that requires the
         // UI thread. Always dispatch through the Dispatcher so WPF never sees a
@@ -325,19 +328,14 @@ public partial class MainViewModel : BaseViewModel
         // is not held open for the full duration of long operations like restart.
         static Task DispatchCommand(Func<Task> action)
         {
-            WpfApplication.Current?.Dispatcher?.InvokeAsync(async () =>
+            _ = UiDispatcher.RunTaskAsync(async () =>
             {
-                try { await action(); } catch { }
+                try { await action(); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[HighPop] Remote command failed: {ex}"); }
             });
             return Task.CompletedTask;
         }
-        static Task DispatchCommandAndWait(Func<Task> action)
-        {
-            var dispatcher = WpfApplication.Current?.Dispatcher;
-            return dispatcher == null
-                ? action()
-                : dispatcher.InvokeAsync(action).Task.Unwrap();
-        }
+        static Task DispatchCommandAndWait(Func<Task> action) => UiDispatcher.RunTaskAsync(action);
         _webApi.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.WebApi, "Web API start request") : Task.CompletedTask; });
         _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.WebApi, "Web API stop request") : Task.CompletedTask; });
         _webApi.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.WebApi, "Web API restart request") : Task.CompletedTask; });
@@ -363,7 +361,7 @@ public partial class MainViewModel : BaseViewModel
             ? $"{(int)t.TotalHours:D2}:{t.Minutes:D2}:{t.Seconds:D2}"
             : null;
         _webApi.GetOnlinePlayers = id =>
-            FindServer(id)?.OnlinePlayers ?? [];
+            FindServerSnapshot(id)?.OnlinePlayers ?? [];
         _webApi.GetPerfSamples = (id, minutes) =>
         {
             var cutoff = DateTime.Now.AddMinutes(-minutes);
@@ -372,8 +370,7 @@ public partial class MainViewModel : BaseViewModel
         };
         _webApi.GetBackups = id =>
         {
-            GameServer? srv = null;
-            WpfApplication.Current?.Dispatcher?.Invoke(() => { srv = FindServer(id)?.Server; });
+            var srv = FindServerSnapshot(id)?.Server;
             if (srv == null) return [];
             return _backup.GetBackupsForServer(srv)
                 .Select(b => (
@@ -383,8 +380,7 @@ public partial class MainViewModel : BaseViewModel
         };
         _webApi.RestoreBackup = async (id, fileName) =>
         {
-            GameServer? srv = null;
-            WpfApplication.Current?.Dispatcher?.Invoke(() => { srv = FindServer(id)?.Server; });
+            var srv = FindServerSnapshot(id)?.Server;
             if (srv == null) return "Server not found";
             var dir      = System.IO.Path.GetFullPath(System.IO.Path.Combine(_backup.BackupRoot, id));
             var zipPath  = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, fileName));
@@ -398,15 +394,15 @@ public partial class MainViewModel : BaseViewModel
 
         _webApi.SaveNote = async (id, notes) =>
         {
-            GameServer? srv = null;
-            List<GameServer>? all = null;
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            var (srv, all) = await UiDispatcher.RunAsync(() =>
             {
-                srv = FindServer(id)?.Server;
-                if (srv != null) { srv.Notes = notes; all = Servers.Select(v => v.Server).ToList(); }
+                var found = FindServer(id)?.Server;
+                if (found == null) return ((GameServer?)null, (List<GameServer>?)null);
+                found.Notes = notes;
+                return (found, Servers.Select(v => v.Server).ToList());
             });
-            if (srv == null) return "Server not found";
-            await Task.Run(() => _config.SaveServers(all!));
+            if (srv == null || all == null) return "Server not found";
+            await Task.Run(() => _config.SaveServers(all));
             return null;
         };
 
@@ -422,12 +418,10 @@ public partial class MainViewModel : BaseViewModel
 
         _webApi.GetFullLog = id =>
         {
-            List<string>? lines = null;
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
-            {
-                var vm = FindServer(id);
-                lines = vm?.Log.Select(m => $"[{m.FormattedTime}] {m.Text}").ToList();
-            });
+            // vm.Log is a UI-bound collection; copy it on the UI thread, but never wait forever.
+            var lines = UiDispatcher.Read(() =>
+                FindServer(id)?.Log.Select(m => $"[{m.FormattedTime}] {m.Text}").ToList(),
+                fallback: null);
             return lines ?? [];
         };
 
@@ -440,17 +434,15 @@ public partial class MainViewModel : BaseViewModel
 
         // Wire CrashPredictionService — snapshot on UI thread so background thread gets a safe copy
         _crashPrediction.GetRunningServers = () =>
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
-                Servers.Where(v => v.Server.Status == ServerStatus.Running)
-                       .Select(v => (v.Server.Id, v.Server.DisplayName, v.Server.CurrentPlayers))
-                       .ToList()
-                       .AsEnumerable()
-            ) ?? [];
+            ServerSnapshot.Where(v => v.Server.Status == ServerStatus.Running)
+                          .Select(v => (v.Server.Id, v.Server.DisplayName, v.Server.CurrentPlayers))
+                          .ToList();
         _crashPrediction.PredictionRaised += OnCrashPrediction;
         manager.LogReceived += (id, msg) =>
         {
-            var server = WpfApplication.Current?.Dispatcher?.Invoke(() =>
-                Servers.FirstOrDefault(v => v.Server.Id == id)?.Server);
+            // Called for every console line. Resolve from the snapshot instead of a blocking
+            // UI round-trip per line (thousands per minute on a busy Oxide server).
+            var server = FindServerSnapshot(id)?.Server;
             if (server != null)
             {
                 _crashPrediction.CheckLogLine(id, server.DisplayName, msg.Text);
@@ -461,7 +453,7 @@ public partial class MainViewModel : BaseViewModel
 
     private void OnMachineUpdated(string machineId, List<Services.RemoteServerInfo> servers)
     {
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             var machineVm = RemoteMachines.FirstOrDefault(m => m.Definition.Id == machineId);
             if (machineVm != null)
@@ -495,7 +487,7 @@ public partial class MainViewModel : BaseViewModel
 
     private void OnMachinesChanged()
     {
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             RemoteMachines.Clear();
             foreach (var machine in _remoteMachines.Machines)
@@ -515,7 +507,7 @@ public partial class MainViewModel : BaseViewModel
     private void OnCrashPrediction(string serverId, Services.CrashPrediction pred)
     {
         // FindServer accesses Servers collection — must run on UI thread
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             FindServer(serverId)?.AppendConsoleWarning(
                 $"[HighPop PREDICTION] {pred.Reason} (Severity {pred.Severity})");
@@ -560,6 +552,19 @@ public partial class MainViewModel : BaseViewModel
     }
 
     private ServerViewModel? FindServer(string id) => Servers.FirstOrDefault(v => v.Server.Id == id);
+
+    // Immutable copy of Servers, replaced on the UI thread whenever the collection changes.
+    // Background services (process events, Web API, Discord, scheduler, crash prediction)
+    // read this instead of the live ObservableCollection, so they never need to block on
+    // the UI thread just to find a server.
+    private volatile ServerViewModel[] _serverSnapshot = [];
+    private IReadOnlyList<ServerViewModel> ServerSnapshot => _serverSnapshot;
+    private ServerViewModel? FindServerSnapshot(string id)
+    {
+        foreach (var vm in _serverSnapshot)
+            if (vm.Server.Id == id) return vm;
+        return null;
+    }
 
     [RelayCommand]
     private void ToggleBatchMode() => BatchMode = !BatchMode;
@@ -741,8 +746,7 @@ public partial class MainViewModel : BaseViewModel
         // Download and prepare update
         var progress = new Progress<(int pct, string msg)>(x =>
         {
-            System.Windows.Application.Current?.Dispatcher?.Invoke(
-                () => UpdateStatusText = $"[{x.pct}%] {x.msg}");
+            UiDispatcher.Post(() => UpdateStatusText = $"[{x.pct}%] {x.msg}");
         });
 
         var ok = await Services.SelfUpdateService.DownloadAndPrepareAsync(
@@ -1348,25 +1352,21 @@ public partial class MainViewModel : BaseViewModel
     [RelayCommand]
     public void Save()
     {
-        List<GameServer> snapshot = [];
-        void Capture() => snapshot = Servers.Select(viewModel => viewModel.Server).ToList();
-
-        var dispatcher = WpfApplication.Current?.Dispatcher;
-        if (dispatcher != null && !dispatcher.CheckAccess()) dispatcher.Invoke(Capture);
-        else Capture();
+        // Save is called from the UI, the 15 s auto-save timer and process/lifecycle events.
+        // Read the immutable server snapshot so background callers never block on the UI
+        // thread; ConfigService serialises and atomically writes under its own lock.
+        var snapshot = ServerSnapshot.Select(viewModel => viewModel.Server).ToList();
 
         var errors = ServerPortAllocator.ValidateProfiles(snapshot.Select(server =>
             (server.Id, server.DisplayName, PortSetFor(server))));
         if (errors.Count > 0)
         {
-            void Report()
+            var summary = string.Join(" ", errors.Take(2));
+            UiDispatcher.Post(() =>
             {
-                var summary = string.Join(" ", errors.Take(2));
                 foreach (var viewModel in Servers)
                     viewModel.PortConfigurationStatus = summary;
-            }
-            if (dispatcher != null && !dispatcher.CheckAccess()) dispatcher.Invoke(Report);
-            else Report();
+            });
             return;
         }
 

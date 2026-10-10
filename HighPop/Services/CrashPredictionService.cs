@@ -252,7 +252,7 @@ public class CrashPredictionService : IDisposable
 
     public void Dispose()
     {
+        // The prediction loop observes the token; don't hold up manager exit waiting for it.
         _cts?.Cancel();
-        try { _task?.Wait(3000); } catch { }
     }
 }

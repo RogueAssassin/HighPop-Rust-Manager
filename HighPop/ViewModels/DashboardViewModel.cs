@@ -54,7 +54,7 @@ public partial class DashboardViewModel : BaseViewModel, IDisposable // #2: IDis
 
     private void OnMetricsUpdated()
     {
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             CpuPercent = _metrics.CpuPercent;
             RamUsedMb  = _metrics.RamUsedMb;
@@ -71,7 +71,7 @@ public partial class DashboardViewModel : BaseViewModel, IDisposable // #2: IDis
 
     private void OnNetworkUpdated()
     {
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             NetworkIn  = NetworkMonitorService.FormatSpeed(_network.CurrentBytesInPerSec);
             NetworkOut = NetworkMonitorService.FormatSpeed(_network.CurrentBytesOutPerSec);

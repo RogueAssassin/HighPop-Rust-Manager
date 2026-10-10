@@ -98,7 +98,7 @@ public partial class SettingsViewModel : BaseViewModel
         _bot           = bot;
         _webApi        = webApi;
         _upnp          = upnp;
-        _bot.StatusChanged += msg => WpfApplication.Current?.Dispatcher?.Invoke(() => {
+        _bot.StatusChanged += msg => UiDispatcher.Post(() => {
             BotStatus = msg;
             OnPropertyChanged(nameof(BotIsRunning));
         });
@@ -159,7 +159,7 @@ public partial class SettingsViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    private void SaveSettings()
+    private async Task SaveSettingsAsync()
     {
         if (string.IsNullOrWhiteSpace(DefaultInstallRoot)
             || !System.IO.Path.IsPathRooted(DefaultInstallRoot))
@@ -271,8 +271,24 @@ public partial class SettingsViewModel : BaseViewModel
         _webApi.DashboardEnabled = WebApiEnabled;
         if (WebApiEnabled || SlaveMode)
         {
-            _webApi.Start(WebApiPort, WebApiToken);
-            WebApiStatus = BuildWebApiStatus();
+            // Start() runs netsh (firewall rule + URL ACL) and can take several seconds;
+            // keep it off the UI thread so the Settings window stays responsive.
+            var port = WebApiPort;
+            var token = WebApiToken;
+            try
+            {
+                SettingsStatus = "Starting remote access...";
+                await Task.Run(() => _webApi.Start(port, token));
+                WebApiStatus = BuildWebApiStatus();
+            }
+            catch (Exception ex)
+            {
+                WebApiStatus = $"⚠ Failed: {ex.Message}";
+                WpfMsgBox.Show($"Settings were saved, but remote access could not start:\n\n{ex.Message}",
+                    "HighPop — Remote access", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            }
+            OnPropertyChanged(nameof(WebApiIsRunning));
+            OnPropertyChanged(nameof(WebApiStatusIsWarning));
         }
         else
         {
@@ -282,7 +298,13 @@ public partial class SettingsViewModel : BaseViewModel
             OnPropertyChanged(nameof(WebApiStatusIsWarning));
         }
 
-        if (!WindowsStartupTaskService.SetEnabled(StartWithWindows, out var startupTaskError))
+        var startWithWindows = StartWithWindows;
+        var (startupTaskOk, startupTaskError) = await Task.Run(() =>
+        {
+            var ok = WindowsStartupTaskService.SetEnabled(startWithWindows, out var error);
+            return (ok, error);
+        });
+        if (!startupTaskOk)
         {
             WpfMsgBox.Show(
                 $"Settings were saved, but the Windows startup task could not be updated:\n\n{startupTaskError}",
@@ -379,7 +401,7 @@ public partial class SettingsViewModel : BaseViewModel
     [RelayCommand]
     private async Task TestEmailAsync()
     {
-        SaveSettings();
+        await SaveSettingsAsync();
         var ok = await _notifications.TestEmailAsync();
         WpfMsgBox.Show(ok ? "Test email sent successfully!" : "Failed to send. Check SMTP settings.",
             "HighPop Email", WpfMsgBoxButton.OK,

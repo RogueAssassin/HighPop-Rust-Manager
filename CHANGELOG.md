@@ -11,6 +11,13 @@
 - Kept SteamCMD UI updates asynchronous, coalesced network/chart rendering, and reduced active performance-chart refreshes to five-second intervals while retaining two-second metric history samples.
 - Improved Settings with clearer storage/runtime guidance, inline save/open status, Explorer shortcuts for server, backup, and shared SteamCMD folders, and validation for Web API/SMTP ports, health thresholds, and CPU/memory percentages.
 - Added smoke coverage for SteamCMD progress formats and manager-owned PID identity validation, and advanced testing metadata to v1.0.6.
+- Fixed the whole manager freezing ("Not Responding") when Stop or Force Stop was used on an Oxide server. The one-shot WebRCON client used for `server.save`/`quit` was disposed with a blocking wait on the UI thread, whose async close could only finish on that same thread. RCON teardown is now non-blocking, all RCON awaits use `ConfigureAwait(false)`, and Start/Stop/Force Stop run off the UI thread.
+- Added a shared `UiDispatcher` helper and replaced blocking `Dispatcher.Invoke` calls in status, lifecycle, player, RCON, mod, remote-machine and settings handlers with non-blocking dispatch, so background events can never stall waiting on the UI.
+- Background services (process events, Web API, Discord, scheduler, crash prediction, auto-save) now read an immutable server snapshot instead of marshalling to the UI thread, removing a blocking UI round-trip for every console line.
+- Removed blocking waits from manager exit and Settings: the Discord bot (up to 6 s), remote-machine polling (up to 8 s), crash prediction (3 s) and RCON disposal (3 s) no longer hold the window, and Web API/firewall registration plus the Windows startup task now run in the background.
+- Restarts (manual, scheduled, daily and wipes) now wait for the old Rust process to exit and its game/query/RCON ports to free (up to 30 s) instead of a fixed 3-second delay, and a manual restart is cancelled if the server is still running after the stop attempt.
+- Pre-flight cleanup of leftover `RustDedicated.exe` processes is now asynchronous and disposes every process handle it inspects.
+- Added a smoke test that reproduces the Oxide stop deadlock (disposing a connected WebRCON client on a blocked UI-style thread).
 
 ## 1.0.5
 

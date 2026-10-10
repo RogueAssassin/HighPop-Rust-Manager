@@ -26,6 +26,13 @@ using (var disconnectedRcon = new RconService())
     Check(!disconnectedRcon.IsConnected,
         "WebRCON disconnect is safe and awaitable when no socket is active");
 }
+// Regression: stopping an Oxide server froze the UI. The stop path disposed a connected
+// RconService on the WPF UI thread, and Dispose() blocked on an async close whose
+// continuation was queued back to that same (blocked) thread. Reproduce it with a
+// single-threaded SynchronizationContext that is never pumped, exactly like a busy UI thread.
+Check(await RconDisposeOnBlockedContextCompletesAsync(),
+    "WebRCON Dispose on a blocked UI-style thread completes instead of deadlocking");
+
 Check(RustReferenceService.ReferenceUrl == "https://api.roguegaming.com.au",
     "Rogue Rust Reference uses the public read-only metadata endpoint");
 var referenceEntry = new RustReferenceEntry
@@ -968,6 +975,61 @@ finally
     try { Directory.Delete(testRoot, recursive: true); } catch { }
 }
 
+static async Task<bool> RconDisposeOnBlockedContextCompletesAsync()
+{
+    var port = GetFreeTcpPort();
+    using var listener = new System.Net.HttpListener();
+    listener.Prefixes.Add($"http://localhost:{port}/");
+    try { listener.Start(); }
+    catch (System.Net.HttpListenerException)
+    {
+        // Environment without http.sys rights: nothing to test, don't fail the suite.
+        return true;
+    }
+
+    var serverTask = Task.Run(async () =>
+    {
+        try
+        {
+            var context = await listener.GetContextAsync();
+            if (!context.Request.IsWebSocketRequest) { context.Response.Close(); return; }
+            var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
+            var buffer = new byte[1024];
+            // Read until the client goes away; never reply to the close handshake promptly.
+            while (ws.State == System.Net.WebSockets.WebSocketState.Open)
+                await ws.ReceiveAsync(buffer, CancellationToken.None);
+        }
+        catch { }
+    });
+
+    var rcon = new RconService();
+    var connected = await rcon.ConnectAsync("localhost", port, "smoke-test");
+    if (!connected) { listener.Stop(); return true; }
+
+    var completed = false;
+    var uiThread = new Thread(() =>
+    {
+        // Install a context whose posted work is never executed (a blocked UI thread).
+        SynchronizationContext.SetSynchronizationContext(new NeverPumpedSynchronizationContext());
+        rcon.Dispose();
+        completed = true;
+    }) { IsBackground = true };
+    uiThread.Start();
+    var finished = uiThread.Join(TimeSpan.FromSeconds(10));
+    listener.Stop();
+    try { await serverTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+    return finished && completed;
+}
+
+static int GetFreeTcpPort()
+{
+    var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    probe.Start();
+    var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+    probe.Stop();
+    return port;
+}
+
 if (failures.Count > 0)
 {
     Console.Error.WriteLine("HighPop smoke tests failed:");
@@ -977,3 +1039,9 @@ if (failures.Count > 0)
 
 Console.WriteLine("HighPop smoke tests passed.");
 return 0;
+
+sealed class NeverPumpedSynchronizationContext : SynchronizationContext
+{
+    public override void Post(SendOrPostCallback d, object? state) { /* dropped: thread is blocked */ }
+    public override void Send(SendOrPostCallback d, object? state) => d(state);
+}

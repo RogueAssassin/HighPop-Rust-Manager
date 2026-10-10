@@ -30,7 +30,7 @@ public partial class MachineViewModel : ObservableObject
 
     public void UpdateServers(List<RemoteServerInfo> servers)
     {
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             Servers.Clear();
             foreach (var s in servers) Servers.Add(s);

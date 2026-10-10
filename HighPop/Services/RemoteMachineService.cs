@@ -230,8 +230,8 @@ public class RemoteMachineService : IDisposable
     public void Dispose()
     {
         _cts?.Cancel();
-        // HttpClient timeout is 5 s — wait long enough for in-flight requests to complete
-        try { _pollTask?.Wait(8000); } catch { }
+        // Disposing HttpClient aborts any in-flight request, so the poll loop exits promptly.
+        // Waiting here (previously up to 8 s) froze the window on manager exit.
         _http.Dispose();
     }
 }

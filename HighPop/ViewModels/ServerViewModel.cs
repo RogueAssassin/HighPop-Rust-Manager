@@ -782,7 +782,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 catch (Exception ex) { AppendLog($"[HighPop] Backup before start failed: {ex.Message}", ConsoleMessageType.Warning); }
             }
 
-            await _manager.StartAsync(Server, initiator, reason);
+            // Start does file I/O, process scans and pre-flight cleanup; run it off the UI thread.
+            await Task.Run(() => _manager.StartAsync(Server, initiator, reason));
             // StartPerfMonitoring() and StartUpdateTimer() are called from OnStatusChanged(Running)
         }
         catch (FileNotFoundException ex)
@@ -857,7 +858,18 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         AppendLog("[HighPop] " + Loc.StatusStopping, ConsoleMessageType.System);
         await StopManagedAsync(initiator, reason);
         var stoppedGeneration = Server.LifecycleGeneration;
-        await Task.Delay(3000);
+        if (_manager.IsRunning(Server.Id))
+        {
+            AppendLog("[HighPop] Restart cancelled: the server is still running after the stop attempt. Use Force Stop, then Start.",
+                ConsoleMessageType.Error);
+            return;
+        }
+
+        // Wait for the old process to exit and its ports to free instead of a fixed delay.
+        AppendLog("[HighPop] Waiting for the previous process and ports to be released...", ConsoleMessageType.System);
+        if (!await Task.Run(() => _manager.WaitForServerReleasedAsync(Server, TimeSpan.FromSeconds(30))))
+            AppendLog("[HighPop] Ports were still in use after 30 seconds; attempting to start anyway.",
+                ConsoleMessageType.Warning);
         if (!ServerLifecycleRules.IsCurrent(Server, stoppedGeneration)
             || Server.DesiredState != ServerDesiredState.Stopped)
         {
@@ -1169,7 +1181,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             var port = Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1;
             var ok = await _rcon.ConnectAsync(ip, port, Server.RconPassword, cancellationToken);
 
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            UiDispatcher.Post(() =>
             {
                 RconConnected = ok;
                 RconStatusText = ok
@@ -1205,7 +1217,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _rconAutoConnectCts = cts;
         var token = cts.Token;
         var lifecycleGeneration = Server.LifecycleGeneration;
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
             RconStatusText = "Waiting for Rust WebRCON...");
         _ = Task.Run(async () =>
         {
@@ -1218,7 +1230,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 var initialDelay = requestedDelay < timeout ? requestedDelay : timeout;
                 var deadline = DateTime.UtcNow + timeout;
 
-                WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                UiDispatcher.Post(() =>
                     RconStatusText = $"Waiting {initialDelay.TotalSeconds:0}s before WebRCON...");
                 await Task.Delay(initialDelay, token);
 
@@ -1240,13 +1252,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     var remaining = deadline - DateTime.UtcNow;
                     if (remaining <= TimeSpan.Zero) break;
                     if (retryDelay > remaining) retryDelay = remaining;
-                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    UiDispatcher.Post(() =>
                         RconStatusText = $"WebRCON retry {failedAttempt + 1} in {retryDelay.TotalSeconds:0}s");
                     await Task.Delay(retryDelay, token);
                 }
                 if (!token.IsCancellationRequested)
                 {
-                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    UiDispatcher.Post(() =>
                         RconStatusText = "Auto-connect timed out — use Connect to retry");
                     AppendLog(
                         $"[RCON] Auto-connect timed out after {timeout.TotalMinutes:0} minute(s).",
@@ -1353,7 +1365,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     public void RefreshBackups()
     {
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             Backups.Clear();
             foreach (var b in _backup.GetBackupsForServer(Server))
@@ -1805,7 +1817,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
+                UiDispatcher.Post(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
 
             await _mods.InstallOxideAsync(Plugin, Server.InstallPath, progress);
             AppendLog("[Mods] ✅ Oxide installed successfully.", ConsoleMessageType.System);
@@ -1815,7 +1827,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         catch (Exception ex)
         {
             AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
+            UiDispatcher.Post(() => ModStatusText = $"❌ {ex.Message}");
         }
         finally { ModBusy = false; }
     }
@@ -1839,7 +1851,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
+                UiDispatcher.Post(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
             await _mods.InstallCarbonAsync(Server.InstallPath, progress);
             AppendLog("[Mods] ✅ Carbon installed successfully.", ConsoleMessageType.System);
             AddActionLog("Carbon installed or updated");
@@ -1848,7 +1860,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         catch (Exception ex)
         {
             AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"❌ {ex.Message}");
+            UiDispatcher.Post(() => ModStatusText = $"❌ {ex.Message}");
         }
         finally { ModBusy = false; }
     }
@@ -1872,7 +1884,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             var progress = new Progress<(int pct, string msg)>(x =>
-                WpfApplication.Current?.Dispatcher?.Invoke(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
+                UiDispatcher.Post(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
             var version = await _mods.InstallRogueRustAsync(Server.InstallPath, RogueRustChannel, progress);
             var frameworks = string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath)
                 .Select(target => target.Framework));
@@ -2083,7 +2095,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task RefreshPlayersAsync()
     {
         await FetchOnlinePlayersAsync();
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             PlayerHistory = _playerStats.GetSessions(Server.Id, 50);
             PlayerStatsList = _playerStats.GetPlayerStats(Server.Id, 50);
@@ -2109,7 +2121,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 try { response = await _rcon.SendCommandAsync(cmd); }
                 catch
                 {
-                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    UiDispatcher.Post(() =>
                     {
                         RconConnected = false;
                         RconStatusText = "Connection lost — reconnecting";
@@ -2125,7 +2137,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 }
                 else if (!_rcon.IsConnected)
                 {
-                    WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                    UiDispatcher.Post(() =>
                     {
                         RconConnected = false;
                         RconStatusText = "Connection lost — reconnecting";
@@ -2145,7 +2157,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
             if (querySource.Length == 0)
             {
-                WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                UiDispatcher.Post(() =>
                     PlayerQueryStatus = RconConnected
                         ? "The server returned an unreadable player list; retrying automatically."
                         : "Player query unavailable — waiting for WebRCON or the Steam query port.");
@@ -2218,7 +2230,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         }
         _playersFetchedOnce = true;
 
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             OnlinePlayers = parsed;
             PlayerQueryStatus = $"{querySource} • refreshed {DateTime.Now:HH:mm:ss}";
@@ -2313,7 +2325,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _operationsModel.Series.Add(_netOutSeries);
         _operationsModel.Series.Add(_playersSeries);
 
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             PerfPlot = _perfModel;
             OperationsPlot = _operationsModel;
@@ -2839,7 +2851,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             }
             finally { _rconLock.Release(); }
 
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            UiDispatcher.Post(() =>
             {
                 RconConnected = false;
                 RconStatusText = "Connection lost — using process console";
@@ -3078,7 +3090,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         }
         _perfMonitor.Untrack(Server.Id);
         _perfHistory.Flush(Server.Id);
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             CpuPercent = 0;
             MemoryMb = 0;
@@ -3097,8 +3109,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void OnStatusChanged(string serverId, ServerStatus status)
     {
         if (serverId != Server.Id) return;
-        WpfApplication.Current?.Dispatcher?.Invoke(RefreshStatus);
-        WpfApplication.Current?.Dispatcher?.Invoke(() => OnPropertyChanged(nameof(LastExitSummary)));
+        UiDispatcher.Post(RefreshStatus);
+        UiDispatcher.Post(() => OnPropertyChanged(nameof(LastExitSummary)));
         _ = _notifications.NotifyServerStatusAsync(Server, status);
 
         var actionText = status switch
@@ -3116,7 +3128,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         // StartAsync relay command is NOT called on crash-restarts — ServerManagerService handles that.
         if (status == ServerStatus.Running)
         {
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            UiDispatcher.Post(() =>
             {
                 StartPerfMonitoring();
                 StartPlayerRefresh();
@@ -3131,7 +3143,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             _playerStats.CloseOpenSessions(Server.Id);
             _playersFetchedOnce = false;
             _ = DisconnectRconForStopAsync();
-            WpfApplication.Current?.Dispatcher?.Invoke(() =>
+            UiDispatcher.Post(() =>
             {
                 StopPerfMonitoring();
                 StopPlayerRefresh();
@@ -3147,7 +3159,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void OnLifecycleChanged(ServerLifecycleTransition transition)
     {
         if (transition.ServerId != Server.Id) return;
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             OnPropertyChanged(nameof(LifecycleDetailText));
             OnPropertyChanged(nameof(StatusColor));
@@ -3166,7 +3178,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         catch { }
         finally { _rconLock.Release(); }
 
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             RconConnected = false;
             RconStatusText = "Disconnected";
@@ -3176,7 +3188,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void OnPortsReassigned(Models.GameServer srv)
     {
         if (srv.Id != Server.Id) return;
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        UiDispatcher.Post(() =>
         {
             OnPropertyChanged(nameof(Server));
         });
@@ -3185,7 +3197,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void OnCrashLimitReached(string serverId)
     {
         if (serverId != Server.Id) return;
-        WpfApplication.Current?.Dispatcher?.Invoke(StopPerfMonitoring);
+        UiDispatcher.Post(StopPerfMonitoring);
         StopUpdateTimer();
         _ = _notifications.NotifyAsync(
             $"⛔ {Server.DisplayName} — Auto-restart disabled",
@@ -3413,17 +3425,15 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _rconAutoConnectCts?.Cancel();
         _rconAutoConnectCts?.Dispose();
         _rconAutoConnectCts = null;
-        if (_rconLock.Wait(TimeSpan.FromSeconds(3)))
+        // Dispose runs on the UI thread. RconService.Dispose aborts the socket without
+        // waiting, so take the lock only if it's free right now instead of blocking for 3 s.
+        var lockTaken = _rconLock.Wait(0);
+        try
         {
-            try { _rcon?.Dispose(); _rcon = null; }
-            finally { _rconLock.Release(); }
-        }
-        else
-        {
-            // Lock timed out during shutdown — dispose anyway to avoid resource leak
             try { _rcon?.Dispose(); } catch { }
             _rcon = null;
         }
+        finally { if (lockTaken) _rconLock.Release(); }
 
         // Do not dispose the semaphore: a cancelled auto-connect attempt may still be queued
         // briefly, and disposing a semaphore with waiters can surface an ObjectDisposedException

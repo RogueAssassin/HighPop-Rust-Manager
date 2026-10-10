@@ -407,31 +407,40 @@ public class ServerManagerService
                 .Select(i => i.Process?.Id ?? 0)
                 .ToHashSet();
 
-            var zombies = Process.GetProcessesByName(exeName)
-                                 .Where(p =>
-                                 {
-                                     try
-                                     {
-                                         if (p.HasExited || otherRunningPids.Contains(p.Id)) return false;
-                                         var path = p.MainModule?.FileName;
-                                         return path != null &&
-                                                string.Equals(Path.GetFullPath(path), Path.GetFullPath(expectedExePath),
-                                                    StringComparison.OrdinalIgnoreCase);
-                                     }
-                                     catch { return false; }
-                                 })
-                                 .ToList();
-            foreach (var z in zombies)
+            var candidates = Process.GetProcessesByName(exeName);
+            var zombies = new List<Process>();
+            foreach (var p in candidates)
             {
+                var keep = false;
                 try
                 {
-                    z.Kill(entireProcessTree: true);
-                    z.WaitForExit(3000);
-                    var msg = new ConsoleMessage { Text = $"[PRE-FLIGHT] Killed leftover process {exeName} (PID {z.Id})", Type = ConsoleMessageType.Warning };
-                    inst0.AddToLog(msg);
-                    LogReceived?.Invoke(server.Id, msg);
+                    if (!p.HasExited && !otherRunningPids.Contains(p.Id))
+                    {
+                        var path = p.MainModule?.FileName;
+                        keep = path != null &&
+                               string.Equals(Path.GetFullPath(path), Path.GetFullPath(expectedExePath),
+                                   StringComparison.OrdinalIgnoreCase);
+                    }
                 }
-                catch { /* process already gone */ }
+                catch { keep = false; }
+                if (keep) zombies.Add(p);
+                else p.Dispose();
+            }
+            foreach (var z in zombies)
+            {
+                using (z)
+                {
+                    try
+                    {
+                        var zombiePid = z.Id;
+                        z.Kill(entireProcessTree: true);
+                        await WaitForProcessExitAsync(z, TimeSpan.FromSeconds(3));
+                        var msg = new ConsoleMessage { Text = $"[PRE-FLIGHT] Killed leftover process {exeName} (PID {zombiePid})", Type = ConsoleMessageType.Warning };
+                        inst0.AddToLog(msg);
+                        LogReceived?.Invoke(server.Id, msg);
+                    }
+                    catch { /* process already gone */ }
+                }
             }
             if (zombies.Count > 0)
                 await Task.Delay(1000); // brief pause so OS releases ports
@@ -1014,6 +1023,43 @@ public class ServerManagerService
            && inst.Process is { } process
            && !SafeHasExited(process);
 
+    /// <summary>
+    /// Waits until a stopped server has fully released its process and network ports so a
+    /// restart doesn't race the old RustDedicated.exe (Oxide in particular can hold the game
+    /// and RCON ports for a few seconds after the process is asked to quit).
+    /// Returns false if the process or a port is still held when <paramref name="timeout"/> expires.
+    /// </summary>
+    public async Task<bool> WaitForServerReleasedAsync(
+        GameServer server,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        // Short grace period for the OS to tear down sockets after the process exits.
+        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+        while (true)
+        {
+            var processGone = !IsRunning(server.Id) && !IsPidAlive(server.RunningPid);
+            if (processGone
+                && PortCheckerService.CheckServerPorts(server).All(result => result.IsAvailable))
+                return true;
+            if (DateTime.UtcNow >= deadline) return false;
+            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsPidAlive(int pid)
+    {
+        if (pid <= 0) return false;
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !SafeHasExited(process);
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
     public async Task ForceStopAsync(
         GameServer server,
         LifecycleInitiator initiator = LifecycleInitiator.Operator,
@@ -1541,7 +1587,7 @@ public class ServerManagerService
                 await Task.Delay(1000);
                 await StopAsync(server, "Scheduled daily restart", LifecycleInitiator.Scheduler);
                 var stoppedGeneration = server.LifecycleGeneration;
-                await Task.Delay(3000);
+                await WaitForServerReleasedAsync(server, TimeSpan.FromSeconds(30));
                 if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
                     || server.DesiredState != ServerDesiredState.Stopped)
                     return;
