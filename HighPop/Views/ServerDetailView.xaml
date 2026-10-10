@@ -42,9 +42,9 @@
                             Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}"/>
                     <Button Content="■  Stop safely" Style="{StaticResource PrimaryButton}" Margin="0,0,6,0"
                             Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}"/>
-                    <Button Content="Force Stop" Style="{StaticResource DangerButton}" Margin="0,0,6,0"
-                            Command="{Binding ForceStopCommand}" IsEnabled="{Binding CanStop}"
-                            ToolTip="Sends server.save and quit, waits five seconds, then terminates the process tree if Rust has not exited."/>
+                    <Button Content="Force Stop PID" Style="{StaticResource DangerButton}" Margin="0,0,6,0"
+                            Command="{Binding ForceStopCommand}" IsEnabled="{Binding CanForceStop}"
+                            ToolTip="Force-close the exact Rust PID started by HighPop, including its process tree."/>
                     <Button Content="↻  Restart" Style="{StaticResource GhostButton}" Margin="0,0,6,0"
                             Command="{Binding RestartCommand}" IsEnabled="{Binding CanStop}" ToolTip="Restart"/>
                     <Button Content="↓  Install / Update" Style="{StaticResource GhostButton}" Margin="0,0,6,0"
@@ -147,7 +147,7 @@
                 Visibility="{Binding IsInstalling, Converter={StaticResource BoolToVis}}">
             <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                    <TextBlock Text="Installing / updating..." FontSize="12" Foreground="{StaticResource AccentBlueBrush}"/>
+                    <TextBlock Text="{Binding InstallProgressText}" FontSize="12" Foreground="{StaticResource AccentBlueBrush}"/>
                     <TextBlock Text="{Binding InstallProgress}" Margin="8,0,0,0" FontSize="12"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
                     <TextBlock Text="%" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>

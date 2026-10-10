@@ -13,6 +13,12 @@ public class ServerInstance
 {
     public GameServer Server { get; }
     public Process? Process { get; set; }
+    /// <summary>
+    /// Immutable identity of the Rust process HighPop launched or verified during reattach.
+    /// Shutdown always targets this PID instead of relying on a potentially stale Process handle.
+    /// </summary>
+    public int OwnedProcessId { get; private set; }
+    public DateTime? OwnedProcessStartedUtc { get; private set; }
     public DateTime? StartTime { get; set; }
     public ObservableCollection<ConsoleMessage> Log { get; } = [];
     // Lock protecting Log for concurrent read (GetLog HTTP handler) vs write (process output threads)
@@ -41,6 +47,13 @@ public class ServerInstance
     public List<DateTime> CrashTimes { get; } = [];
 
     public ServerInstance(GameServer server) => Server = server;
+
+    public void CaptureProcessIdentity(Process process)
+    {
+        OwnedProcessId = process.Id;
+        try { OwnedProcessStartedUtc = process.StartTime.ToUniversalTime(); }
+        catch { OwnedProcessStartedUtc = null; }
+    }
 
     public bool TryMarkReady(string source)
     {
@@ -265,6 +278,7 @@ public class ServerManagerService
             }
 
             var inst = new ServerInstance(server) { Process = p, StartTime = SafeStartTime(p) };
+            inst.CaptureProcessIdentity(p);
             inst.MarkProcessObserved();
             inst.TryMarkReady("reattached running process");
             try { p.EnableRaisingEvents = true; } catch { }
@@ -738,6 +752,7 @@ public class ServerManagerService
         // Publish process identity before output handlers can observe a fast startup line.
         inst.Process   = proc;
         inst.StartTime = DateTime.Now;
+        inst.CaptureProcessIdentity(proc);
         inst.MarkProcessObserved();
         server.LastStarted = DateTime.Now;
         RememberRunningIdentity(server, proc);
@@ -940,7 +955,7 @@ public class ServerManagerService
             }
         }
 
-        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(12)))
+        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(10)))
         {
             SetStatus(server, ServerStatus.Error);
             _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
@@ -960,22 +975,21 @@ public class ServerManagerService
     /// in-memory ServerInstance (e.g. after HighPop itself was restarted) but the game server
     /// process is still alive in the background.
     /// </summary>
-    private Task KillOrphanedPidAsync(GameServer server)
+    private async Task KillOrphanedPidAsync(GameServer server)
     {
         SetStatus(server, ServerStatus.Stopping);
-        if (server.RunningPid > 0)
+        var pid = server.RunningPid;
+        var stopped = pid <= 0 || await TerminateOwnedPidAsync(
+            server, pid, server.RunningProcessStartedUtc, TimeSpan.FromSeconds(10));
+        if (!stopped)
         {
-            try
-            {
-                var p = Process.GetProcessById(server.RunningPid);
-                if (!p.HasExited) p.Kill(entireProcessTree: true);
-            }
-            catch { /* already gone */ }
+            SetStatus(server, ServerStatus.Error);
+            throw new InvalidOperationException(
+                $"Rust PID {pid} is still running after forced termination. Run HighPop as Administrator and retry Force Stop.");
         }
         ClearRunningIdentity(server);
         if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
         SetStatus(server, ServerStatus.Stopped);
-        return Task.CompletedTask;
     }
 
     public async Task SendCommandAsync(string serverId, string command)
@@ -996,7 +1010,9 @@ public class ServerManagerService
     }
 
     public bool IsRunning(string serverId)
-        => _running.TryGetValue(serverId, out var inst) && inst.Process?.HasExited == false;
+        => _running.TryGetValue(serverId, out var inst)
+           && inst.Process is { } process
+           && !SafeHasExited(process);
 
     public async Task ForceStopAsync(
         GameServer server,
@@ -1008,13 +1024,46 @@ public class ServerManagerService
         if (_activeGracefulStops.TryGetValue(server.Id, out var activeStop))
             activeStop.Cancel();
         var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync();
+        if (!await gate.WaitAsync(TimeSpan.FromSeconds(12)))
+        {
+            if (!_lifecycle.IsCurrent(server, operation.Generation)) return;
+            InjectLogLine(server.Id,
+                "[HighPop] The graceful-stop operation did not release its lifecycle lock; using emergency PID termination.",
+                ConsoleMessageType.Warning);
+            await EmergencyForceStopAsync(server, operation);
+            return;
+        }
         try
         {
             if (!_lifecycle.IsCurrent(server, operation.Generation)) return;
             await ForceStopCoreAsync(server, operation);
         }
         finally { gate.Release(); }
+    }
+
+    private async Task EmergencyForceStopAsync(
+        GameServer server,
+        ServerLifecycleTransition operation)
+    {
+        if (!_running.TryGetValue(server.Id, out var instance))
+        {
+            await KillOrphanedPidAsync(server);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
+                operation.Initiator, operation.Reason, operation.OperationId);
+            return;
+        }
+
+        instance.IntentionalStop = true;
+        instance.StopReason = operation.Reason;
+        instance.DailyRestartCts.Cancel();
+        SetStatus(server, ServerStatus.Stopping);
+        if (!await EnsureProcessTreeStoppedAsync(server, instance, TimeSpan.FromSeconds(10)))
+        {
+            SetStatus(server, ServerStatus.Error);
+            throw new InvalidOperationException(
+                $"Emergency Force Stop could not terminate tracked Rust PID {instance.OwnedProcessId}.");
+        }
+        FinalizeStoppedServer(server, instance, operation, operation.Reason);
     }
 
     private async Task ForceStopCoreAsync(
@@ -1038,12 +1087,12 @@ public class ServerManagerService
 
         if (inst.Process?.HasExited == false)
         {
-            using var commandCts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+            using var commandCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             await TrySendServerCommandAsync(server, inst, "server.save", "Force-saving Rust world", commandCts.Token);
             await TrySendServerCommandAsync(server, inst, "quit", "Requesting immediate Rust exit", commandCts.Token);
             try
             {
-                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 await inst.Process.WaitForExitAsync(exitCts.Token);
             }
             catch (OperationCanceledException)
@@ -1054,7 +1103,7 @@ public class ServerManagerService
             }
         }
 
-        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(12)))
+        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(10)))
         {
             SetStatus(server, ServerStatus.Error);
             _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
@@ -1136,53 +1185,111 @@ public class ServerManagerService
         ServerInstance instance,
         TimeSpan timeout)
     {
-        var process = instance.Process;
-        if (process == null || SafeHasExited(process)) return true;
-
+        var pid = instance.OwnedProcessId > 0
+            ? instance.OwnedProcessId
+            : server.RunningPid;
+        var startedUtc = instance.OwnedProcessStartedUtc
+            ?? server.RunningProcessStartedUtc;
         JobObjectService.ReleaseJob(instance.JobHandle);
         instance.JobHandle = nint.Zero;
 
+        if (pid <= 0) return instance.Process == null || SafeHasExited(instance.Process);
+        return await TerminateOwnedPidAsync(server, pid, startedUtc, timeout);
+    }
+
+    private async Task<bool> TerminateOwnedPidAsync(
+        GameServer server,
+        int pid,
+        DateTime? expectedStartedUtc,
+        TimeSpan timeout)
+    {
+        if (pid <= 0) return true;
+
+        InjectLogLine(server.Id,
+            $"[HighPop] Enforcing shutdown on tracked Rust PID {pid} and its process tree.",
+            ConsoleMessageType.Warning);
+
         var deadline = DateTime.UtcNow + timeout;
-        for (var attempt = 1; attempt <= 3 && DateTime.UtcNow < deadline; attempt++)
+        for (var attempt = 1; attempt <= 2 && DateTime.UtcNow < deadline; attempt++)
         {
-            try { process.Kill(entireProcessTree: true); }
-            catch (InvalidOperationException) { return true; }
-            catch (Win32Exception ex)
+            Process process;
+            try { process = Process.GetProcessById(pid); }
+            catch (ArgumentException) { return true; }
+            using (process)
             {
-                InjectLogLine(server.Id,
-                    $"[HighPop] Process-tree termination attempt {attempt} failed: {ex.Message}",
-                    ConsoleMessageType.Warning);
+
+                if (!IsExpectedOwnedProcess(process, expectedStartedUtc))
+                {
+                    InjectLogLine(server.Id,
+                        $"[HighPop] Refused to terminate recycled PID {pid}; its process start time no longer matches this server.",
+                        ConsoleMessageType.Error);
+                    return false;
+                }
+
+                try
+                {
+                    await Task.Run(() => process.Kill(entireProcessTree: true));
+                }
+                catch (InvalidOperationException) { return true; }
+                catch (Win32Exception ex)
+                {
+                    InjectLogLine(server.Id,
+                        $"[HighPop] Process-tree termination attempt {attempt} failed: {ex.Message}",
+                        ConsoleMessageType.Warning);
+                }
             }
 
-            if (await WaitForProcessExitAsync(process, TimeSpan.FromSeconds(3))) return true;
-
-            // Refresh by PID in case the original Process handle became stale during Oxide unload.
-            try { process = Process.GetProcessById(process.Id); }
-            catch (ArgumentException) { return true; }
+            if (await WaitForPidExitAsync(pid, TimeSpan.FromSeconds(2))) return true;
         }
 
-        if (OperatingSystem.IsWindows() && process.Id > 0)
+        if (OperatingSystem.IsWindows())
         {
             try
             {
+                using (var verified = Process.GetProcessById(pid))
+                {
+                    if (!IsExpectedOwnedProcess(verified, expectedStartedUtc)) return false;
+                }
                 using var taskKill = Process.Start(new ProcessStartInfo
                 {
                     FileName = "taskkill.exe",
-                    Arguments = $"/PID {process.Id} /T /F",
+                    Arguments = $"/PID {pid} /T /F",
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false,
                 });
                 if (taskKill != null)
-                    await taskKill.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
+                    await taskKill.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(4));
             }
+            catch (ArgumentException) { return true; }
             catch (Exception ex) when (ex is Win32Exception
                                        or InvalidOperationException
                                        or TimeoutException) { }
         }
 
-        return await WaitForProcessExitAsync(process, TimeSpan.FromSeconds(2));
+        return await WaitForPidExitAsync(pid, TimeSpan.FromSeconds(2));
+    }
+
+    internal static bool IsExpectedOwnedProcess(Process process, DateTime? expectedStartedUtc)
+    {
+        if (SafeHasExited(process)) return true;
+        if (expectedStartedUtc == null) return true;
+        try
+        {
+            return Math.Abs((process.StartTime.ToUniversalTime() - expectedStartedUtc.Value).TotalSeconds) <= 2;
+        }
+        catch { return false; }
+    }
+
+    private static async Task<bool> WaitForPidExitAsync(int pid, TimeSpan timeout)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return await WaitForProcessExitAsync(process, timeout);
+        }
+        catch (ArgumentException) { return true; }
     }
 
     private static bool SafeHasExited(Process process)

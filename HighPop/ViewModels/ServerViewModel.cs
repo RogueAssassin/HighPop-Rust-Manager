@@ -53,6 +53,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     [ObservableProperty] private string _consoleInput = string.Empty;
     [ObservableProperty] private int _installProgress;
+    [ObservableProperty] private string _installProgressText = "Ready";
     [ObservableProperty] private bool _isInstalling;
     [ObservableProperty] private string _statusText = string.Empty;
     [ObservableProperty] private double _cpuPercent;
@@ -227,6 +228,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                   .ToList();
 
     private System.Timers.Timer? _perfTimer;
+    private int _perfChartRenderPending;
+    private int _networkUiUpdatePending;
+    private long _nextPerfChartRefreshUtcTicks;
 
     public bool HasModSupport       => Plugin?.SupportsOxide == true;
     public bool IsRust              => Plugin?.GameId == "rust";
@@ -295,9 +299,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     public bool IsRunning    => Server.Status == ServerStatus.Running;
     public bool IsStopped    => Server.Status is ServerStatus.Stopped or ServerStatus.NotInstalled;
-    public bool CanStart     => Server.Status is ServerStatus.Stopped or ServerStatus.Error or ServerStatus.NotInstalled;
+    public bool HasTrackedProcess => Server.RunningPid > 0 || _manager.IsRunning(Server.Id);
+    public bool CanStart     => (Server.Status is ServerStatus.Stopped or ServerStatus.Error or ServerStatus.NotInstalled)
+                                && !HasTrackedProcess;
     public bool CanStop      => Server.Status is ServerStatus.Running or ServerStatus.Starting;
-    public bool CanInstallServerFiles => !IsInstalling && !IsRunning;
+    public bool CanForceStop => (Server.Status is ServerStatus.Running or ServerStatus.Starting or ServerStatus.Stopping)
+                                || (Server.Status == ServerStatus.Error && HasTrackedProcess);
+    public bool CanInstallServerFiles => !IsInstalling && !HasTrackedProcess;
     public bool HasRcon => Plugin?.HasRcon == true;
 
     public bool ShowVersionInfo => Plugin?.SteamAppId > 0;
@@ -530,14 +538,24 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         if (serverId != Server.Id) return;
         var stats = _network.GetServerStats(serverId);
         if (stats == null) return;
+        if (Interlocked.Exchange(ref _networkUiUpdatePending, 1) == 1) return;
+        var netIn = NetworkMonitorService.FormatSpeed(stats.BytesInPerSec);
+        var netOut = NetworkMonitorService.FormatSpeed(stats.BytesOutPerSec);
+        var connectionCount = stats.ConnectionCount;
+        var historyIn = stats.HistoryIn.ToList();
+        var historyOut = stats.HistoryOut.ToList();
 
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
         {
-            NetIn           = NetworkMonitorService.FormatSpeed(stats.BytesInPerSec);
-            NetOut          = NetworkMonitorService.FormatSpeed(stats.BytesOutPerSec);
-            ConnectionCount = stats.ConnectionCount;
-            NetInHistory    = stats.HistoryIn.ToList();
-            NetOutHistory   = stats.HistoryOut.ToList();
+            try
+            {
+                NetIn           = netIn;
+                NetOut          = netOut;
+                ConnectionCount = connectionCount;
+                NetInHistory    = historyIn;
+                NetOutHistory   = historyOut;
+            }
+            finally { Interlocked.Exchange(ref _networkUiUpdatePending, 0); }
         });
     }
 
@@ -602,7 +620,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _manager.CrashLimitReached += OnCrashLimitReached;
         _manager.PortsReassigned  += OnPortsReassigned;
         _steamCmd.OutputReceived  += OnSteamOutput;
-        _steamCmd.ProgressChanged += OnSteamProgress;
+        _steamCmd.ProgressDetailChanged += OnSteamProgressDetail;
 
         // Build CPU core checkboxes
         var coreCount = Environment.ProcessorCount;
@@ -866,6 +884,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         var hadExistingInstall = File.Exists(expectedExecutable);
 
         IsInstalling      = true;
+        InstallProgress   = 0;
+        InstallProgressText = "Preparing SteamCMD";
         Server.Status     = ServerStatus.Installing;
         RefreshStatus();
         AppendLog($"[HighPop] {Loc.InstallingText} {Plugin.GameName}...", ConsoleMessageType.System);
@@ -906,7 +926,12 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             AddActionLog($"Install/update failed: {ex.Message}");
             Server.Status = ServerStatus.Error;
         }
-        finally { IsInstalling = false; RefreshStatus(); }
+        finally
+        {
+            IsInstalling = false;
+            InstallProgressText = Server.Status == ServerStatus.Error ? "Update failed" : "Ready";
+            RefreshStatus();
+        }
     }
 
 
@@ -2298,31 +2323,36 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         var samples = _perfHistory.Get(Server.Id).Where(s => s.Time >= cutoff).ToList();
         EnsurePerfModel();
 
-        // Mutate series and invalidate on the UI thread together — this can be called from the
-        // 2s timer's background thread, and OxyPlot's renderer reads Points on the UI thread.
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        // Coalesce timer requests and mutate series only on the UI thread. A busy Rust process
+        // can otherwise make the sampler synchronously wait behind expensive chart renders.
+        if (Interlocked.Exchange(ref _perfChartRenderPending, 1) == 1) return;
+        WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
         {
-            _cpuSeries!.Points.Clear();
-            _memSeries!.Points.Clear();
-            _netInSeries!.Points.Clear();
-            _netOutSeries!.Points.Clear();
-            _playersSeries!.Points.Clear();
-            foreach (var s in samples)
+            try
             {
-                var x = OxyPlot.Axes.DateTimeAxis.ToDouble(s.Time);
-                _cpuSeries.Points.Add(new OxyPlot.DataPoint(x, s.Cpu));
-                _memSeries.Points.Add(new OxyPlot.DataPoint(x, s.MemMb));
-                _netInSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkInKbps));
-                _netOutSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkOutKbps));
-                _playersSeries.Points.Add(new OxyPlot.DataPoint(x, s.Players));
+                _cpuSeries!.Points.Clear();
+                _memSeries!.Points.Clear();
+                _netInSeries!.Points.Clear();
+                _netOutSeries!.Points.Clear();
+                _playersSeries!.Points.Clear();
+                foreach (var s in samples)
+                {
+                    var x = OxyPlot.Axes.DateTimeAxis.ToDouble(s.Time);
+                    _cpuSeries.Points.Add(new OxyPlot.DataPoint(x, s.Cpu));
+                    _memSeries.Points.Add(new OxyPlot.DataPoint(x, s.MemMb));
+                    _netInSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkInKbps));
+                    _netOutSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkOutKbps));
+                    _playersSeries.Points.Add(new OxyPlot.DataPoint(x, s.Players));
+                }
+                _perfModel!.InvalidatePlot(true);
+                _operationsModel!.InvalidatePlot(true);
+                ChartSummary = samples.Count == 0
+                    ? "No samples in this range."
+                    : $"Peak CPU {samples.Max(s => s.Cpu):F1}%  •  Peak RAM {samples.Max(s => s.MemMb):N0} MB  •  " +
+                      $"Peak players {samples.Max(s => s.Players)}  •  Peak network " +
+                      $"{samples.Max(s => s.NetworkInKbps + s.NetworkOutKbps):F1} KB/s";
             }
-            _perfModel!.InvalidatePlot(true);
-            _operationsModel!.InvalidatePlot(true);
-            ChartSummary = samples.Count == 0
-                ? "No samples in this range."
-                : $"Peak CPU {samples.Max(s => s.Cpu):F1}%  •  Peak RAM {samples.Max(s => s.MemMb):N0} MB  •  " +
-                  $"Peak players {samples.Max(s => s.Players)}  •  Peak network " +
-                  $"{samples.Max(s => s.NetworkInKbps + s.NetworkOutKbps):F1} KB/s";
+            finally { Interlocked.Exchange(ref _perfChartRenderPending, 0); }
         });
     }
 
@@ -3008,8 +3038,18 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     (network?.BytesInPerSec ?? 0) / 1024.0,
                     (network?.BytesOutPerSec ?? 0) / 1024.0,
                     Server.CurrentPlayers);
-                if (IsWorkspaceActive) UpdatePerfChart();
-                WpfApplication.Current?.Dispatcher?.Invoke(() =>
+                if (IsWorkspaceActive)
+                {
+                    var nowTicks = DateTime.UtcNow.Ticks;
+                    var dueTicks = Interlocked.Read(ref _nextPerfChartRefreshUtcTicks);
+                    if (nowTicks >= dueTicks
+                        && Interlocked.CompareExchange(
+                            ref _nextPerfChartRefreshUtcTicks,
+                            DateTime.UtcNow.AddSeconds(5).Ticks,
+                            dueTicks) == dueTicks)
+                        UpdatePerfChart();
+                }
+                WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
                 {
                     CpuPercent = Math.Round(m.CurrentCpu, 1);
                     MemoryMb   = m.CurrentMemMb;
@@ -3156,10 +3196,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         AppendLog(line, ConsoleMessageType.System, "SteamCMD");
     }
 
-    private void OnSteamProgress(string serverId, int p)
+    private void OnSteamProgressDetail(string serverId, int p, string detail)
     {
         if (serverId.Length > 0 && serverId != Server.Id) return;
-        WpfApplication.Current?.Dispatcher?.Invoke(() => InstallProgress = p);
+        WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
+        {
+            if (InstallProgress != p) InstallProgress = p;
+            InstallProgressText = detail;
+        });
     }
 
     private void AppendLog(
@@ -3263,7 +3307,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         var safeAction = UiTextSanitizer.Normalize(action, 2_048);
         var entry = $"[{DateTime.Now:dd.MM HH:mm:ss}] {safeAction}";
-        WpfApplication.Current?.Dispatcher?.Invoke(() =>
+        WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
         {
             ActionLog.Insert(0, entry);
             if (ActionLog.Count > 100) ActionLog.RemoveAt(ActionLog.Count - 1);
@@ -3319,8 +3363,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         };
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsStopped));
+        OnPropertyChanged(nameof(HasTrackedProcess));
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanForceStop));
         OnPropertyChanged(nameof(CanInstallServerFiles));
         OnPropertyChanged(nameof(CanInstallOxide));
         OnPropertyChanged(nameof(CanInstallCarbon));
@@ -3355,7 +3401,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _manager.CrashLimitReached -= OnCrashLimitReached;
         _manager.PortsReassigned   -= OnPortsReassigned;
         _steamCmd.OutputReceived   -= OnSteamOutput;
-        _steamCmd.ProgressChanged  -= OnSteamProgress;
+        _steamCmd.ProgressDetailChanged -= OnSteamProgressDetail;
         _network.ServerStatsUpdated -= OnServerStatsUpdated; // #1: estää muistivuodon poistetuille palvelimille
 
         StopUpdateTimer();

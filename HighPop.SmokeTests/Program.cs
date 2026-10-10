@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Diagnostics;
 using HighPop;
 using HighPop.Games;
 using HighPop.Models;
@@ -12,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.5", "application and release metadata report v1.0.5");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.5", "1.0.4")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.5")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.5", "1.0.5")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.5"),
+Check(AppInfo.Version == "1.0.6", "application and release metadata report v1.0.6");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.6", "1.0.5")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.6")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.6", "1.0.6")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.6"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -304,6 +305,29 @@ Check(SteamCmdService.TryParseBranchBuildId(steamAppInfo, "public", out var publ
       && SteamCmdService.TryParseBranchBuildId(steamAppInfo, "staging", out var stagingBuild)
       && stagingBuild == "20490001",
     "SteamCMD branch build IDs are parsed before auto-update restart");
+Check(SteamCmdService.TryParseProgress(
+          " Update state (0x61) downloading, progress: 42.75 (123 / 456)",
+          out var downloadPercent, out var downloadDetail)
+      && downloadPercent == 42
+      && downloadDetail.Contains("Downloading Rust server files", StringComparison.Ordinal)
+      && SteamCmdService.TryParseProgress(
+          " Update state (0x81) verifying update, progress: 99.20", out var verifyPercent,
+          out var verifyDetail)
+      && verifyPercent == 99
+      && verifyDetail.Contains("Verifying", StringComparison.Ordinal),
+    "SteamCMD progress parser reports download and validation stages");
+
+using (var currentProcess = Process.GetCurrentProcess())
+{
+    var processStartedUtc = currentProcess.StartTime.ToUniversalTime();
+    var instance = new ServerInstance(server);
+    instance.CaptureProcessIdentity(currentProcess);
+    Check(instance.OwnedProcessId == currentProcess.Id
+          && ServerManagerService.IsExpectedOwnedProcess(currentProcess, processStartedUtc)
+          && !ServerManagerService.IsExpectedOwnedProcess(
+              currentProcess, processStartedUtc.AddMinutes(-1)),
+        "shutdown retains and validates the exact manager-started PID identity");
+}
 
 Check(ServerMaintenancePolicy.ClampGracefulStopTimeout(1) == 15
       && ServerMaintenancePolicy.ClampGracefulStopTimeout(120) == 120

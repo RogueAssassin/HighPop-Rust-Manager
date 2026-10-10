@@ -79,7 +79,7 @@ public sealed class RustReferenceService
 
     public RustReferenceService()
     {
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("HighPop-Rust-Manager/1.0.5");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
     }
 
     public async Task<RustReferenceSnapshot> LoadAsync(

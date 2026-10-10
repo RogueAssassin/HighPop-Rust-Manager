@@ -44,6 +44,15 @@ foreach ($xamlFile in $xamlFiles) {
     }
 }
 
+$serverDetailPath = Join-Path $repoRoot 'HighPop\Views\ServerDetailView.xaml'
+$serverDetail = Get-Content $serverDetailPath -Raw
+if ($serverDetail -notmatch 'Command="\{Binding ForceStopCommand\}"\s+IsEnabled="\{Binding CanForceStop\}"') {
+    $issues.Add('ServerDetailView must keep Force Stop bound to CanForceStop so it remains available while Oxide is Stopping')
+}
+if ($serverDetail -notmatch 'Text="\{Binding InstallProgressText\}"') {
+    $issues.Add('ServerDetailView must display the current SteamCMD progress stage')
+}
+
 if ($issues.Count -gt 0) {
     $issues | ForEach-Object { Write-Error $_ }
     exit 1

@@ -1,7 +1,7 @@
 HighPop runtime assets
 ======================
 
-HighPop Rust Manager v1.0.5
+HighPop Rust Manager v1.0.6
 
 HighPop.exe is self-contained. This folder contains HighPop application state; managed Rust
 installations are stored separately in the sibling HPRM/Servers folder:
@@ -20,8 +20,8 @@ bounded recovery after HighPop reopens, while an explicit Stop invalidates every
 start, restart, update, wipe, health, scheduler, Discord, REST, and log-rule callback.
 
 Safe Stop sends server.save and quit, then waits for the configured deadline before enforcing
-shutdown. Force Stop still requests a save and immediate quit, but enforces exit after five
-seconds. Direct Install/Update is locked while Rust is running; safe live update monitoring
+shutdown. Force Stop requests a short save/quit window and then terminates the exact PID HighPop
+started, including its process tree. Direct Install/Update is locked while Rust is running; safe live update monitoring
 checks build IDs first and broadcasts the configured countdown before maintenance.
 
 - data/       encrypted settings, databases, schedules, update staging, and opt-in telemetry

@@ -5,22 +5,29 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="32">
             <TextBlock Text="Settings" Style="{StaticResource SectionHeader}" FontSize="22"/>
+            <TextBlock Text="Configure storage, health checks, Steam access, notifications, and remote administration. Invalid port and threshold values are rejected before they are saved."
+                       TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}" Margin="0,-8,0,8"/>
+            <TextBlock Text="{Binding SettingsStatus}" TextWrapping="Wrap"
+                       Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,0,16"/>
 
             <!-- 1. General Settings -->
             <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                 <StackPanel>
-                    <TextBlock Text="General Settings" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,16"
+                    <TextBlock Text="Storage and Runtime" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,16"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
                     <TextBlock Text="Default install directory" Style="{StaticResource FieldLabel}"/>
                     <Grid Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBox Grid.Column="0" Style="{StaticResource DarkTextBox}"
                                  Text="{Binding DefaultInstallRoot, UpdateSourceTrigger=PropertyChanged}"/>
                         <Button Grid.Column="1" Content="Browse" Style="{StaticResource GhostButton}"
                                 Margin="8,0,0,0" Command="{Binding BrowseDefaultInstallRootCommand}"/>
+                        <Button Grid.Column="2" Content="Open" Style="{StaticResource GhostButton}"
+                                Margin="8,0,0,0" Command="{Binding OpenDefaultInstallRootCommand}"/>
                     </Grid>
                     <TextBlock Text="New Rust profiles are installed beneath this folder. Existing servers keep their current paths."
                                FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12"/>
@@ -29,16 +36,27 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBox Grid.Column="0" Style="{StaticResource DarkTextBox}"
                                  Text="{Binding BackupPath, UpdateSourceTrigger=PropertyChanged}"/>
                         <Button Grid.Column="1" Content="Browse" Style="{StaticResource GhostButton}"
                                 Margin="8,0,0,0" Command="{Binding BrowseBackupPathCommand}"/>
+                        <Button Grid.Column="2" Content="Open" Style="{StaticResource GhostButton}"
+                                Margin="8,0,0,0" Command="{Binding OpenBackupPathCommand}"/>
                     </Grid>
                     <TextBlock Text="SteamCMD directory" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource DarkTextBox}"
-                             Text="{Binding SteamCmdPath}" IsReadOnly="True"
-                             Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Style="{StaticResource DarkTextBox}"
+                                 Text="{Binding SteamCmdPath}" IsReadOnly="True"
+                                 Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <Button Grid.Column="1" Content="Open" Style="{StaticResource GhostButton}"
+                                Margin="8,0,0,0" Command="{Binding OpenSteamCmdPathCommand}"/>
+                    </Grid>
                     <TextBlock Text="Shared by every managed server, including servers installed outside the HPRM folder."
                                FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"/>
                     <CheckBox IsChecked="{Binding StartWithWindows}" Style="{StaticResource DarkCheckBox}"

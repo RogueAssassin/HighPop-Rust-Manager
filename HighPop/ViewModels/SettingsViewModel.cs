@@ -79,6 +79,7 @@ public partial class SettingsViewModel : BaseViewModel
     [ObservableProperty] private string _defaultInstallRoot  = string.Empty;
     [ObservableProperty] private string _backupPath          = string.Empty;
     [ObservableProperty] private string _steamCmdPath        = string.Empty;
+    [ObservableProperty] private string _settingsStatus      = "Changes are stored locally under assets/data.";
     [ObservableProperty] private string _steamLogin          = string.Empty;
     [ObservableProperty] private string _steamPassword       = string.Empty;
     [ObservableProperty] private bool   _startWithWindows;
@@ -174,6 +175,31 @@ public partial class SettingsViewModel : BaseViewModel
                 "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
             return;
         }
+        if (WebApiPort is < 1 or > 65535)
+        {
+            SettingsStatus = "Web API port must be between 1 and 65535.";
+            WpfMsgBox.Show(SettingsStatus, "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
+        if (SmtpPort is < 1 or > 65535)
+        {
+            SettingsStatus = "SMTP port must be between 1 and 65535.";
+            WpfMsgBox.Show(SettingsStatus, "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
+        if (HealthCheckFailThreshold is < 1 or > 60)
+        {
+            SettingsStatus = "Health Check failures must be between 1 and 60.";
+            WpfMsgBox.Show(SettingsStatus, "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
+        if (CrashPredictionLowMemPercent is <= 0 or > 100
+            || CrashPredictionHighCpuPercent is <= 0 or > 100)
+        {
+            SettingsStatus = "CPU and memory warning thresholds must be greater than 0 and no more than 100 percent.";
+            WpfMsgBox.Show(SettingsStatus, "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
+            return;
+        }
         try
         {
             System.IO.Directory.CreateDirectory(DefaultInstallRoot);
@@ -264,6 +290,7 @@ public partial class SettingsViewModel : BaseViewModel
             return;
         }
 
+        SettingsStatus = $"Settings saved at {DateTime.Now:t}.";
         WpfMsgBox.Show("Settings saved.", "HighPop", WpfMsgBoxButton.OK, WpfMsgBoxImage.Information);
     }
 
@@ -307,6 +334,37 @@ public partial class SettingsViewModel : BaseViewModel
         };
         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             DefaultInstallRoot = dlg.SelectedPath;
+    }
+
+    [RelayCommand]
+    private void OpenDefaultInstallRoot() => OpenSettingsFolder(DefaultInstallRoot, "default server folder");
+
+    [RelayCommand]
+    private void OpenBackupPath() => OpenSettingsFolder(BackupPath, "backup folder");
+
+    [RelayCommand]
+    private void OpenSteamCmdPath() => OpenSettingsFolder(SteamCmdPath, "SteamCMD folder");
+
+    private void OpenSettingsFolder(string path, string label)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path))
+                throw new InvalidOperationException($"Choose a valid {label} first.");
+            Directory.CreateDirectory(path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+            SettingsStatus = $"Opened {label}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or InvalidOperationException or ArgumentException
+                                   or NotSupportedException or System.ComponentModel.Win32Exception)
+        {
+            SettingsStatus = $"Could not open {label}: {ex.Message}";
+        }
     }
 
     [RelayCommand]

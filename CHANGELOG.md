@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.6
+
+- Fixed Oxide stops appearing frozen by keeping **Force Stop PID** available throughout the `Stopping` phase and allowing it to cancel the active graceful wait.
+- Captured the exact Rust PID and process start time at launch/reattach, then used that verified identity for bounded process-tree termination and the Windows `taskkill /T /F` fallback without risking a recycled PID.
+- Prevented Start and Install/Update from becoming available after a failed stop while the tracked Rust PID is still alive; Force Stop remains available for recovery.
+- Reduced Force Stop's command/exit grace window so an unresponsive Oxide server reaches forced termination quickly while still receiving `server.save` and `quit` first.
+- Added an emergency PID termination path when a stuck graceful-stop operation does not release its lifecycle lock, and moved process-tree killing off the UI thread.
+- Reworked SteamCMD bootstrap downloads to stream directly to disk instead of buffering the ZIP in memory, with byte progress, extraction status, staged Rust download/verification progress, elapsed-time heartbeats, and completed-process disposal.
+- Kept SteamCMD UI updates asynchronous, coalesced network/chart rendering, and reduced active performance-chart refreshes to five-second intervals while retaining two-second metric history samples.
+- Improved Settings with clearer storage/runtime guidance, inline save/open status, Explorer shortcuts for server, backup, and shared SteamCMD folders, and validation for Web API/SMTP ports, health thresholds, and CPU/memory percentages.
+- Added smoke coverage for SteamCMD progress formats and manager-owned PID identity validation, and advanced testing metadata to v1.0.6.
+
 ## 1.0.5
 
 - Fixed the Reference result template's read-only `DefaultText` binding repeatedly throwing WPF dispatcher exceptions when command/ConVar results became visible, and added a non-modal recovery guard plus CI audit for inline `Run.Text` bindings.
