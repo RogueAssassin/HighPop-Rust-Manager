@@ -7,7 +7,7 @@ using System.Text.Json;
 namespace HighPop.Services;
 
 /// <summary>Facepunch WebRCON client for Rust servers started with <c>rcon.web 1</c>.</summary>
-public sealed class RconService : IDisposable
+public sealed class RconService : IDisposable, IAsyncDisposable
 {
     private readonly ConcurrentDictionary<int, TaskCompletionSource<string>> _pending = [];
     private readonly SemaphoreSlim _sendGate = new(1, 1);
@@ -27,7 +27,7 @@ public sealed class RconService : IDisposable
     {
         try
         {
-            await DisconnectAsync(cancellationToken);
+            await DisconnectAsync(cancellationToken).ConfigureAwait(false);
             var socket = new ClientWebSocket();
             socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
             _socket = socket;
@@ -35,7 +35,8 @@ public sealed class RconService : IDisposable
             var encodedPassword = Uri.EscapeDataString(password ?? string.Empty);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(8));
-            await socket.ConnectAsync(new Uri($"ws://{host}:{port}/{encodedPassword}"), timeout.Token);
+            await socket.ConnectAsync(new Uri($"ws://{host}:{port}/{encodedPassword}"), timeout.Token)
+                .ConfigureAwait(false);
 
             var connectionCts = new CancellationTokenSource();
             _connectionCts = connectionCts;
@@ -45,7 +46,7 @@ public sealed class RconService : IDisposable
         }
         catch
         {
-            await DisconnectAsync();
+            await DisconnectAsync().ConfigureAwait(false);
             return false;
         }
     }
@@ -82,18 +83,18 @@ public sealed class RconService : IDisposable
 
         try
         {
-            await _sendGate.WaitAsync(timeout.Token);
+            await _sendGate.WaitAsync(timeout.Token).ConfigureAwait(false);
             try
             {
                 await socket.SendAsync(
                     Encoding.UTF8.GetBytes(request),
                     WebSocketMessageType.Text,
                     endOfMessage: true,
-                    timeout.Token);
+                    timeout.Token).ConfigureAwait(false);
             }
             finally { _sendGate.Release(); }
 
-            return await completion.Task;
+            return await completion.Task.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -118,7 +119,7 @@ public sealed class RconService : IDisposable
         {
             while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
-                var payload = await ReceiveTextAsync(socket, token);
+                var payload = await ReceiveTextAsync(socket, token).ConfigureAwait(false);
                 if (string.IsNullOrWhiteSpace(payload)) continue;
 
                 if (!TryReadResponse(payload, out var responseId, out var message))
@@ -213,7 +214,7 @@ public sealed class RconService : IDisposable
         WebSocketReceiveResult result;
         do
         {
-            result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+            result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
             if (result.MessageType == WebSocketMessageType.Close) return string.Empty;
             if (result.MessageType == WebSocketMessageType.Text)
                 stream.Write(buffer, 0, result.Count);
@@ -245,7 +246,7 @@ public sealed class RconService : IDisposable
                 await socket.CloseOutputAsync(
                     WebSocketCloseStatus.NormalClosure,
                     "HighPop disconnect",
-                    timeout.Token);
+                    timeout.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { }
@@ -256,7 +257,7 @@ public sealed class RconService : IDisposable
             socket.Dispose();
             if (receiveLoop != null)
             {
-                try { await receiveLoop.WaitAsync(TimeSpan.FromMilliseconds(500)); }
+                try { await receiveLoop.WaitAsync(TimeSpan.FromMilliseconds(500)).ConfigureAwait(false); }
                 catch (OperationCanceledException) { }
                 catch (TimeoutException) { }
             }
@@ -267,11 +268,37 @@ public sealed class RconService : IDisposable
         }
     }
 
-    public void Disconnect() => DisconnectAsync().GetAwaiter().GetResult();
+    /// <summary>
+    /// Synchronous teardown that never waits. The previous implementation blocked with
+    /// <c>DisconnectAsync().GetAwaiter().GetResult()</c>; when that ran on the WPF UI thread
+    /// (e.g. the <c>using var rcon</c> in the Oxide stop path) the awaited close continuation
+    /// was queued back to the blocked UI thread and the whole app deadlocked.
+    /// Use <see cref="DisconnectAsync"/> / <see cref="DisposeAsync"/> for a graceful close.
+    /// </summary>
+    public void Disconnect()
+    {
+        _authenticated = false;
+        var connectionCts = Interlocked.Exchange(ref _connectionCts, null);
+        Interlocked.Exchange(ref _receiveLoop, null);
+        var socket = Interlocked.Exchange(ref _socket, null);
+        try { connectionCts?.Cancel(); } catch (ObjectDisposedException) { }
+        try { socket?.Abort(); } catch { }
+        try { socket?.Dispose(); } catch { }
+        try { connectionCts?.Dispose(); } catch { }
+        foreach (var pending in _pending.Values)
+            pending.TrySetCanceled();
+        _pending.Clear();
+    }
 
     public void Dispose()
     {
         Disconnect();
+        _sendGate.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DisconnectAsync().ConfigureAwait(false);
         _sendGate.Dispose();
     }
 }

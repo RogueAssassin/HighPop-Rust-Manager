@@ -1159,7 +1159,7 @@ public class ServerManagerService
         {
             try
             {
-                using var rcon = new RconService();
+                await using var rcon = new RconService();
                 var host = server.ServerIp is "0.0.0.0" or "::" or "[::]"
                     ? "127.0.0.1"
                     : server.ServerIp;

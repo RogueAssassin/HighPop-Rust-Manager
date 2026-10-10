@@ -809,7 +809,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             StopUpdateTimer();
-            await _manager.StopAsync(Server, reason, initiator);
+            // Run the whole shutdown sequence off the UI thread. Stop can take up to the
+            // graceful timeout plus process-tree termination; nothing in it may ever hold the
+            // dispatcher. Status/log events already marshal back via the Dispatcher.
+            await Task.Run(() => _manager.StopAsync(Server, reason, initiator));
             // StopPerfMonitoring() called from OnStatusChanged(Stopped)
 
             if (Server.BackupOnShutdown)
@@ -834,7 +837,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             StopUpdateTimer();
-            await _manager.ForceStopAsync(Server);
+            await Task.Run(() => _manager.ForceStopAsync(Server));
             AppendLog("[HighPop] Force Stop completed.", ConsoleMessageType.System);
             StopPerfMonitoring();
         }
