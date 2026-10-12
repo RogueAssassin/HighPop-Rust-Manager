@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Keep workflow actions current so runtime deprecations (e.g. Node.js 20)
+  # arrive as PRs instead of CI warnings.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
