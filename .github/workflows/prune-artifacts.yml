@@ -1,0 +1,35 @@
+name: Prune Artifacts
+
+# Keeps only the newest artifacts so private-repository Actions storage
+# stays well under the account quota.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: prune-artifacts
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete all but the 10 newest artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: 10
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            -q '.artifacts[] | select(.expired == false) | [.created_at, .id, .name] | @tsv' \
+            | sort -r \
+            | tail -n +"$((KEEP + 1))" \
+            | while IFS=$'\t' read -r created id name; do
+                echo "Deleting $name ($id, created $created)"
+                gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+              done
