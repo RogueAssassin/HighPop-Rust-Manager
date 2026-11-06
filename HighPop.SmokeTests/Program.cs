@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.8", "application and release metadata report v1.0.8");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.8", "1.0.7")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.8")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.8", "1.0.8")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.8"),
+Check(AppInfo.Version == "1.0.9", "application and release metadata report v1.0.9");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.9", "1.0.8")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.9")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.9", "1.0.9")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.9"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -60,6 +60,28 @@ Check(RogueGamingEndpoints.IsHttpsOnHost(new Uri("https://plugins.roguegaming.co
       && !RogueGamingEndpoints.IsHttpsOnHost(new Uri("https://plugins.roguegaming.com.au.evil.example/x"), RogueGamingEndpoints.PluginsHost)
       && !RogueGamingEndpoints.IsHttpsOnHost(new Uri("https://plugins.roguegaming.com.au:8443/x"), RogueGamingEndpoints.PluginsHost),
     "Rogue Gaming host checks require HTTPS on the exact host and default port");
+
+// Custom join domains (Facepunch: A record + single _rust._udp SRV on the game port).
+Check(CustomDomainService.NormalizeHostname(" https://Rust.RogueGaming.com.au:28015/ ") == "rust.roguegaming.com.au"
+      && CustomDomainService.IsValidHostname("rust.roguegaming.com.au")
+      && !CustomDomainService.IsValidHostname("203.0.113.10")
+      && !CustomDomainService.IsValidHostname("localhost")
+      && !CustomDomainService.IsValidHostname("bad_name.example.com")
+      && !CustomDomainService.IsValidHostname("-bad.example.com"),
+    "custom join domain input is normalised and validated as a hostname");
+Check(CustomDomainService.IsCloudflareProxyAddress(System.Net.IPAddress.Parse("104.21.87.126"))
+      && CustomDomainService.IsCloudflareProxyAddress(System.Net.IPAddress.Parse("172.67.143.79"))
+      && !CustomDomainService.IsCloudflareProxyAddress(System.Net.IPAddress.Parse("159.196.198.239"))
+      && CustomDomainService.IsPrivateAddress(System.Net.IPAddress.Parse("192.168.1.250"))
+      && CustomDomainService.IsPrivateAddress(System.Net.IPAddress.Parse("100.72.1.1"))
+      && !CustomDomainService.IsPrivateAddress(System.Net.IPAddress.Parse("159.196.198.239")),
+    "custom join domain check detects Cloudflare-proxied and private addresses");
+Check(CustomDomainService.ParseSrv("0 0 28015 rust.roguegaming.com.au.") is { Port: 28015, Target: "rust.roguegaming.com.au" }
+      && CustomDomainService.ParseSrv("garbage") == null
+      && CustomDomainService.BuildConnectCommand("rust.example.com", 28015, hasSrv: true) == "client.connect rust.example.com"
+      && CustomDomainService.BuildConnectCommand("rust.example.com", 28015, hasSrv: false) == "client.connect rust.example.com:28015"
+      && CustomDomainService.BuildConnectCommand("rust.example.com", 28215, hasSrv: false) == "client.connect rust.example.com:28215",
+    "custom join domain SRV parsing and connect commands follow the Facepunch DNS setup");
 
 const string catalogHtml = """
     <section id="plugins">
@@ -375,6 +397,14 @@ Check(argsLine.Contains("+server.queryport 28017"), "start args include query po
 Check(argsLine.Contains("+app.port 28083"), "start args include Rust+ port");
 Check(argsLine.Contains("+rcon.web 1"), "WebRCON enabled");
 Check(rust.ValidateBeforeStart(server) == null, "valid Rust profile accepted");
+Check(!argsLine.Contains("favoritesEndpoint"), "no favourites endpoint without a public join domain");
+server.GameSpecificSettings["publicHostname"] = "https://Rust.RogueGaming.com.au/";
+Check(rust.BuildStartArguments(server).Contains("+server.favoritesEndpoint \"rust.roguegaming.com.au\"")
+      && rust.ValidateBeforeStart(server) == null,
+    "public join domain launches Rust with server.favoritesEndpoint set to the A-record name");
+server.GameSpecificSettings["publicHostname"] = "rust roguegaming";
+Check(rust.ValidateBeforeStart(server) != null, "invalid public join domain is rejected before start");
+server.GameSpecificSettings.Remove("publicHostname");
 
 const string steamAppInfo =
     "\"branches\"\n" +

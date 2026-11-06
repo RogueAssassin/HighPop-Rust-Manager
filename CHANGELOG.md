@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.9
+
+- Added custom join domain support. **Server → Settings → Public join domain** (for example `rust.example.com`) launches Rust with `+server.favoritesEndpoint`, so favourites follow the domain through IP and port changes, as Facepunch documents.
+- Added **Server → 🦀 Rust → Custom join domain → Check DNS**. It queries Cloudflare DNS-over-HTTPS for the A and `_rust._udp` SRV records and compares them with this network's public IPv4. It reports names that do not exist, Cloudflare-proxied (orange-cloud) addresses, private or CGNAT addresses, IP mismatches, missing or duplicate SRV records, and SRV ports that are not the game port, and shows the `client.connect` command to share.
+- Added [docs/custom-domains.md](docs/custom-domains.md): Cloudflare, GoDaddy, Namecheap, Porkbun, Route 53, Google Cloud DNS and BIND setup, router ports, dynamic-IP updates through the Cloudflare API, hairpin-NAT testing and troubleshooting.
+- Invalid public join domains are rejected before Rust starts.
+- Fixed the v1.0.8 CI and release packaging check, which still required the retired `rust_vanilla_1000`/`6000` presets.
+
 ## 1.0.8
 
 - Retired the eleven `Vanilla map 1000`–`6000` presets. Rust already scales every `*.population` convar (animals, livestock, sea life, birds, vehicles, trains) by map area, so the presets only replaced vanilla defaults with inflated values (for example 12 rowboats and 5 minicopters per km²) and wrote six `npc.vendor_*` convars that do not exist in Rust. **Vanilla community** and **High-population community** remain.

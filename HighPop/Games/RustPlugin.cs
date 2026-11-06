@@ -76,6 +76,12 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         if (!string.IsNullOrWhiteSpace(header))  args += $" +server.headerimage \"{header}\"";
         if (!string.IsNullOrWhiteSpace(levelUrl)) args += $" +server.levelurl \"{levelUrl}\"";
 
+        // Custom join domain (https://wiki.facepunch.com/rust/dns-records): favourites saved by
+        // players follow the hostname, so IP or port changes do not break them.
+        var publicHostname = Services.CustomDomainService.NormalizeHostname(S(s, "publicHostname", ""));
+        if (Services.CustomDomainService.IsValidHostname(publicHostname))
+            args += $" +server.favoritesEndpoint \"{publicHostname}\"";
+
         if (s.RconPort > 0)
             args += $" +rcon.port {s.RconPort}";
         if (!string.IsNullOrWhiteSpace(s.RconPassword))
@@ -323,6 +329,10 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             return "Maximum players must be between 1 and 1000.";
         if (!int.TryParse(S(server, "worldSize", "4500"), out var world) || world is < 1000 or > 6000)
             return "World size must be between 1000 and 6000.";
+        var hostname = S(server, "publicHostname", "");
+        if (!string.IsNullOrWhiteSpace(hostname)
+            && !Services.CustomDomainService.IsValidHostname(Services.CustomDomainService.NormalizeHostname(hostname)))
+            return "Public join domain must be a hostname such as rust.example.com (no http://, path or port).";
         if (!int.TryParse(S(server, "seed", "12345"), out _))
             return "World seed must be a whole number.";
         if (!int.TryParse(S(server, "tickRate", "30"), out var tick) || tick is < 5 or > 60)
@@ -403,6 +413,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         ["tags"]        = "monthly,vanilla",
         ["saveInterval"] = "300",
         ["appPort"]     = "28083",
+        ["publicHostname"] = "",
     };
 
     public override List<ConfigField> GetConfigFields()
@@ -422,6 +433,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             new() { Key = "tags",        Label = "Browser tags", FieldType = ConfigFieldType.Text, DefaultValue = "monthly,vanilla" },
             new() { Key = "saveInterval", Label = "Save interval (seconds)", FieldType = ConfigFieldType.Number, DefaultValue = "300", Min = 60, Max = 3600 },
             new() { Key = "appPort", Label = "Rust+ companion port (TCP)", FieldType = ConfigFieldType.Number, DefaultValue = "28083", Min = 10000, Max = 65535 },
+            new() { Key = "publicHostname", Label = "Public join domain (optional, e.g. rust.example.com)", FieldType = ConfigFieldType.Text, DefaultValue = "" },
         ]);
         return fields;
     }

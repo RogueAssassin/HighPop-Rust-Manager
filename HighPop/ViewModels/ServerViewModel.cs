@@ -2030,6 +2030,61 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void OpenPluginCatalogSite()
         => OpenTrustedUrl(RogueGamingEndpoints.PluginsUrl, RogueGamingEndpoints.PluginsHost);
 
+    // ── Custom join domain ───────────────────────────────────────────────────
+
+    public const string CustomDomainGuideUrl =
+        "https://github.com/RogueAssassin/HighPop-Rust-Manager/blob/main/docs/custom-domains.md";
+    private readonly CustomDomainService _customDomains = new();
+    [ObservableProperty] private string _domainCheckHostname = string.Empty;
+    [ObservableProperty] private bool _domainChecking;
+    [ObservableProperty] private string _domainCheckSummary =
+        "Set Public join domain in Settings, or type a hostname here, then select Check DNS.";
+    [ObservableProperty] private List<DomainCheckItem> _domainCheckItems = [];
+    [ObservableProperty] private string _domainConnectCommand = string.Empty;
+
+    private string ConfiguredPublicHostname =>
+        Server.GameSpecificSettings.TryGetValue("publicHostname", out var value) ? value : string.Empty;
+
+    [RelayCommand]
+    private async Task CheckCustomDomainAsync()
+    {
+        if (DomainChecking) return;
+        var hostname = string.IsNullOrWhiteSpace(DomainCheckHostname) ? ConfiguredPublicHostname : DomainCheckHostname;
+        if (string.IsNullOrWhiteSpace(hostname))
+        {
+            DomainCheckSummary = "Enter a hostname such as rust.example.com, or set Public join domain in Settings.";
+            return;
+        }
+
+        DomainChecking = true;
+        DomainCheckSummary = $"Checking {CustomDomainService.NormalizeHostname(hostname)} against public DNS…";
+        try
+        {
+            var report = await _customDomains.CheckAsync(hostname, Server.ServerPort);
+            DomainCheckHostname = report.Hostname;
+            DomainCheckItems = report.Items.ToList();
+            DomainConnectCommand = report.ConnectCommand;
+            DomainCheckSummary = report.Summary;
+            AddActionLog($"Custom domain checked: {report.Hostname} ({(report.HasErrors ? "errors" : "ok")})");
+        }
+        catch (Exception ex)
+        {
+            DomainCheckSummary = $"DNS check failed: {ex.Message}";
+        }
+        finally { DomainChecking = false; }
+    }
+
+    [RelayCommand]
+    private void CopyDomainConnectCommand()
+    {
+        if (string.IsNullOrWhiteSpace(DomainConnectCommand)) return;
+        try { System.Windows.Clipboard.SetText(DomainConnectCommand); }
+        catch (System.Runtime.InteropServices.ExternalException) { }
+    }
+
+    [RelayCommand]
+    private void OpenCustomDomainGuide() => OpenTrustedUrl(CustomDomainGuideUrl, "github.com");
+
     private static void OpenTrustedUrl(string? url, string host)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !RogueGamingEndpoints.IsHttpsOnHost(uri, host))

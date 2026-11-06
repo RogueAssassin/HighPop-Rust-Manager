@@ -1243,6 +1243,66 @@
                     <StackPanel Margin="24">
                         <TextBlock Text="Rust Settings" Style="{StaticResource SectionHeader}"/>
 
+                        <!-- Custom join domain: DNS checker for the Facepunch A + _rust._udp SRV setup -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Custom join domain" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="Players can join with client.connect your.domain once it has an A record (DNS only, not proxied) to your public IP and a _rust._udp SRV record with the game port. Set Public join domain in Settings so favourites follow the domain."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,10"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Style="{StaticResource DarkTextBox}" Margin="0,0,8,0"
+                                             Text="{Binding DomainCheckHostname, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Hostname to check, e.g. rust.example.com. Leave empty to use Public join domain from Settings."/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <Button Content="🔎 Check DNS" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"
+                                                IsEnabled="{Binding DomainChecking, Converter={StaticResource InvBool}}"
+                                                Command="{Binding CheckCustomDomainCommand}"/>
+                                        <Button Content="📘 Setup guide" Style="{StaticResource GhostButton}"
+                                                Command="{Binding OpenCustomDomainGuideCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="{Binding DomainCheckSummary}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           TextWrapping="Wrap" Margin="0,10,0,6"/>
+                                <ItemsControl ItemsSource="{Binding DomainCheckItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="5"
+                                                    Padding="10,7" Margin="0,0,0,5">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="26"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Icon, Mode=OneWay}" FontSize="13"/>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding Title, Mode=OneWay}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                        <TextBlock Text="{Binding Detail, Mode=OneWay}" FontSize="11" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                                            Visibility="{Binding DomainConnectCommand, Converter={StaticResource StringToVis}}">
+                                    <TextBlock Text="Players type in F1:" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,8,0"/>
+                                    <TextBlock Text="{Binding DomainConnectCommand}" FontFamily="Consolas" VerticalAlignment="Center"
+                                               Foreground="{StaticResource AccentBlueBrush}" Margin="0,0,8,0"/>
+                                    <Button Content="📋 Copy" Style="{StaticResource GhostButton}"
+                                            Command="{Binding CopyDomainConnectCommandCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                             <StackPanel>
                                 <TextBlock Text="HighPop operations profile" FontSize="14" FontWeight="SemiBold"
