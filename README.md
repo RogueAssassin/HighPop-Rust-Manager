@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.6-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.7-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -21,9 +21,9 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 |---|---|
 | Server setup | Streamed SteamCMD bootstrap and staged progress, Rust install/validate/update, independent server folders, templates, editable Game/Query/WebRCON/Rust+ ports, and collision checks |
 | Lifecycle | Start, safe stop, exact-PID force stop, restart, auto-start, always-on recovery, crash-loop protection, verified process reattachment, and durable operation history |
-| Console and players | Facepunch WebRCON, reconnect handling, filtered live console, Rogue Rust Reference command/ConVar search, export, player sessions, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
+| Console and players | Facepunch WebRCON with concurrent, non-blocking commands and instant in-game `say`, a shared background channel, reconnect handling, filtered live console, Rogue Rust Reference command/ConVar search, export, player sessions, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
 | Rust configuration | `server.cfg` variables, browser tags, Steam branch selection, custom maps, log paths, presets, launch arguments, CPU affinity, priority, and optional RAM limits |
-| Mods | Oxide/uMod and Carbon installation/detection, framework-aware folders, plugin/config inventory, live plugin reload, and verified RogueRust Stable/Testing channels |
+| Mods | Oxide/uMod and Carbon installation/detection, framework-aware folders, plugin/config inventory, live plugin reload, verified RogueRust Stable/Testing channels, and one-click install/update from the RogueRust plugin catalog |
 | Backups and wipes | Full and incremental ZIP backups, retention, pre-wipe safety backups, path-safe restore, map wipe, and full wipe |
 | Automation | Once, daily, weekly, and repeating schedules for lifecycle, update, backup, wipe, broadcast, and console actions |
 | Monitoring | CPU, memory, network, players, readiness signals, health checks, log watches, crash-risk warnings, local telemetry, and support bundles with secret redaction |
@@ -41,11 +41,11 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 
 The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
 
-HPRM v1.0.6 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
+HPRM v1.0.7 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
 
 ### Supported server software
 
-| Component | v1.0.6 support |
+| Component | v1.0.7 support |
 |---|---|
 | Rust Dedicated Server | Steam public and staging branches through SteamCMD; Vanilla uses the authoritative live Rust logfile |
 | Carbon | Current installed/released Carbon framework with process-stream console reporting |
@@ -62,6 +62,38 @@ The per-server **Reference** tab loads the current command and ConVar metadata f
 descriptions, types, and defaults. **Insert** copies only the selected name into the Console input
 for operator review; reference entries are never executed automatically. The compact commands and
 ConVars dataset is fetched on demand, shared across server workspaces, and cached for offline use.
+
+## Rogue Gaming endpoints
+
+HighPop only reads from these public Rogue Gaming hosts, over HTTPS, when you use the matching feature:
+
+| Host | Used for |
+|---|---|
+| `api.roguegaming.com.au` | Rogue Rust Reference command/ConVar metadata (`data/current/*.json`, `data/metadata.json`) |
+| `plugins.roguegaming.com.au` | RogueRust plugin catalog, documentation pages, and `.cs` plugin downloads |
+
+## RogueRust plugin catalog
+
+**Server → Mods → RogueRust plugin catalog** lists every plugin published on
+[plugins.roguegaming.com.au](https://plugins.roguegaming.com.au) with its category, current version,
+and the version installed on that server (read from the plugin's `[Info]` header). **Install**,
+**Update**, and **Reinstall** download the single `.cs` file into the active framework's plugins folder
+(`oxide/plugins` or `carbon/plugins`). Oxide/Carbon hot-load it, so a running server needs no restart.
+
+Downloads are accepted only from `https://plugins.roguegaming.com.au/plugins/<Name>.cs`, are size-capped,
+must be an Oxide/Carbon plugin whose `[Info]` name matches the file, and are swapped in atomically. The
+previous file is kept in `highpop-plugin-backups` (newest 5 per plugin). The catalog's plugins require the
+RogueRust extension, which is installed from the same tab.
+
+## WebRCON
+
+HighPop keeps one interactive WebRCON connection per server workspace and one shared background channel
+for scheduler, broadcast, Web API, Discord, and Oxide stop commands. Commands run concurrently and replies
+are matched by identifier, so a slow command never blocks the next one. Rust sends no reply to `say`, so
+in-game messages complete as soon as they are sent instead of waiting out a timeout. Connecting sends a
+read-only `serverinfo` probe so a wrong RCON password shows as a failed connection instead of a socket
+that closes silently. WebRCON output that Oxide's live log does not show (for example RogueRust
+diagnostics) is written to the Console tab.
 
 ## Portable layout
 

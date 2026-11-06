@@ -1851,6 +1851,77 @@
                             </Grid>
                         </Border>
 
+                        <!-- RogueRust plugin catalog (plugins.roguegaming.com.au) -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="RogueRust plugin catalog" FontSize="14" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Text="plugins.roguegaming.com.au" FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="🌐 Open site" Style="{StaticResource GhostButton}" Margin="0,0,8,0"
+                                                Command="{Binding OpenPluginCatalogSiteCommand}"/>
+                                        <Button Content="↻ Load catalog" Style="{StaticResource GhostButton}"
+                                                IsEnabled="{Binding PluginCatalogLoading, Converter={StaticResource InvBool}}"
+                                                Command="{Binding RefreshPluginCatalogCommand}"/>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="Single-file plugins built on the RogueRust extension. Install/Update downloads the .cs only from plugins.roguegaming.com.au/plugins/, checks its [Info] header, keeps the last 5 versions in highpop-plugin-backups, and swaps it into the active framework's plugins folder in one step so Oxide/Carbon hot-loads it."
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                <TextBlock Text="{Binding PluginCatalogStatus}" FontSize="12"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <ItemsControl ItemsSource="{Binding CatalogPlugins}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="5"
+                                                    Padding="10,7" Margin="0,0,0,5">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="200"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Margin="0,0,10,0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding VersionText, Mode=OneWay}" Margin="8,0,0,0"
+                                                                       Foreground="{StaticResource AccentBlueBrush}"/>
+                                                            <TextBlock Text="{Binding Category, Mode=OneWay}" Margin="8,0,0,0" FontSize="11"
+                                                                       VerticalAlignment="Center"
+                                                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description, Mode=OneWay}" FontSize="11" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding StatusText, Mode=OneWay}" FontSize="11"
+                                                               VerticalAlignment="Center" TextWrapping="Wrap"
+                                                               Foreground="{StaticResource AccentGreenBrush}"/>
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Content="Docs" Style="{StaticResource GhostButton}" Margin="0,0,6,0"
+                                                                Command="{Binding DataContext.OpenCatalogPluginDocsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                        <Button Content="{Binding ActionText, Mode=OneWay}" Style="{StaticResource PrimaryButton}"
+                                                                IsEnabled="{Binding DataContext.ModBusy, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InvBool}}"
+                                                                Command="{Binding DataContext.InstallCatalogPluginCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
                         <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                             <StackPanel>
                                 <TextBlock Text="Installed plugins" FontSize="14" FontWeight="SemiBold"

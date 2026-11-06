@@ -60,7 +60,7 @@ public sealed record RustReferenceSnapshot(
 /// </summary>
 public sealed class RustReferenceService
 {
-    public const string ReferenceUrl = "https://api.roguegaming.com.au";
+    public const string ReferenceUrl = RogueGamingEndpoints.ApiUrl;
     private const string CommandsPath = "data/current/commands.json";
     private const string ConVarsPath = "data/current/convars.json";
     private const string MetadataPath = "data/metadata.json";
@@ -79,7 +79,7 @@ public sealed class RustReferenceService
 
     public RustReferenceService()
     {
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd(RogueGamingEndpoints.UserAgent);
     }
 
     public async Task<RustReferenceSnapshot> LoadAsync(

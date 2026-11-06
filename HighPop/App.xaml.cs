@@ -309,6 +309,7 @@ public partial class App : System.Windows.Application
         s.AddSingleton<RustModerationService>();
         s.AddSingleton<ServerHygieneService>();
         s.AddSingleton<RustReferenceService>();
+        s.AddSingleton<RogueRustPluginCatalogService>();
         s.AddSingleton<WebApiService>();
         s.AddSingleton<RemoteMachineService>();
         s.AddSingleton<CrashPredictionService>();

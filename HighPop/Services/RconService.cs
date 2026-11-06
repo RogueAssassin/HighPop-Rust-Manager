@@ -6,9 +6,34 @@ using System.Text.Json;
 
 namespace HighPop.Services;
 
-/// <summary>Facepunch WebRCON client for Rust servers started with <c>rcon.web 1</c>.</summary>
+/// <summary>
+/// Facepunch WebRCON client for Rust servers started with <c>rcon.web 1</c>.
+/// <para>
+/// The client is safe to use concurrently: sends are serialised internally (a WebSocket allows
+/// one outstanding send) while responses are correlated by identifier, so callers must not wrap
+/// <see cref="SendCommandAsync(string, CancellationToken)"/> in their own lock. Holding a lock
+/// across the response wait is what made in-game chat lag: Rust never answers <c>say</c>, so
+/// every message blocked the next command for the whole response timeout.
+/// </para>
+/// </summary>
 public sealed class RconService : IDisposable, IAsyncDisposable
 {
+    /// <summary>Default wait for a correlated response to a command that is expected to answer.</summary>
+    public static readonly TimeSpan DefaultResponseTimeout = TimeSpan.FromSeconds(8);
+
+    /// <summary>
+    /// Rust commands whose effect is broadcast as chat/unsolicited output and that never send a
+    /// correlated (same-identifier) response. Waiting for one only stalls the caller.
+    /// </summary>
+    private static readonly HashSet<string> NoResponseCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "say", "global.say", "chat.say",
+        "quit", "global.quit",
+    };
+
+    private const int MaxMessageBytes = 8 * 1024 * 1024;
+    private const string ProbeCommand = "serverinfo";
+
     private readonly ConcurrentDictionary<int, TaskCompletionSource<string>> _pending = [];
     private readonly SemaphoreSlim _sendGate = new(1, 1);
     private ClientWebSocket? _socket;
@@ -16,8 +41,22 @@ public sealed class RconService : IDisposable, IAsyncDisposable
     private Task? _receiveLoop;
     private int _requestId;
     private volatile bool _authenticated;
+    private int _disposed;
 
     public bool IsConnected => _socket?.State == WebSocketState.Open && _authenticated;
+
+    /// <summary>
+    /// True when <paramref name="command"/> is known never to receive a correlated response.
+    /// Such commands are sent and complete as soon as the frame is written.
+    /// </summary>
+    public static bool ExpectsResponse(string? command)
+    {
+        var text = (command ?? string.Empty).TrimStart();
+        if (text.Length == 0) return false;
+        var end = 0;
+        while (end < text.Length && !char.IsWhiteSpace(text[end])) end++;
+        return !NoResponseCommands.Contains(text[..end]);
+    }
 
     public async Task<bool> ConnectAsync(
         string host,
@@ -33,15 +72,28 @@ public sealed class RconService : IDisposable, IAsyncDisposable
             _socket = socket;
 
             var encodedPassword = Uri.EscapeDataString(password ?? string.Empty);
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(8));
-            await socket.ConnectAsync(new Uri($"ws://{host}:{port}/{encodedPassword}"), timeout.Token)
-                .ConfigureAwait(false);
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                await socket.ConnectAsync(new Uri($"ws://{FormatHost(host)}:{port}/{encodedPassword}"), timeout.Token)
+                    .ConfigureAwait(false);
+            }
 
             var connectionCts = new CancellationTokenSource();
             _connectionCts = connectionCts;
             _authenticated = socket.State == WebSocketState.Open;
             _receiveLoop = ReceiveLoopAsync(socket, connectionCts.Token);
+            if (!_authenticated) return false;
+
+            // Rust accepts the WebSocket handshake before it validates the password, then closes
+            // the socket. A cheap read-only probe tells the two cases apart: a rejected password
+            // closes the connection (the probe is cancelled), while a busy-but-valid server may
+            // simply answer slowly, which still counts as connected.
+            await SendCommandAsync(ProbeCommand, TimeSpan.FromSeconds(5), cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            _authenticated = socket.State == WebSocketState.Open;
+            if (!_authenticated) await DisconnectAsync().ConfigureAwait(false);
             return _authenticated;
         }
         catch
@@ -51,30 +103,47 @@ public sealed class RconService : IDisposable, IAsyncDisposable
         }
     }
 
+    public Task<string> SendCommandAsync(
+        string command,
+        CancellationToken cancellationToken = default)
+        => SendCommandAsync(command, DefaultResponseTimeout, cancellationToken);
+
+    /// <summary>
+    /// Sends <paramref name="command"/> and returns Rust's correlated response. Commands that
+    /// never answer (see <see cref="ExpectsResponse"/>) return an empty string as soon as they are
+    /// written. Failures are reported as <c>[RCON] ...</c> strings rather than exceptions.
+    /// </summary>
     public async Task<string> SendCommandAsync(
         string command,
+        TimeSpan responseTimeout,
         CancellationToken cancellationToken = default)
     {
         var socket = _socket;
         var connectionToken = _connectionCts?.Token ?? CancellationToken.None;
         if (!IsConnected || socket == null) return "[RCON] Not connected";
+        if (string.IsNullOrWhiteSpace(command)) return string.Empty;
 
-        var id = Interlocked.Increment(ref _requestId);
-        var completion = new TaskCompletionSource<string>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!_pending.TryAdd(id, completion))
-            return "[RCON] Could not allocate a command identifier";
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
-            connectionToken, cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
-        using var registration = timeout.Token.Register(() =>
+        var expectsResponse = ExpectsResponse(command);
+        var id = NextIdentifier();
+        TaskCompletionSource<string>? completion = null;
+        if (expectsResponse)
         {
-            if (_pending.TryRemove(id, out var pending))
-                pending.TrySetCanceled(timeout.Token);
-        });
+            completion = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!_pending.TryAdd(id, completion))
+                return "[RCON] Could not allocate a command identifier";
+        }
 
-        var request = JsonSerializer.Serialize(new
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(connectionToken, cancellationToken);
+        timeout.CancelAfter(responseTimeout > TimeSpan.Zero ? responseTimeout : DefaultResponseTimeout);
+        using var registration = completion == null
+            ? default
+            : timeout.Token.Register(static state =>
+            {
+                var (pending, key, token) = ((ConcurrentDictionary<int, TaskCompletionSource<string>>, int, CancellationToken))state!;
+                if (pending.TryRemove(key, out var entry)) entry.TrySetCanceled(token);
+            }, (_pending, id, timeout.Token));
+
+        var request = JsonSerializer.SerializeToUtf8Bytes(new
         {
             Identifier = id,
             Message = command,
@@ -86,20 +155,21 @@ public sealed class RconService : IDisposable, IAsyncDisposable
             await _sendGate.WaitAsync(timeout.Token).ConfigureAwait(false);
             try
             {
-                await socket.SendAsync(
-                    Encoding.UTF8.GetBytes(request),
-                    WebSocketMessageType.Text,
-                    endOfMessage: true,
-                    timeout.Token).ConfigureAwait(false);
+                await socket.SendAsync(request, WebSocketMessageType.Text, endOfMessage: true, timeout.Token)
+                    .ConfigureAwait(false);
             }
             finally { _sendGate.Release(); }
 
-            return await completion.Task.ConfigureAwait(false);
+            return completion == null
+                ? string.Empty
+                : await completion.Task.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            if (cancellationToken.IsCancellationRequested) return "[RCON] Command cancelled";
             return IsConnected
-                ? "[RCON] Timed out waiting for the Rust server response"
+                ? "[RCON] No response from the Rust server within " +
+                  $"{(responseTimeout > TimeSpan.Zero ? responseTimeout : DefaultResponseTimeout).TotalSeconds:0}s"
                 : "[RCON] Connection closed while waiting for the Rust server response";
         }
         catch (Exception ex) when (ex is WebSocketException or IOException or ObjectDisposedException or InvalidOperationException)
@@ -109,17 +179,38 @@ public sealed class RconService : IDisposable, IAsyncDisposable
         }
         finally
         {
-            _pending.TryRemove(id, out _);
+            if (completion != null) _pending.TryRemove(id, out _);
         }
+    }
+
+    /// <summary>
+    /// Positive identifiers only: Rust reserves 0 and -1 for unsolicited console, chat and
+    /// generic output, so a wrapped counter must never collide with them.
+    /// </summary>
+    private int NextIdentifier()
+    {
+        while (true)
+        {
+            var id = Interlocked.Increment(ref _requestId) & int.MaxValue;
+            if (id > 0) return id;
+        }
+    }
+
+    private static string FormatHost(string host)
+    {
+        host = string.IsNullOrWhiteSpace(host) ? "127.0.0.1" : host.Trim();
+        return host.Contains(':') && !host.StartsWith('[') ? $"[{host}]" : host;
     }
 
     private async Task ReceiveLoopAsync(ClientWebSocket socket, CancellationToken token)
     {
+        var buffer = new byte[16 * 1024];
         try
         {
             while (!token.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
-                var payload = await ReceiveTextAsync(socket, token).ConfigureAwait(false);
+                var payload = await ReceiveTextAsync(socket, buffer, token).ConfigureAwait(false);
+                if (payload == null) break; // close frame
                 if (string.IsNullOrWhiteSpace(payload)) continue;
 
                 if (!TryReadResponse(payload, out var responseId, out var message))
@@ -136,9 +227,9 @@ public sealed class RconService : IDisposable, IAsyncDisposable
                     continue;
                 }
 
-                // Identifier 0 is unsolicited console/chat output. HPRM obtains its visible
+                // Identifiers 0 and -1 are unsolicited console/chat output. HPRM obtains its visible
                 // server console from the framework-specific authoritative log source.
-                if (responseId == 0) continue;
+                if (responseId <= 0) continue;
                 if (_pending.TryRemove(responseId, out var completion))
                     completion.TrySetResult(message);
             }
@@ -151,13 +242,11 @@ public sealed class RconService : IDisposable, IAsyncDisposable
         finally
         {
             _authenticated = false;
-            foreach (var pending in _pending.Values)
-                pending.TrySetCanceled();
-            _pending.Clear();
+            CancelPending();
         }
     }
 
-    private static bool TryReadResponse(string payload, out int identifier, out string message)
+    internal static bool TryReadResponse(string payload, out int identifier, out string message)
     {
         identifier = -1;
         message = string.Empty;
@@ -207,33 +296,53 @@ public sealed class RconService : IDisposable, IAsyncDisposable
         return false;
     }
 
-    private static async Task<string> ReceiveTextAsync(ClientWebSocket socket, CancellationToken token)
+    /// <summary>Returns the next text message, or <c>null</c> when the server closed the socket.</summary>
+    private static async Task<string?> ReceiveTextAsync(
+        ClientWebSocket socket,
+        byte[] buffer,
+        CancellationToken token)
     {
-        var buffer = new byte[16 * 1024];
+        var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
+        if (result.MessageType == WebSocketMessageType.Close) return null;
+        // Fast path: Rust sends almost every response as a single frame.
+        if (result.EndOfMessage)
+            return result.MessageType == WebSocketMessageType.Text
+                ? Encoding.UTF8.GetString(buffer, 0, result.Count)
+                : string.Empty;
+
         using var stream = new MemoryStream();
-        WebSocketReceiveResult result;
+        var isText = result.MessageType == WebSocketMessageType.Text;
+        if (isText) stream.Write(buffer, 0, result.Count);
         do
         {
             result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
-            if (result.MessageType == WebSocketMessageType.Close) return string.Empty;
-            if (result.MessageType == WebSocketMessageType.Text)
+            if (result.MessageType == WebSocketMessageType.Close) return null;
+            if (isText && stream.Length + result.Count <= MaxMessageBytes)
                 stream.Write(buffer, 0, result.Count);
         }
         while (!result.EndOfMessage);
 
-        return Encoding.UTF8.GetString(stream.ToArray());
+        return isText ? Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length) : string.Empty;
+    }
+
+    private void CancelPending()
+    {
+        foreach (var key in _pending.Keys)
+            if (_pending.TryRemove(key, out var pending))
+                pending.TrySetCanceled();
     }
 
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         _authenticated = false;
         var connectionCts = Interlocked.Exchange(ref _connectionCts, null);
-        connectionCts?.Cancel();
+        try { connectionCts?.Cancel(); } catch (ObjectDisposedException) { }
         var receiveLoop = Interlocked.Exchange(ref _receiveLoop, null);
         var socket = Interlocked.Exchange(ref _socket, null);
         if (socket == null)
         {
             connectionCts?.Dispose();
+            CancelPending();
             return;
         }
 
@@ -252,6 +361,7 @@ public sealed class RconService : IDisposable, IAsyncDisposable
         catch (OperationCanceledException) { }
         catch (WebSocketException) { }
         catch (IOException) { }
+        catch (ObjectDisposedException) { }
         finally
         {
             socket.Dispose();
@@ -262,9 +372,7 @@ public sealed class RconService : IDisposable, IAsyncDisposable
                 catch (TimeoutException) { }
             }
             connectionCts?.Dispose();
-            foreach (var pending in _pending.Values)
-                pending.TrySetCanceled();
-            _pending.Clear();
+            CancelPending();
         }
     }
 
@@ -285,20 +393,20 @@ public sealed class RconService : IDisposable, IAsyncDisposable
         try { socket?.Abort(); } catch { }
         try { socket?.Dispose(); } catch { }
         try { connectionCts?.Dispose(); } catch { }
-        foreach (var pending in _pending.Values)
-            pending.TrySetCanceled();
-        _pending.Clear();
+        CancelPending();
     }
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         Disconnect();
-        _sendGate.Dispose();
+        // The send gate is intentionally not disposed: a concurrent sender may still be
+        // releasing it, and SemaphoreSlim holds no unmanaged resources without a wait handle.
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         await DisconnectAsync().ConfigureAwait(false);
-        _sendGate.Dispose();
     }
 }

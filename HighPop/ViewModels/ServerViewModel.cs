@@ -31,6 +31,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private readonly ConfigPresetService    _presets;
     private readonly RustTelemetryService   _telemetry;
     private readonly RustReferenceService   _rustReference;
+    private readonly RogueRustPluginCatalogService _pluginCatalog;
     private RconService? _rcon;
     private readonly SemaphoreSlim _rconLock  = new(1, 1);
     private CancellationTokenSource? _rconAutoConnectCts;
@@ -567,7 +568,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         TemplateService templates, ScheduledTaskService scheduler, NetworkMonitorService network,
         GroupBanListService groupBans, RustModerationService moderation, ServerHygieneService hygiene,
         ConfigPresetService presets, RustTelemetryService telemetry,
-        RustReferenceService rustReference)
+        RustReferenceService rustReference, RogueRustPluginCatalogService pluginCatalog)
     {
         Server         = server;
         Plugin         = GameRegistry.Get(server.GameId);
@@ -590,6 +591,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _presets       = presets;
         _telemetry     = telemetry;
         _rustReference = rustReference;
+        _pluginCatalog = pluginCatalog;
         Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
         Server.RustServerVariables.CollectionChanged += (_, _) => TrackRustVariableChanges();
         if (IsRust)
@@ -962,7 +964,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     // ── Console ─────────────────────────────────────────────────────────────
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task SendConsoleCommandAsync()
     {
         if (string.IsNullOrWhiteSpace(ConsoleInput)) return;
@@ -971,7 +973,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         await RunCommandTextAsync(cmd);
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task RunQuickCommandAsync(QuickCommand? qc)
     {
         if (qc == null || string.IsNullOrWhiteSpace(qc.Command)) return;
@@ -1957,6 +1959,91 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             ModStatusText = "The active framework configuration folder does not exist yet.";
     }
 
+    // ── RogueRust plugin catalog (plugins.roguegaming.com.au) ───────────────
+
+    private IReadOnlyList<RogueRustCatalogPlugin> _catalogSource = [];
+    [ObservableProperty] private List<RogueRustCatalogPlugin> _catalogPlugins = [];
+    [ObservableProperty] private bool _pluginCatalogLoading;
+    [ObservableProperty] private string _pluginCatalogStatus =
+        $"Load the catalog to browse RogueRust plugins from {RogueGamingEndpoints.PluginsHost}.";
+
+    [RelayCommand]
+    private async Task RefreshPluginCatalogAsync()
+    {
+        if (PluginCatalogLoading) return;
+        PluginCatalogLoading = true;
+        PluginCatalogStatus = $"Downloading the plugin catalog from {RogueGamingEndpoints.PluginsHost}…";
+        try
+        {
+            _catalogSource = await _pluginCatalog.LoadAsync(refresh: _catalogSource.Count > 0);
+            CatalogPlugins = RogueRustPluginCatalogService.WithInstalledVersions(_catalogSource, Server.InstallPath);
+            var updates = CatalogPlugins.Count(plugin => plugin.UpdateAvailable);
+            var installed = CatalogPlugins.Count(plugin => plugin.IsInstalled);
+            PluginCatalogStatus = $"{CatalogPlugins.Count} plugins listed · {installed} installed · " +
+                                  (updates == 0 ? "all up to date" : $"{updates} update(s) available");
+        }
+        catch (Exception ex)
+        {
+            PluginCatalogStatus = ex.Message;
+        }
+        finally { PluginCatalogLoading = false; }
+    }
+
+    [RelayCommand]
+    private async Task InstallCatalogPluginAsync(RogueRustCatalogPlugin? plugin)
+    {
+        if (plugin == null || Plugin?.GameId != "rust" || ModBusy) return;
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths == null)
+        {
+            ModStatusText = "Install exactly one mod framework (Oxide/uMod or Carbon) before adding RogueRust plugins.";
+            return;
+        }
+
+        ModBusy = true;
+        try
+        {
+            ModStatusText = $"Downloading {plugin.FileName} from {RogueGamingEndpoints.PluginsHost}…";
+            var version = await _pluginCatalog.InstallAsync(plugin, Server.InstallPath);
+            var requiresExtension = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) == null;
+            ModStatusText = $"✅ {plugin.Name} v{version} installed to {paths.Framework} plugins." +
+                            (IsRunning ? " The framework hot-loads it; no restart is needed." : string.Empty) +
+                            (requiresExtension ? " Note: RogueRust plugins need the RogueRust extension installed." : string.Empty);
+            AppendLog($"[Mods] ✅ {plugin.FileName} v{version} installed from {RogueGamingEndpoints.PluginsHost}.",
+                ConsoleMessageType.System);
+            AddActionLog($"RogueRust plugin {plugin.Name} v{version} installed or updated");
+            RefreshInstalledPlugins();
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[Mods] ❌ {plugin.FileName}: {ex.Message}", ConsoleMessageType.Error);
+            ModStatusText = $"❌ {ex.Message}";
+        }
+        finally { ModBusy = false; }
+    }
+
+    [RelayCommand]
+    private void OpenCatalogPluginDocs(RogueRustCatalogPlugin? plugin)
+        => OpenTrustedUrl(plugin?.DocumentationUrl, RogueGamingEndpoints.PluginsHost);
+
+    [RelayCommand]
+    private void OpenPluginCatalogSite()
+        => OpenTrustedUrl(RogueGamingEndpoints.PluginsUrl, RogueGamingEndpoints.PluginsHost);
+
+    private static void OpenTrustedUrl(string? url, string host)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !RogueGamingEndpoints.IsHttpsOnHost(uri, host))
+            return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+    }
+
     [RelayCommand]
     private void OpenActiveExtensionFolder()
     {
@@ -1975,6 +2062,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             ? $"Installed {version} · {RogueRustChannel} · {string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Select(target => target.Framework))}"
             : $"Not installed · {RogueRustChannel} channel";
         InstalledPlugins = ModManagerService.GetInstalledPlugins(Server.InstallPath);
+        if (_catalogSource.Count > 0)
+            CatalogPlugins = RogueRustPluginCatalogService.WithInstalledVersions(_catalogSource, Server.InstallPath);
 
         if (!DetectedModFramework.StartsWith("Vanilla", StringComparison.OrdinalIgnoreCase))
         {
@@ -2114,11 +2203,11 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             var querySource = string.Empty;
             var cmd = Plugin.GetPlayersCommand();
 
-            if (cmd != null && RconConnected && _rcon != null)
+            var rcon = _rcon;
+            if (cmd != null && RconConnected && rcon != null)
             {
                 string response = string.Empty;
-                await _rconLock.WaitAsync();
-                try { response = await _rcon.SendCommandAsync(cmd); }
+                try { response = await rcon.SendCommandAsync(cmd); }
                 catch
                 {
                     UiDispatcher.Post(() =>
@@ -2128,14 +2217,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     });
                     if (Server.AutoConnectRcon) StartAutoRconConnect();
                 }
-                finally { _rconLock.Release(); }
 
                 if (Services.PlayerParserService.TryParseRustPlayerList(response, out var rconPlayers))
                 {
                     parsed = rconPlayers;
                     querySource = "WebRCON";
                 }
-                else if (!_rcon.IsConnected)
+                else if (!rcon.IsConnected)
                 {
                     UiDispatcher.Post(() =>
                     {
@@ -2836,20 +2924,25 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     private async Task SendRconOrConsole(string cmd)
     {
-        if (RconConnected && _rcon != null)
+        // RconService is safe for concurrent callers and correlates replies by identifier, so the
+        // connection lock is deliberately NOT held here. Holding it across the reply wait
+        // serialised every command (and the player refresh) behind slow or reply-less commands.
+        var rcon = _rcon;
+        if (RconConnected && rcon != null)
         {
-            await _rconLock.WaitAsync();
             try
             {
-                var r = await _rcon.SendCommandAsync(cmd);
-                if (!string.IsNullOrEmpty(r)) AppendLog(r);
-                if (_rcon.IsConnected) return;
+                var r = await rcon.SendCommandAsync(cmd);
+                if (!string.IsNullOrEmpty(r))
+                    AppendLog(r, r.StartsWith("[RCON]", StringComparison.Ordinal)
+                        ? ConsoleMessageType.Warning
+                        : ConsoleMessageType.Info);
+                if (rcon.IsConnected) return;
             }
             catch (Exception ex)
             {
                 AppendLog($"[RCON] Connection lost: {ex.Message}", ConsoleMessageType.Warning);
             }
-            finally { _rconLock.Release(); }
 
             UiDispatcher.Post(() =>
             {

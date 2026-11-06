@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.7
+
+- Fixed in-game chat over WebRCON lagging or appearing to hang. Rust sends no correlated reply to `say`, so every message waited out the full 10-second response timeout. Commands that never reply (`say`, `global.say`, `chat.say`, `quit`) now complete as soon as they are sent.
+- Removed the server workspace lock that was held across every WebRCON round-trip. Console commands, quick commands, moderation actions and the player-list refresh now run concurrently, with replies matched by identifier, instead of queuing behind a slow or reply-less command.
+- The Console **Send** and quick-command actions no longer disable themselves while a reply is pending, so several messages can be sent back to back.
+- Background commands (scheduled broadcasts, restart/update warnings, Web API, Discord, log-watch actions and Oxide save/quit) reuse one persistent WebRCON channel per running server instead of opening and authenticating a new WebSocket for each command, and reconnect once automatically if Rust closed it.
+- WebRCON replies to background commands on Oxide servers (such as RogueRust diagnostics) now appear in the Console tab instead of being discarded.
+- WebRCON connections are verified with a read-only `serverinfo` probe, so a wrong RCON password reports a failed connection instead of looking connected until the first command.
+- Hardened the WebRCON client: positive-only request identifiers (Rust reserves 0 and -1), single-frame receive fast path with a reused buffer, an 8 MB message cap, IPv6 host formatting, and idempotent disposal.
+- Added the **RogueRust plugin catalog** to Server → Mods, backed by `plugins.roguegaming.com.au`: browse all published plugins by category, see installed vs. current versions, open documentation, and install/update a plugin into the active Oxide/Carbon plugins folder with host-locked HTTPS downloads, `[Info]` validation, atomic replacement, and five rollback copies per plugin.
+- Centralised the Rogue Gaming hosts (`api.roguegaming.com.au`, `plugins.roguegaming.com.au`) with exact-host HTTPS checks shared by the Rust Reference and plugin catalog.
+- Added smoke coverage for reply-less WebRCON commands, wrong-password rejection, concurrent reply correlation against a loopback WebRCON server, plugin catalog parsing/trust rules, `[Info]` version detection, and endpoint host checks. Advanced application and documentation metadata to v1.0.7.
+
 ## 1.0.6
 
 - Fixed Oxide stops appearing frozen by keeping **Force Stop PID** available throughout the `Stopping` phase and allowing it to cancel the active graceful wait.

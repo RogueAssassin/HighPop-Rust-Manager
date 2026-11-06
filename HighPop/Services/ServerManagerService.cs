@@ -109,6 +109,54 @@ public class ServerInstance
         try { RustLogTailCts?.Cancel(); } catch { }
         RustLogTailCts?.Dispose();
         RustLogTailCts = null;
+        ReleaseRcon();
+    }
+
+    // ── Shared WebRCON channel ────────────────────────────────────────────────
+    // Background senders (broadcasts, scheduler, Web API, Discord, log watches and the Oxide
+    // stop path) reuse one persistent WebRCON connection per running server instead of opening
+    // and authenticating a new WebSocket for every command.
+    private readonly SemaphoreSlim _rconGate = new(1, 1);
+    private RconService? _rcon;
+
+    public async Task<RconService?> GetRconAsync(
+        string host,
+        int port,
+        string password,
+        CancellationToken cancellationToken)
+    {
+        var current = Volatile.Read(ref _rcon);
+        if (current?.IsConnected == true) return current;
+
+        await _rconGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            current = Volatile.Read(ref _rcon);
+            if (current?.IsConnected == true) return current;
+            Interlocked.Exchange(ref _rcon, null)?.Dispose();
+
+            var rcon = new RconService();
+            if (!await rcon.ConnectAsync(host, port, password, cancellationToken).ConfigureAwait(false))
+            {
+                rcon.Dispose();
+                return null;
+            }
+            Volatile.Write(ref _rcon, rcon);
+            return rcon;
+        }
+        finally { _rconGate.Release(); }
+    }
+
+    /// <summary>Drops the shared channel without waiting (safe on the UI thread).</summary>
+    public void ReleaseRcon(RconService? expected = null)
+    {
+        if (expected != null)
+        {
+            if (Interlocked.CompareExchange(ref _rcon, null, expected) == expected)
+                expected.Dispose();
+            return;
+        }
+        Interlocked.Exchange(ref _rcon, null)?.Dispose();
     }
 }
 
@@ -1203,21 +1251,41 @@ public class ServerManagerService
             && server.RconPort > 0
             && !string.IsNullOrWhiteSpace(server.RconPassword))
         {
-            try
+            var host = string.IsNullOrWhiteSpace(server.ServerIp)
+                       || server.ServerIp is "0.0.0.0" or "::" or "[::]"
+                ? "127.0.0.1"
+                : server.ServerIp;
+            // One retry covers a shared channel that Rust closed since its last use.
+            for (var attempt = 0; attempt < 2 && !cancellationToken.IsCancellationRequested; attempt++)
             {
-                await using var rcon = new RconService();
-                var host = server.ServerIp is "0.0.0.0" or "::" or "[::]"
-                    ? "127.0.0.1"
-                    : server.ServerIp;
-                if (await rcon.ConnectAsync(host, server.RconPort, server.RconPassword, cancellationToken))
+                try
                 {
-                    await rcon.SendCommandAsync(command, cancellationToken);
+                    var rcon = await instance.GetRconAsync(
+                        host, server.RconPort, server.RconPassword, cancellationToken).ConfigureAwait(false);
+                    if (rcon == null) break;
+                    var response = await rcon.SendCommandAsync(command, cancellationToken).ConfigureAwait(false);
+                    if (!rcon.IsConnected && response.StartsWith("[RCON]", StringComparison.Ordinal))
+                    {
+                        instance.ReleaseRcon(rcon);
+                        continue;
+                    }
                     InjectLogLine(server.Id,
                         $"[HighPop] {description} via WebRCON.", ConsoleMessageType.System);
+                    // Oxide's live log does not contain WebRCON command output, so surface it here
+                    // (e.g. RogueRust diagnostics). Commands without a reply return an empty string.
+                    if (!string.IsNullOrWhiteSpace(response))
+                        InjectLogLine(server.Id, UiTextSanitizer.Normalize(response),
+                            response.StartsWith("[RCON]", StringComparison.Ordinal)
+                                ? ConsoleMessageType.Warning
+                                : ConsoleMessageType.Info);
                     return true;
                 }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+                {
+                    break;
+                }
             }
-            catch { }
         }
 
         InjectLogLine(server.Id,

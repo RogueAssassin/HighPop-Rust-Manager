@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.6", "application and release metadata report v1.0.6");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.6", "1.0.5")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.6")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.6", "1.0.6")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.6"),
+Check(AppInfo.Version == "1.0.7", "application and release metadata report v1.0.7");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.7", "1.0.6")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.7")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.7", "1.0.7")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.7"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -33,8 +33,90 @@ using (var disconnectedRcon = new RconService())
 Check(await RconDisposeOnBlockedContextCompletesAsync(),
     "WebRCON Dispose on a blocked UI-style thread completes instead of deadlocking");
 
-Check(RustReferenceService.ReferenceUrl == "https://api.roguegaming.com.au",
-    "Rogue Rust Reference uses the public read-only metadata endpoint");
+// Regression: in-game chat via WebRCON lagged badly. Rust never sends a correlated reply to
+// `say`, so each message waited out the full response timeout while blocking later commands.
+Check(!RconService.ExpectsResponse("say \"hello\"")
+      && !RconService.ExpectsResponse("  SAY hi")
+      && !RconService.ExpectsResponse("global.say hi")
+      && !RconService.ExpectsResponse("quit")
+      && RconService.ExpectsResponse("sayx")
+      && RconService.ExpectsResponse("serverinfo")
+      && RconService.ExpectsResponse("global.playerlist"),
+    "WebRCON knows which Rust commands never send a correlated response");
+var fakeRcon = await FakeRustRconScenarioAsync();
+Check(fakeRcon.Skipped || fakeRcon.WrongPasswordRejected,
+    "WebRCON connect reports a rejected password as not connected");
+Check(fakeRcon.Skipped || fakeRcon.SayReturnedQuickly,
+    "WebRCON in-game say returns as soon as it is sent instead of waiting for a reply");
+Check(fakeRcon.Skipped || fakeRcon.ConcurrentRepliesCorrelated,
+    "WebRCON concurrent commands are not serialised behind a slow reply and keep their own responses");
+
+Check(RustReferenceService.ReferenceUrl == "https://api.roguegaming.com.au"
+      && RogueGamingEndpoints.ApiUrl == "https://api.roguegaming.com.au"
+      && RogueGamingEndpoints.PluginsUrl == "https://plugins.roguegaming.com.au",
+    "Rogue Gaming API and plugin catalog endpoints use the public HTTPS hosts");
+Check(RogueGamingEndpoints.IsHttpsOnHost(new Uri("https://plugins.roguegaming.com.au/x"), RogueGamingEndpoints.PluginsHost)
+      && !RogueGamingEndpoints.IsHttpsOnHost(new Uri("http://plugins.roguegaming.com.au/x"), RogueGamingEndpoints.PluginsHost)
+      && !RogueGamingEndpoints.IsHttpsOnHost(new Uri("https://plugins.roguegaming.com.au.evil.example/x"), RogueGamingEndpoints.PluginsHost)
+      && !RogueGamingEndpoints.IsHttpsOnHost(new Uri("https://plugins.roguegaming.com.au:8443/x"), RogueGamingEndpoints.PluginsHost),
+    "Rogue Gaming host checks require HTTPS on the exact host and default port");
+
+const string catalogHtml = """
+    <section id="plugins">
+      <section class="category">
+        <h2>Administration</h2>
+        <div class="grid">
+        <article class="card" data-search="x">
+          <div class="card-head"><h3>ServerInfo</h3><span class="version">v1.1.3</span></div>
+          <p>In-game server information &amp; command reference.</p>
+          <div class="card-actions"><a class="button" href="RogueRustServerInfo.html">Documentation</a><a class="button ghost" href="plugins/RogueRustServerInfo.cs" download>Download .cs</a></div>
+        </article>
+        <article class="card"><div class="card-head"><h3>Evil</h3><span class="version">v9.9.9</span></div>
+          <div class="card-actions"><a class="button ghost" href="https://evil.example/plugins/Evil.cs">Download .cs</a></div>
+        </article>
+        <article class="card"><div class="card-head"><h3>Traversal</h3><span class="version">v1.0.0</span></div>
+          <div class="card-actions"><a class="button ghost" href="plugins/../Traversal.cs">Download .cs</a></div>
+        </article>
+        </div>
+      </section>
+      <section class="category">
+        <h2>World events</h2>
+        <div class="grid">
+        <article class="card">
+          <div class="card-head"><h3>HeliCrash</h3><span class="version">v2.0.1</span></div>
+          <p>Crash events.</p>
+          <div class="card-actions"><a class="button" href="RogueRustHeliCrash.html">Documentation</a><a class="button ghost" href="plugins/RogueRustHeliCrash.cs" download>Download .cs</a></div>
+        </article>
+        </div>
+      </section>
+    </section>
+    """;
+var catalog = RogueRustPluginCatalogService.ParseCatalog(catalogHtml);
+Check(catalog.Count == 2
+      && catalog[0] is { Name: "ServerInfo", Version: "1.1.3", Category: "Administration", FileName: "RogueRustServerInfo.cs" }
+      && catalog[0].Description == "In-game server information & command reference."
+      && catalog[0].DownloadUrl == "https://plugins.roguegaming.com.au/plugins/RogueRustServerInfo.cs"
+      && catalog[0].DocumentationUrl == "https://plugins.roguegaming.com.au/RogueRustServerInfo.html"
+      && catalog[1] is { Name: "HeliCrash", Category: "World events" },
+    "RogueRust plugin catalog parses categories, versions and trusted download links only");
+Check(RogueRustPluginCatalogService.ReadInfoAttribute(
+          "namespace Oxide.Plugins { [Info(\"RogueRustServerInfo\", \"RogueAssassin\", \"1.1.3\")] class X {} }")
+      is { Name: "RogueRustServerInfo", Version: "1.1.3" }
+      && RogueRustPluginCatalogService.ReadInfoAttribute("class NotAPlugin {}") == null,
+    "RogueRust plugin version detection reads the Oxide [Info] attribute");
+Check(RogueRustPluginCatalogService.CompareVersions("2.5.10", "2.5.9") > 0
+      && RogueRustPluginCatalogService.CompareVersions("v1.0", "1.0.0") == 0
+      && RogueRustPluginCatalogService.CompareVersions("1.0.0", "1.0.1") < 0,
+    "RogueRust plugin versions compare numerically");
+Check(catalog[0].WithInstalledVersion(null).StatusText == "Not installed"
+      && catalog[0].WithInstalledVersion("1.0.0").UpdateAvailable
+      && !catalog[0].WithInstalledVersion("1.1.3").UpdateAvailable
+      && !catalog[0].WithInstalledVersion(string.Empty).UpdateAvailable,
+    "RogueRust plugin catalog reports install and update state");
+Check(!RogueRustPluginCatalogService.IsValidPluginFileName("../Evil.cs")
+      && !RogueRustPluginCatalogService.IsValidPluginFileName("Evil.dll")
+      && RogueRustPluginCatalogService.IsValidPluginFileName("RogueRustSkins.cs"),
+    "RogueRust plugin installs only accept plain .cs file names");
 var referenceEntry = new RustReferenceEntry
 {
     Name = "server.maxplayers",
@@ -1019,6 +1101,100 @@ static async Task<bool> RconDisposeOnBlockedContextCompletesAsync()
     listener.Stop();
     try { await serverTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
     return finished && completed;
+}
+
+// Minimal Facepunch WebRCON stand-in: rejects the wrong password by closing the socket, never
+// answers `say`, answers `slow` after 1.5 s and everything else immediately.
+static async Task<(bool Skipped, bool WrongPasswordRejected, bool SayReturnedQuickly, bool ConcurrentRepliesCorrelated)>
+    FakeRustRconScenarioAsync()
+{
+    const string password = "smoke-pass";
+    var port = GetFreeTcpPort();
+    using var listener = new System.Net.HttpListener();
+    listener.Prefixes.Add($"http://localhost:{port}/");
+    try { listener.Start(); }
+    catch (System.Net.HttpListenerException) { return (true, false, false, false); }
+
+    using var stop = new CancellationTokenSource();
+    var serverTask = Task.Run(async () =>
+    {
+        while (!stop.IsCancellationRequested)
+        {
+            System.Net.HttpListenerContext context;
+            try { context = await listener.GetContextAsync(); }
+            catch { return; }
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (!context.Request.IsWebSocketRequest) { context.Response.Close(); return; }
+                    var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
+                    if (context.Request.Url?.AbsolutePath.Trim('/') != password)
+                    {
+                        await ws.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation,
+                            "bad password", CancellationToken.None);
+                        return;
+                    }
+                    var sendLock = new SemaphoreSlim(1, 1);
+                    var buffer = new byte[4096];
+                    while (ws.State == System.Net.WebSockets.WebSocketState.Open)
+                    {
+                        var result = await ws.ReceiveAsync(buffer, CancellationToken.None);
+                        if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Close) break;
+                        using var doc = System.Text.Json.JsonDocument.Parse(buffer.AsMemory(0, result.Count));
+                        var id = doc.RootElement.GetProperty("Identifier").GetInt32();
+                        var message = doc.RootElement.GetProperty("Message").GetString() ?? string.Empty;
+                        if (message.StartsWith("say", StringComparison.OrdinalIgnoreCase)) continue;
+                        _ = Task.Run(async () =>
+                        {
+                            if (message == "slow") await Task.Delay(1500);
+                            var reply = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                                new { Identifier = id, Message = "reply:" + message, Type = "Generic" });
+                            await sendLock.WaitAsync();
+                            try
+                            {
+                                await ws.SendAsync(reply, System.Net.WebSockets.WebSocketMessageType.Text,
+                                    true, CancellationToken.None);
+                            }
+                            catch { }
+                            finally { sendLock.Release(); }
+                        });
+                    }
+                }
+                catch { }
+            });
+        }
+    });
+
+    try
+    {
+        await using var rejected = new RconService();
+        var wrongPasswordRejected = !await rejected.ConnectAsync("localhost", port, "wrong-password");
+
+        await using var rcon = new RconService();
+        if (!await rcon.ConnectAsync("localhost", port, password))
+            return (false, wrongPasswordRejected, false, false);
+
+        var sayTimer = Stopwatch.StartNew();
+        var sayResponse = await rcon.SendCommandAsync("say \"hello\"");
+        var sayReturnedQuickly = sayResponse.Length == 0 && sayTimer.Elapsed < TimeSpan.FromSeconds(1);
+
+        var slow = rcon.SendCommandAsync("slow");
+        var fastTimer = Stopwatch.StartNew();
+        var fast = await rcon.SendCommandAsync("fast");
+        var fastElapsed = fastTimer.Elapsed;
+        var slowReply = await slow;
+        var correlated = fast == "reply:fast"
+                         && slowReply == "reply:slow"
+                         && fastElapsed < TimeSpan.FromSeconds(1);
+        return (false, wrongPasswordRejected, sayReturnedQuickly, correlated);
+    }
+    finally
+    {
+        stop.Cancel();
+        listener.Stop();
+        try { await serverTask.WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+    }
 }
 
 static int GetFreeTcpPort()
