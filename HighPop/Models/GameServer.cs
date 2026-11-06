@@ -172,8 +172,6 @@ public class RustServerVariable : ObservableObject
 
     public static ObservableCollection<RustServerVariable> CreateDefaults() =>
     [
-        new() { Name = "bear.population", Value = "2", Description = "Target bear population multiplier." },
-        new() { Name = "wolf.population", Value = "2", Description = "Target wolf population multiplier." },
         new() { Name = "server.pve", Value = "false", Description = "Disables player-vs-player damage when true." },
         new() { Name = "decay.scale", Value = "1", Description = "Global building decay multiplier." },
         new() { Name = "server.itemdespawn", Value = "300", Description = "Seconds before dropped items despawn." },

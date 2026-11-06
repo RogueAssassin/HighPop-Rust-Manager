@@ -167,8 +167,27 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             variable.LoadedConfigValue = assignment.Value;
         }
 
+        // v1.0.7 and earlier seeded every server with bear/wolf population rows. Rust already
+        // scales populations to the map, and wolf.population no longer exists (wolf2 replaced it),
+        // so drop those untouched seed rows unless server.cfg itself sets them.
+        if (!legacyManagedBlockExists)
+        {
+            for (var index = server.RustServerVariables.Count - 1; index >= 0; index--)
+            {
+                var row = server.RustServerVariables[index];
+                if (!row.LoadedFromServerConfig && RetiredSeedRows.Contains(row.Description))
+                    server.RustServerVariables.RemoveAt(index);
+            }
+        }
+
         return assignments.Count;
     }
+
+    private static readonly HashSet<string> RetiredSeedRows = new(StringComparer.Ordinal)
+    {
+        "Target bear population multiplier.",
+        "Target wolf population multiplier.",
+    };
 
     /// <summary>
     /// Synchronizes HighPop's variable rows to server.cfg without replacing the operator's file.
@@ -221,9 +240,15 @@ public class RustPlugin : GamePluginBase, IWipePlugin
             }
 
             existingActiveNames.Add(entry.Key);
-            _ = TryParseAssignment(lines[authoritativeIndex], out _, out var currentValue);
-            if (!string.Equals(currentValue, variable.Value, StringComparison.Ordinal))
-                lines[authoritativeIndex] = FormatAssignment(variable);
+            // Active lines are always written in the canonical `name "value"` form so HighPop
+            // (and the variable editor) never reads an inline comment or a doubled quote back as
+            // part of the value. An inline comment is preserved on its own line just above.
+            _ = TryParseAssignment(lines[authoritativeIndex], out _, out _, out var inlineComment);
+            var canonical = FormatAssignment(variable);
+            if (!string.Equals(lines[authoritativeIndex].Trim(), canonical, StringComparison.Ordinal))
+                lines[authoritativeIndex] = inlineComment.Length == 0
+                    ? canonical
+                    : $"# {inlineComment}{newline}{canonical}";
         }
 
         var append = variables.Values
@@ -520,9 +545,19 @@ public class RustPlugin : GamePluginBase, IWipePlugin
     }
 
     private static bool TryParseAssignment(string line, out string name, out string value)
+        => TryParseAssignment(line, out name, out value, out _);
+
+    /// <summary>
+    /// Parses one server.cfg assignment. A trailing <c># comment</c> or <c>// comment</c> is never
+    /// part of the value: for a quoted value everything after the closing quote is ignored (as Rust
+    /// does), and for an unquoted value the comment starts at whitespace followed by <c>#</c> or
+    /// <c>//</c>. Values that an older writer quoted twice (<c>"\"1\""</c>) are unwrapped to <c>1</c>.
+    /// </summary>
+    public static bool TryParseAssignment(string line, out string name, out string value, out string comment)
     {
         name = string.Empty;
         value = string.Empty;
+        comment = string.Empty;
         var trimmed = line.Trim();
         if (trimmed.Length == 0 || trimmed.StartsWith('#') || trimmed.StartsWith("//"))
             return false;
@@ -531,14 +566,66 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         if (!match.Success) return false;
         name = match.Groups["name"].Value;
         var raw = match.Groups["value"].Value.Trim();
-        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+
+        string rest;
+        if (raw.StartsWith('"') && TryReadQuoted(raw, out var quoted, out var end))
         {
-            raw = raw[1..^1]
-                .Replace("\\\"", "\"", StringComparison.Ordinal)
-                .Replace("\\\\", "\\", StringComparison.Ordinal);
+            value = quoted;
+            rest = raw[end..];
         }
-        value = raw;
+        else
+        {
+            var cut = FindInlineComment(raw);
+            value = (cut < 0 ? raw : raw[..cut]).Trim();
+            rest = cut < 0 ? string.Empty : raw[cut..];
+        }
+
+        rest = rest.Trim();
+        if (rest.StartsWith('#')) comment = rest[1..].Trim();
+        else if (rest.StartsWith("//", StringComparison.Ordinal)) comment = rest[2..].Trim();
+        else comment = rest;
+
+        // Unwrap values an older writer quoted more than once, e.g. "\"1\"" -> "1" -> 1.
+        while (value.Length >= 2 && value[0] == '"' && value[^1] == '"'
+               && TryReadQuoted(value, out var inner, out var innerEnd) && innerEnd == value.Length)
+            value = inner;
         return true;
+    }
+
+    private static bool TryReadQuoted(string text, out string value, out int end)
+    {
+        var builder = new StringBuilder(text.Length);
+        for (var index = 1; index < text.Length; index++)
+        {
+            var c = text[index];
+            if (c == '\\' && index + 1 < text.Length && text[index + 1] is '"' or '\\')
+            {
+                builder.Append(text[++index]);
+                continue;
+            }
+            if (c == '"')
+            {
+                value = builder.ToString();
+                end = index + 1;
+                return true;
+            }
+            builder.Append(c);
+        }
+        value = string.Empty;
+        end = 0;
+        return false;
+    }
+
+    private static int FindInlineComment(string text)
+    {
+        for (var index = 1; index < text.Length; index++)
+        {
+            if (!char.IsWhiteSpace(text[index - 1])) continue;
+            if (text[index] == '#'
+                || (text[index] == '/' && index + 1 < text.Length && text[index + 1] == '/'))
+                return index;
+        }
+        return -1;
     }
 
     private static string FormatAssignment(RustServerVariable variable) =>

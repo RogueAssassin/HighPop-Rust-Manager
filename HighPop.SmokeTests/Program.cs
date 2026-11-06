@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.7", "application and release metadata report v1.0.7");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.7", "1.0.6")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.7")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.7", "1.0.7")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.7"),
+Check(AppInfo.Version == "1.0.8", "application and release metadata report v1.0.8");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.8", "1.0.7")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.8")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.8", "1.0.8")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.8"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -463,18 +463,19 @@ try
     var assetRepairRoot = Path.Combine(testRoot, "asset-repair");
     var restoredPresetCount = BundledAssetService.EnsurePresets(assetRepairRoot);
     var repairedPresetsDir = Path.Combine(assetRepairRoot, "assets", "presets");
-    Check(restoredPresetCount == 13
-          && Directory.GetFiles(repairedPresetsDir, "*.json").Length == 13
+    Check(restoredPresetCount == 2
+          && Directory.GetFiles(repairedPresetsDir, "*.json").Length == 2
+          && !Directory.GetFiles(repairedPresetsDir, "rust_vanilla_*.json").Any()
           && File.Exists(Path.Combine(assetRepairRoot, "assets", "data", "bundled-presets.json")),
-        "embedded application presets restore into a missing assets folder");
+        "embedded application presets restore into a missing assets folder without map-size population presets");
 
-    var locallyEditedPreset = Path.Combine(repairedPresetsDir, "rust_vanilla_1000.json");
+    var locallyEditedPreset = Path.Combine(repairedPresetsDir, "rust_vanilla.json");
     var locallyEditedJson = System.Text.Json.Nodes.JsonNode.Parse(
         await File.ReadAllTextAsync(locallyEditedPreset))!.AsObject();
     var locallyEditedValues = locallyEditedJson["Values"]!.AsObject();
     locallyEditedValues["server.maxplayers"] = "321";
-    locallyEditedValues.Remove("cow.population");
-    locallyEditedValues.Remove("sheep.population");
+    locallyEditedValues.Remove("server.pve");
+    locallyEditedValues.Remove("server.radiation");
     await File.WriteAllTextAsync(locallyEditedPreset, locallyEditedJson.ToJsonString(
         new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     Check(BundledAssetService.EnsurePresets(assetRepairRoot) == 1,
@@ -482,23 +483,41 @@ try
     var mergedPreset = System.Text.Json.Nodes.JsonNode.Parse(
         await File.ReadAllTextAsync(locallyEditedPreset))!.AsObject()["Values"]!.AsObject();
     Check(mergedPreset["server.maxplayers"]?.GetValue<string>() == "321"
-          && mergedPreset["cow.population"]?.GetValue<string>() == "2"
-          && mergedPreset["sheep.population"]?.GetValue<string>() == "2",
-        "preset upgrade preserves operator values while adding cow and sheep density controls");
+          && mergedPreset["server.pve"]?.GetValue<string>() == "false"
+          && mergedPreset["server.radiation"]?.GetValue<string>() == "true",
+        "preset upgrade preserves operator values while adding missing bundled values");
+
+    // Retired built-ins (the old map-size population presets): an untouched deployed copy is
+    // removed, an operator-edited copy is kept as a custom preset.
+    var statePath = Path.Combine(assetRepairRoot, "assets", "data", "bundled-presets.json");
+    var retiredUntouched = Path.Combine(repairedPresetsDir, "rust_vanilla_4500.json");
+    var retiredEdited = Path.Combine(repairedPresetsDir, "rust_vanilla_5000.json");
+    await File.WriteAllTextAsync(retiredUntouched, "{\"GameId\":\"rust\",\"Name\":\"Vanilla map 4500\"}");
+    await File.WriteAllTextAsync(retiredEdited, "{\"GameId\":\"rust\",\"Name\":\"Vanilla map 5000\"}");
+    var retiredState = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
+        await File.ReadAllTextAsync(statePath))!;
+    retiredState["rust_vanilla_4500.json"] = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(retiredUntouched)));
+    retiredState["rust_vanilla_5000.json"] = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(retiredEdited)));
+    await File.WriteAllTextAsync(statePath, System.Text.Json.JsonSerializer.Serialize(retiredState));
+    await File.AppendAllTextAsync(retiredEdited, "\n");
+    BundledAssetService.EnsurePresets(assetRepairRoot);
+    Check(!File.Exists(retiredUntouched) && File.Exists(retiredEdited),
+        "retired built-in presets are removed only while unmodified");
+    File.Delete(retiredEdited);
 
     await File.AppendAllTextAsync(locallyEditedPreset, "\n// local operator edit");
     Check(BundledAssetService.EnsurePresets(assetRepairRoot) == 0
           && (await File.ReadAllTextAsync(locallyEditedPreset)).Contains("local operator edit"),
         "embedded preset repair preserves locally edited files");
 
-    var missingPreset = Path.Combine(repairedPresetsDir, "rust_vanilla_1500.json");
+    var missingPreset = Path.Combine(repairedPresetsDir, "rust_highpop.json");
     File.Delete(missingPreset);
     Check(BundledAssetService.EnsurePresets(assetRepairRoot) == 1 && File.Exists(missingPreset),
         "embedded preset repair restores a deleted built-in preset");
 
     Check(SelfUpdateService.TryGetSafeAssetRelativePath(
-              "HPRM/assets/presets/rust_vanilla_6000.json", out var safeAssetPath)
-          && safeAssetPath.EndsWith(Path.Combine("presets", "rust_vanilla_6000.json"))
+              "HPRM/assets/presets/rust_vanilla.json", out var safeAssetPath)
+          && safeAssetPath.EndsWith(Path.Combine("presets", "rust_vanilla.json"))
           && !SelfUpdateService.TryGetSafeAssetRelativePath(
               "HPRM/assets/../Servers/escaped.json", out _)
           && !SelfUpdateService.TryGetSafeAssetRelativePath(
@@ -954,22 +973,13 @@ try
           }, "portable moderation records persist");
 
     var presetService = new ConfigPresetService();
-    var mapPresets = presetService.GetPresetsForGame("rust")
-        .Where(candidate => candidate.MapSize.HasValue)
-        .ToList();
-    Check(mapPresets.Count == 11
-          && mapPresets.Select(candidate => candidate.MapSize!.Value)
-              .SequenceEqual(Enumerable.Range(0, 11).Select(index => 1000 + (index * 500)))
-          && mapPresets.All(candidate => candidate.Values["server.maxplayers"] == "150")
-          && mapPresets.All(candidate => candidate.Values["cow.population"] == "2")
-          && mapPresets.All(candidate => candidate.Values["sheep.population"] == "2"),
-        "all map-size presets load in deterministic order with livestock densities");
-
-    var map4500 = mapPresets.SingleOrDefault(candidate => candidate.MapSize == 4500);
-    Check(map4500 != null
-          && map4500.Values["motorrowboat.population"] == "12"
-          && map4500.Values["modularcar.population"] == "10",
-        "4500 map preset retains supplied area-scaled vehicle targets");
+    var rustPresets = presetService.GetPresetsForGame("rust");
+    Check(rustPresets.Count == 2
+          && rustPresets.All(candidate => candidate.MapSize == null)
+          && rustPresets.All(candidate => !candidate.Values.Keys.Any(key =>
+              key.Contains("population", StringComparison.OrdinalIgnoreCase)
+              || key.StartsWith("npc.vendor_", StringComparison.OrdinalIgnoreCase))),
+        "bundled presets leave Rust's map-scaled populations at their defaults");
 
     var preset = new ConfigPreset
     {
@@ -994,14 +1004,62 @@ try
           && activeMaxPlayerLines[0].Contains("500", StringComparison.Ordinal),
         "preset applies one authoritative server.cfg assignment and comments duplicates");
 
-    if (map4500 != null)
+    var vanillaPreset = rustPresets.SingleOrDefault(candidate => candidate.Name == "Vanilla community");
+    if (vanillaPreset != null)
     {
-        presetService.ApplyPreset(server, map4500);
+        server.GameSpecificSettings["worldSize"] = "3500";
+        presetService.ApplyPreset(server, vanillaPreset);
         Check(server.MaxPlayers == 150
-              && server.GameSpecificSettings["worldSize"] == "4500"
+              && server.GameSpecificSettings["worldSize"] == "3500"
               && server.GameSpecificSettings["saveInterval"] == "300",
-            "map preset synchronizes command-line launch settings");
+            "presets synchronize launch settings and leave the configured world size alone");
+        server.GameSpecificSettings["worldSize"] = "4500";
     }
+    else Check(false, "Vanilla community preset is bundled");
+
+    // server.cfg parsing: inline comments and doubled quotes never reach the variable fields.
+    Check(RustPlugin.TryParseAssignment("bear.population \"2\"          # ~50", out var cfgName, out var cfgValue, out var cfgComment)
+          && cfgName == "bear.population" && cfgValue == "2" && cfgComment == "~50"
+          && RustPlugin.TryParseAssignment("polarbear.population \"\\\"1\\\"\"", out _, out var nestedValue, out _)
+          && nestedValue == "1"
+          && RustPlugin.TryParseAssignment("server.description \"Join #1 // best\"   // tail", out _, out var hashValue, out var slashComment)
+          && hashValue == "Join #1 // best" && slashComment == "tail"
+          && RustPlugin.TryParseAssignment("decay.scale 0.5 # half", out _, out var bareValue, out var bareComment)
+          && bareValue == "0.5" && bareComment == "half"
+          && RustPlugin.TryParseAssignment("server.tags monthly#vanilla", out _, out var tagValue, out _)
+          && tagValue == "monthly#vanilla"
+          && !RustPlugin.TryParseAssignment("# bear.population \"2\"", out _, out _, out _),
+        "server.cfg parser strips inline comments and unwraps doubled quotes");
+
+    var commentServer = new GameServer
+    {
+        GameId = "rust",
+        InstallPath = Path.Combine(testRoot, "comment-cfg"),
+        GameSpecificSettings = new() { ["identity"] = "commented" },
+    };
+    var commentCfg = RustPlugin.GetServerConfigPath(commentServer);
+    Directory.CreateDirectory(Path.GetDirectoryName(commentCfg)!);
+    await File.WriteAllTextAsync(commentCfg,
+        "# header\nbear.population \"2\"          # ~50\npolarbear.population \"\\\"1\\\"\"\n");
+    commentServer.RustServerVariables = RustServerVariable.CreateDefaults();
+    commentServer.RustServerVariables.Add(new RustServerVariable
+    {
+        Name = "wolf.population", Value = "2", Description = "Target wolf population multiplier.",
+    });
+    RustPlugin.LoadServerConfigVariables(commentServer);
+    Check(commentServer.RustServerVariables.First(v => v.Name == "bear.population").Value == "2"
+          && commentServer.RustServerVariables.First(v => v.Name == "polarbear.population").Value == "1"
+          && !commentServer.RustServerVariables.Any(v => v.Name == "wolf.population")
+          && !RustServerVariable.CreateDefaults().Any(v => v.Name.Contains("population", StringComparison.OrdinalIgnoreCase)),
+        "server.cfg load reads clean values and drops retired bear/wolf seed rows");
+    RustPlugin.WriteManagedServerConfig(commentServer);
+    var commentLines = await File.ReadAllLinesAsync(commentCfg);
+    Check(commentLines.Contains("bear.population \"2\"")
+          && commentLines.Contains("# ~50")
+          && commentLines.Contains("polarbear.population \"1\"")
+          && commentLines.Contains("# header")
+          && !commentLines.Any(line => line.StartsWith("bear.population", StringComparison.Ordinal) && line.Contains('#')),
+        "server.cfg save writes active lines without inline comments and keeps the comment above");
 
     var profileTransfer = new ServerProfileTransferService();
     var profilePath = Path.Combine(testRoot, "portable.hprm-server.json");

@@ -71,6 +71,24 @@ public static class BundledAssetService
             nextState[fileName] = bundledHash;
         }
 
+        // Built-in presets that a later release no longer ships (for example the v1.0.3–v1.0.7
+        // map-size population presets) are retired only while they are byte-identical to the copy
+        // HighPop deployed. An operator-edited file is kept and becomes an ordinary custom preset.
+        foreach (var (fileName, previousHash) in previousState)
+        {
+            if (nextState.ContainsKey(fileName)
+                || !string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal))
+                continue;
+            var retiredPath = Path.Combine(presetsDir, fileName);
+            try
+            {
+                if (File.Exists(retiredPath)
+                    && Hash(File.ReadAllBytes(retiredPath)).Equals(previousHash, StringComparison.OrdinalIgnoreCase))
+                    File.Delete(retiredPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+
         var stateBytes = JsonSerializer.SerializeToUtf8Bytes(nextState,
             new JsonSerializerOptions { WriteIndented = true });
         WriteAtomic(statePath, stateBytes);

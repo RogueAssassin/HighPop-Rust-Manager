@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.7-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.8-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -41,11 +41,11 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 
 The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
 
-HPRM v1.0.7 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
+HPRM v1.0.8 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
 
 ### Supported server software
 
-| Component | v1.0.7 support |
+| Component | v1.0.8 support |
 |---|---|
 | Rust Dedicated Server | Steam public and staging branches through SteamCMD; Vanilla uses the authoritative live Rust logfile |
 | Carbon | Current installed/released Carbon framework with process-stream console reporting |
@@ -54,6 +54,18 @@ HPRM v1.0.7 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 thro
 
 HighPop tracks the selected release channel rather than hard-coding a short-lived Rust, Carbon,
 Oxide, or RogueRust build number.
+
+## server.cfg and map size
+
+Set the map size with **World size** in Server Settings; HighPop passes it to Rust as
+`+server.worldsize`. Leave animal, livestock, sea-life, bird, vehicle, and train `*.population`
+convars at their defaults: Rust treats them as densities and multiplies them by the map area and
+suitable terrain itself, so the vanilla values already fit every map size. HighPop does not add
+population lines to `server.cfg`; any you set yourself are still loaded and editable.
+
+When reading `server.cfg`, a trailing `# comment` or `// comment` is never part of a value, and values
+an older tool quoted twice (`"\"1\""`) read as `1`. On save, active lines are written as `name "value"`
+and an inline comment is moved to its own line just above.
 
 ## Rust command reference
 
@@ -128,7 +140,8 @@ successfully closed and retains exactly the latest two archives for troubleshoot
 Official presets are embedded in `HighPop.exe` as well as included in the portable ZIP. HighPop
 restores missing preset files at startup, updates unchanged built-in presets when their bundled
 revision changes, and merges newly introduced keys into edited built-in presets without replacing
-operator values. Custom preset files are never changed.
+operator values. Custom preset files are never changed. Built-in presets a release retires are removed
+only while they are still byte-identical to the deployed copy; an edited copy stays as a custom preset.
 
 Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up an installation. Secrets are protected with Windows DPAPI for the current Windows user and machine; do not publish `assets/data`.
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.8
+
+- Retired the eleven `Vanilla map 1000`–`6000` presets. Rust already scales every `*.population` convar (animals, livestock, sea life, birds, vehicles, trains) by map area, so the presets only replaced vanilla defaults with inflated values (for example 12 rowboats and 5 minicopters per km²) and wrote six `npc.vendor_*` convars that do not exist in Rust. **Vanilla community** and **High-population community** remain.
+- Existing installs remove the retired presets on startup only while they are byte-identical to the copy HighPop deployed; a preset you edited is kept as a custom preset.
+- New servers no longer start with `bear.population` and `wolf.population` rows (`wolf.population` was replaced by `wolf2.population` in Rust). Untouched seed rows are dropped from existing servers unless `server.cfg` sets them.
+- Fixed `server.cfg` inline comments leaking into the variable editor: `bear.population "2"   # ~50` now reads as `2`. Trailing `#`/`//` comments are ignored after a quoted value, or after whitespace in an unquoted one, and doubly-quoted values such as `"\"1\""` read as `1`.
+- Saving the Rust workspace now writes every active line as `name "value"` with no inline comment; an existing inline comment is moved to its own line directly above.
+- CI and release packaging verify the retired presets are no longer shipped. Added smoke coverage for comment/quote parsing against real-world lines, canonical save output, seed-row cleanup and safe preset retirement. Advanced metadata to v1.0.8.
+
 ## 1.0.7
 
 - Fixed in-game chat over WebRCON lagging or appearing to hang. Rust sends no correlated reply to `say`, so every message waited out the full 10-second response timeout. Commands that never reply (`say`, `global.say`, `chat.say`, `quit`) now complete as soon as they are sent.
