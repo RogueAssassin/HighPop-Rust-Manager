@@ -18,7 +18,7 @@ client.connect rust.example.com
 Without the SRV record the name still works, but players must add the port
 (`client.connect rust.example.com:28015`) and favourites cannot follow IP/port changes.
 
-> HighPop checks all of this for you: **Server → 🦀 Rust → Custom join domain → Check DNS**.
+> HighPop checks all of this for you: **Server → Configure → Rust → Custom join domain → Check DNS**.
 
 ## 1. Before you start
 
@@ -26,7 +26,7 @@ Without the SRV record the name still works, but players must add the port
    `ip=` line (HighPop's DNS check also shows it). It must be a public address — not `192.168.x.x`,
    `10.x.x.x`, `172.16–31.x.x` or `100.64–127.x.x` (carrier-grade NAT; ask your ISP for a public IP).
 2. **Is the IP static?** If your ISP changes it, set up dynamic DNS (see [Dynamic IP](#dynamic-ip)).
-3. **Note the game port** from HighPop (Server → Settings → Game port). The SRV record uses this port,
+3. **Note the game port** from HighPop (Server → Configure → Settings → Game port). The SRV record uses this port,
    not the query, RCON or Rust+ port.
 
 ## 2. Cloudflare
@@ -83,11 +83,11 @@ dot on the target (`rust.example.com.`); the dashboard usually adds it.
 - Forward **UDP query port** (HighPop default `28017`) so the server appears in the in-game browser.
 - Forward **TCP Rust+ port** only if you use the Rust+ companion app.
 - Do **not** forward the WebRCON port to the internet.
-- HighPop can create the Windows Firewall rules: Server → Settings → *Automatically manage Windows Firewall rules when this server starts* (run HighPop as Administrator).
+- HighPop can create the Windows Firewall rules: Server → Configure → Settings → *Automatically manage Windows Firewall rules when this server starts* (run HighPop as Administrator).
 
 ## 5. Tell HighPop about the domain
 
-Set **Server → Settings → Public join domain** to the hostname (e.g. `rust.example.com`). HighPop then:
+Set **Server → Configure → Settings → Public join domain** to the hostname (e.g. `rust.example.com`). HighPop then:
 
 - launches Rust with `+server.favoritesEndpoint "rust.example.com"`, so players who favourite the
   server keep it after an IP or port change (Facepunch: the value is the A-record name, without

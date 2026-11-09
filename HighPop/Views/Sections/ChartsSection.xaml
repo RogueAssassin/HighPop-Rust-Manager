@@ -28,7 +28,7 @@
                            TextWrapping="Wrap" Margin="16,0,0,0"/>
             </Grid>
         </Border>
-        <oxy:PlotView Grid.Row="1" Model="{Binding PerfPlot}"
+        <oxy:PlotView x:Name="PerfView" Grid.Row="1"
                       Background="Transparent" Margin="8"
                       xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf"
                       xmlns:oxys="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf.Shared">
@@ -46,7 +46,7 @@
                 </ControlTemplate>
             </oxy:PlotView.DefaultTrackerTemplate>
         </oxy:PlotView>
-        <oxy:PlotView Grid.Row="2" Model="{Binding OperationsPlot}"
+        <oxy:PlotView x:Name="OperationsView" Grid.Row="2"
                       Background="Transparent" Margin="8,0,8,8"/>
     </Grid>
 </UserControl>

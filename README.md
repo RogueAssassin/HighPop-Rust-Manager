@@ -3,270 +3,130 @@
 </p>
 
 <p align="center">
-  Native, portable Windows management for dedicated Rust servers.
+  <b>A portable Windows control panel for Rust dedicated servers.</b><br>
+  Install, run, update, back up and moderate every server from one window, with no account or subscription.
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.12-00BFEF">
+  <a href="../../releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/RogueAssassin/HighPop-Rust-Manager?color=38BDF8&label=release"></a>
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-34C77B">
 </p>
 
-HighPop Rust Manager is a local-first control panel built specifically for Rust Dedicated Server. It installs and maintains independent server instances, keeps them online, exposes day-to-day administration in one interface, and does not require a hosted account or subscription.
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#a-look-around">Screenshots</a> ·
+  <a href="#features">Features</a> ·
+  <a href="docs/admin-guide.md">Admin guide</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-## What HighPop provides
+<p align="center">
+  <img src="docs/screenshots/console-reference.png" alt="HighPop server workspace with the Rust command reference" width="900">
+</p>
 
-| Area | Capabilities |
-|---|---|
-| Server setup | Streamed SteamCMD bootstrap and staged progress, Rust install/validate/update, independent server folders, templates, editable Game/Query/WebRCON/Rust+ ports, and collision checks |
-| Lifecycle | Start, safe stop, exact-PID force stop, restart, auto-start, always-on recovery, crash-loop protection, verified process reattachment, and durable operation history |
-| Console and players | Facepunch WebRCON as the primary command path for Rust (Rust ignores process input, so it is only a last resort), on-demand connection, a Command/💬 Chat switch on the console box, `say` with in-game delivery confirmation, live in-game chat and F7 reports, a shared background channel, reconnect handling, a filtered live console pinned to the newest line (including after RDP reconnects), Rogue Rust Reference search, export, a live server strip (players, queue, FPS, entities, memory, uptime), player rows with health, IP, family-share and anti-hack flags, a give menu, mute, kill, teleport, blueprints, inventory, loadouts, moderator and queue-skip tools, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
-| Rust configuration | `server.cfg` variables, browser tags, Steam branch selection, custom maps, log paths, presets, launch arguments, CPU affinity, priority, and optional RAM limits |
-| Mods | Oxide/uMod and Carbon installation/detection, framework-aware folders, plugin/config inventory, live plugin reload, verified RogueRust Stable/Testing channels, and one-click install/update from the RogueRust plugin catalog |
-| Backups and wipes | Full and incremental ZIP backups, retention, pre-wipe safety backups, path-safe restore, map wipe, and full wipe |
-| Automation | Once, daily, weekly, and repeating schedules for lifecycle, update, backup, wipe, broadcast, and console actions |
-| Monitoring | CPU, memory, network, players, readiness signals, health checks, log watches, crash-risk warnings, local telemetry, and support bundles with secret redaction |
-| Remote operations | Optional token-protected REST API and dashboard, Discord status/admin controls, webhooks, SMTP notifications, and multi-machine views |
-| Windows integration | Portable storage, system tray, per-user logon task, Windows Explorer shortcuts, elevation-aware firewall rules, and optional UPnP mappings |
-| Profile portability | Per-server HPRM settings export/import, moved-install relinking, conflict-safe port reassignment, and plaintext-secret exclusion |
-| Application updates | Startup release check and install prompt, four-hour background checks, manual About-page check, SHA-256 verification, in-place replacement, and automatic restart |
+## Quick start
 
-## Install
+1. Download the latest **HPRM ZIP** from [Releases](../../releases/latest) and, if you like, check it against the `.sha256` file.
+2. Extract the whole `HPRM` folder somewhere writable, for example `C:\HPRM`.
+3. Run `HighPop.exe` and select **+ Add Server**. HighPop suggests four free ports (game, query, WebRCON, Rust+).
+4. Select **Install / Update** to download SteamCMD and Rust, then select **Start**.
 
-1. Download the Windows x64 ZIP from [Releases](../../releases).
-2. Verify the matching SHA-256 file when provided.
-3. Extract the complete `HPRM` folder to a writable location.
-4. Run `HighPop.exe`, add a server, review its four ports, and select **Install**.
+HighPop is self-contained, so no .NET install is needed. It runs on Windows 10/11 and Windows Server 2012–2025. Windows SmartScreen may warn about an unsigned community build. Administrator rights are only needed for firewall and URL reservation changes.
 
-The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
+## A look around
 
-HPRM v1.0.12 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
+### Server workspace
 
-### Supported server software
-
-| Component | v1.0.12 support |
-|---|---|
-| Rust Dedicated Server | Steam public and staging branches through SteamCMD; Vanilla uses the authoritative live Rust logfile |
-| Carbon | Current installed/released Carbon framework with process-stream console reporting |
-| Oxide/uMod | Latest public Rust build from uMod with authoritative live-log console reporting |
-| RogueRust | Independently selectable Stable or Testing channel per server |
-
-HighPop tracks the selected release channel rather than hard-coding a short-lived Rust, Carbon,
-Oxide, or RogueRust build number.
-
-## Custom join domains
-
-Players can join with `client.connect rust.example.com` instead of an IP. Rust needs an **A record**
-(DNS only — Cloudflare's orange-cloud proxy cannot carry Rust's UDP traffic) to your public IPv4 and one
-`_rust._udp` **SRV record** pointing at it with the game port
-([Facepunch: Server DNS Records](https://wiki.facepunch.com/rust/dns-records)).
-
-- **Server → Settings → Public join domain** launches Rust with `+server.favoritesEndpoint`, so player
-  favourites follow the domain through IP or port changes.
-- **Server → 🦀 Rust → Custom join domain → Check DNS** looks the domain up through Cloudflare
-  DNS-over-HTTPS and reports missing records, proxied (orange-cloud) or private addresses, a mismatch with
-  this network's public IP, wrong SRV ports or targets, and duplicate SRV entries. It shows the exact
-  connect command to share.
-
-Step-by-step setup for Cloudflare, GoDaddy, Namecheap, Porkbun, Route 53, Google Cloud DNS and zone
-files, plus port forwarding, dynamic IP and hairpin-NAT testing:
-[docs/custom-domains.md](docs/custom-domains.md).
-
-## server.cfg and map size
-
-Set the map size with **World size** in Server Settings; HighPop passes it to Rust as
-`+server.worldsize`. Leave animal, livestock, sea-life, bird, vehicle, and train `*.population`
-convars at their defaults: Rust treats them as densities and multiplies them by the map area and
-suitable terrain itself, so the vanilla values already fit every map size. HighPop does not add
-population lines to `server.cfg`; any you set yourself are still loaded and editable.
-
-When reading `server.cfg`, a trailing `# comment` or `// comment` is never part of a value, and values
-an older tool quoted twice (`"\"1\""`) read as `1`. On save, active lines are written as `name "value"`
-and an inline comment is moved to its own line just above.
-
-## Server workspace
-
-Each server's pages are grouped in a sidebar:
+Each server has a sidebar with six groups. Pages are built the first time you open them, so switching servers is instant.
 
 | Group | Pages |
 |---|---|
-| Console | Console, Reference |
-| Players | Playing now, Player tools, Chat & reports, Moderation, History, Statistics, Activity |
-| Configure | Settings, Rust, Config files, Mods |
-| Automation | Automation, Schedule, Backups, Log watcher |
-| Monitoring | Info, Charts, Action log |
-| Files | File browser |
+| 🖥 **Console** | Live console, Rust command reference |
+| 👥 **Players** | Playing now, player tools, chat & reports, moderation, history, statistics, activity |
+| 🛠 **Configure** | Server settings, Rust settings, config files, mods |
+| ⏱ **Automation** | Lifecycle rules, schedule, backups, log watcher |
+| 📈 **Monitoring** | Server info, charts, action log |
+| 📂 **Files** | File browser for the server folder |
 
-A page is built the first time you open it and then kept, and switching servers only refreshes
-the page on screen. Charts are redrawn only while the Charts page is open. When HighPop has been
-minimised or in the tray for 10 seconds it releases idle memory back to Windows.
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/players.png" alt="Players page"><br><sub><b>Players</b>: kick, timed bans, staff notes, whitelist and bulk moderation, plus live chat and F7 reports.</sub></td>
+    <td width="50%"><img src="docs/screenshots/configure-settings.png" alt="Server settings"><br><sub><b>Configure → Settings</b>: name, ports with live validation, passwords and launch options.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/configure-rust.png" alt="Rust settings"><br><sub><b>Configure → Rust</b>: custom join domain with DNS check, Steam branch and server browser tags.</sub></td>
+    <td><img src="docs/screenshots/configure-mods.png" alt="Mod manager"><br><sub><b>Configure → Mods</b>: one-click Oxide or Carbon, the RogueRust extension and the plugin catalog.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/automation.png" alt="Automation page"><br><sub><b>Automation</b>: auto-start, always-on recovery, wake on demand, crash restarts and safe live updates.</sub></td>
+    <td><img src="docs/screenshots/monitoring-info.png" alt="Monitoring info"><br><sub><b>Monitoring → Info</b>: installed build, mod framework, WebRCON state and shortcuts to logs and config.</sub></td>
+  </tr>
+</table>
 
-## Rust command reference
+### Dialogs and overlays
 
-The per-server **Reference** page (Console group) loads the current command and ConVar metadata from
-[Rogue Rust Reference](https://api.roguegaming.com.au). Search results show execution scope,
-descriptions, types, and defaults. **Insert** copies only the selected name into the Console input
-for operator review; reference entries are never executed automatically. The compact commands and
-ConVars dataset is fetched on demand, shared across server workspaces, and cached for offline use.
+Actions that need input open over the workspace, so you never lose your place.
 
-## Rogue Gaming endpoints
+<table>
+  <tr>
+    <td width="62%"><img src="docs/screenshots/overlay-add-server.png" alt="New game server overlay"><br><sub><b>New game server</b>: name, install folder and four ports, checked for clashes as you type, with <b>Find free ports</b>.</sub></td>
+    <td width="38%" valign="top">
+      <img src="docs/screenshots/overlay-schedule-task.png" alt="Add scheduled task dialog"><br><sub><b>Add scheduled task</b>: restarts, updates, backups, wipes, broadcasts or console commands, once, daily, weekly or repeating.</sub><br><br>
+      <img src="docs/screenshots/settings-window.png" alt="Settings window"><br><sub><b>Settings</b>: storage, health checks, Steam, notifications and remote control.</sub>
+    </td>
+  </tr>
+</table>
 
-HighPop only reads from these public Rogue Gaming hosts, over HTTPS, when you use the matching feature:
+<p align="center">
+  <img src="docs/screenshots/machines.png" alt="Remote machines" width="640"><br>
+  <sub><b>Remote Machines</b>: control servers on other PCs running HighPop through its token-protected API.</sub>
+</p>
 
-| Host | Used for |
+## Features
+
+| | |
 |---|---|
-| `api.roguegaming.com.au` | Rogue Rust Reference command/ConVar metadata (`data/current/*.json`, `data/metadata.json`) |
-| `plugins.roguegaming.com.au` | RogueRust plugin catalog, documentation pages, and `.cs` plugin downloads |
+| **Setup** | SteamCMD and Rust install with live progress, independent server folders, templates, port clash checks and profile import/export |
+| **Lifecycle** | Start, safe stop (save then quit), force stop, restart, auto-start, always-on recovery, crash-loop protection and reattach after a HighPop restart |
+| **Console** | Live filtered console that stays on the newest line (including after RDP reconnects), Command / 💬 Chat switch, delivery-confirmed `say`, export and quick commands |
+| **Players** | Live server strip (players, queue, FPS, entities), health, IP, family share and anti-hack flags, give menu, teleport, mute, kill, blueprints, loadouts, bans and notes |
+| **Configuration** | `server.cfg` editor that keeps your comments, world size, tags, Steam branch, custom maps, CPU affinity, priority and RAM limits |
+| **Mods** | Oxide/uMod and Carbon install and detection, live plugin reload, RogueRust Stable/Testing channels and a one-click plugin catalog |
+| **Backups and wipes** | Full and incremental ZIP backups, retention, pre-wipe safety backups, safe restore, map wipe and full wipe |
+| **Automation** | Scheduled restarts, updates, backups, wipes, broadcasts and commands, with in-game countdowns |
+| **Monitoring** | CPU, RAM, network and player charts, health checks, log watchers, crash warnings and support bundles with secrets removed |
+| **Remote** | Optional token-protected REST API and dashboard, Discord status and admin controls, webhooks, email alerts and multi-machine control |
+| **Windows** | Portable folder, system tray, start with Windows, firewall rules, optional UPnP and verified in-place updates |
+| **Light on resources** | Releases idle memory when minimised to the tray (about 55 MB in testing) and only redraws charts while they are on screen |
 
-## RogueRust plugin catalog
+## Documentation
 
-**Server → Mods → RogueRust plugin catalog** lists every plugin published on
-[plugins.roguegaming.com.au](https://plugins.roguegaming.com.au) with its category, current version,
-and the version installed on that server (read from the plugin's `[Info]` header). **Install**,
-**Update**, and **Reinstall** download the single `.cs` file into the active framework's plugins folder
-(`oxide/plugins` or `carbon/plugins`). Oxide/Carbon hot-load it, so a running server needs no restart.
+| Guide | What it covers |
+|---|---|
+| [Admin guide](docs/admin-guide.md) | WebRCON, player tools, `server.cfg`, RogueRust channels, plugin catalog, folder layout and production tips |
+| [Custom join domains](docs/custom-domains.md) | `client.connect rust.example.com` with DNS steps for Cloudflare, GoDaddy, Namecheap, Route 53 and more |
+| [Changelog](CHANGELOG.md) | What changed in every release |
+| [Roadmap](ROADMAP.md) | What is planned next |
+| [Security](SECURITY.md) | Reporting vulnerabilities and safe deployment |
+| [Contributing](CONTRIBUTING.md) | Building from source and sending changes |
 
-Downloads are accepted only from `https://plugins.roguegaming.com.au/plugins/<Name>.cs`, are size-capped,
-must be an Oxide/Carbon plugin whose `[Info]` name matches the file, and are swapped in atomically. The
-previous file is kept in `highpop-plugin-backups` (newest 5 per plugin). The catalog's plugins require the
-RogueRust extension, which is installed from the same tab.
+### Supported server software
 
-## WebRCON
+| Component | Support |
+|---|---|
+| Rust Dedicated Server | Steam `public` and `staging` branches through SteamCMD |
+| Carbon | Latest released Carbon framework |
+| Oxide/uMod | Latest public Rust build from uMod |
+| RogueRust | Stable or Testing channel, chosen per server |
 
-HighPop keeps one interactive WebRCON connection per server workspace and one shared background channel
-for scheduler, broadcast, Web API, Discord, and Oxide stop commands. Commands run concurrently and replies
-are matched by identifier, so a slow command never blocks the next one. Rust sends no reply to `say`, so
-in-game messages complete as soon as they are sent instead of waiting out a timeout. Connecting sends a
-read-only `serverinfo` probe so a wrong RCON password shows as a failed connection instead of a socket
-that closes silently. WebRCON output that Oxide's live log does not show (for example RogueRust
-diagnostics) is written to the Console tab.
+HighPop follows each release channel instead of pinning a build number, so it keeps working as Rust, Carbon and Oxide update.
 
-Rust does not read commands from its standard input: a redirected pipe accepts the line and Rust drops
-it. HighPop therefore sends every Rust command over WebRCON, connecting on demand when the console is not
-connected yet, and uses the process console only as a last resort, with a warning. Rust gives `say` no
-reply, but it broadcasts the chat line to every WebRCON client, so HighPop confirms each message:
-**Delivered in game**, or a warning when a plugin blocked it.
+## Privacy
 
-The RCON password is sent exactly as typed, because Rust compares the raw request path and never
-URL-decodes it. Spaces, double quotes, backticks, `# % / < > ? [ \ ] ^ { | }` and non-ASCII characters cannot be carried in that
-path, so HighPop reports such passwords as unusable instead of retrying them. Passwords that HighPop
-generates are hexadecimal and always work.
+HighPop runs on your machine and needs no account. It goes online only for the features you use: Steam (SteamCMD), GitHub (HighPop, Carbon and RogueRust downloads), uMod, Discord, Cloudflare DNS and ipify (join-domain check), and the Rogue Gaming hosts `api.roguegaming.com.au` (command reference) and `plugins.roguegaming.com.au` (plugin catalog). Passwords and tokens are encrypted with Windows DPAPI; keep `assets/data` private all the same.
 
-## Players
+---
 
-The Players tab shows live server numbers from `serverinfo` (players, queue, joining, server FPS,
-entities, memory, uptime and in-game time). Each player row shows ping, play time, health, IP address,
-Steam Family Sharing (the game owner's account, which shares its bans) and Rust's anti-hack violation
-level, with buttons for the Steam profile, copying the Steam64 ID, kick, ban and teleport.
-
-- **Player tools**: a give menu (common items by category with search, or any short name, an amount
-  and an optional skin ID; to one player or everyone), mute and unmute, team info, unlock or reset
-  blueprints, clear inventory, kill, teleport one player to another, moderator add/remove (saved with
-  `server.writecfg`), queue skip, saved loadouts, and the mute and ban lists. Rust's reply is shown under
-  the target.
-- **Chat & reports**: live in-game chat from WebRCON (starting with the last 50 lines from `chat.tail`),
-  a message box for all players with delivery confirmation, and F7 player reports as they arrive.
-
-Every player tool targets the Steam64 ID when it is known, quotes names, and validates item names,
-amounts and loadout names, so a value cannot inject a second console command. Destructive actions ask
-for confirmation first.
-
-## Portable layout
-
-The release ZIP contains only the application, its assets, and release history:
-
-```text
-HPRM/
-├─ HighPop.exe
-├─ CHANGELOG.md
-└─ assets/
-   ├─ README.txt
-   └─ presets/
-```
-
-On first use, HighPop creates runtime data below `assets/` and managed servers below `HPRM/Servers/`:
-
-```text
-HPRM/
-├─ Servers/          # one independent Rust installation per profile
-└─ assets/
-   ├─ SteamCMD/      # one shared SteamCMD installation for every server location
-   ├─ data/          # settings, profiles, schedules, databases, telemetry
-   ├─ backups/       # full and incremental backups
-   ├─ logsbackup/    # latest two dated Rust/Oxide/Carbon start archives per server
-   └─ logs/          # HighPop diagnostics
-```
-
-Before each start or restart, HighPop writes the completed Rust, Oxide, and Carbon logs to a
-dated ZIP under `assets/logsbackup/<server>/`. It removes the source logs only after the ZIP is
-successfully closed and retains exactly the latest two archives for troubleshooting.
-
-Official presets are embedded in `HighPop.exe` as well as included in the portable ZIP. HighPop
-restores missing preset files at startup, updates unchanged built-in presets when their bundled
-revision changes, and merges newly introduced keys into edited built-in presets without replacing
-operator values. Custom preset files are never changed. Built-in presets a release retires are removed
-only while they are still byte-identical to the deployed copy; an edited copy stays as a custom preset.
-
-Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up an installation. Secrets are protected with Windows DPAPI for the current Windows user and machine; do not publish `assets/data`.
-
-## RogueRust release channels
-
-Each server has its own RogueRust channel in **Server → Mods**:
-
-- **Stable** is the default and is recommended for production servers.
-- **Testing** follows the current RogueRust development build and is intended for development servers.
-
-HighPop reads the selected public channel manifest, validates that it identifies the expected channel, accepts downloads only from the RogueRust public release repository, verifies the DLL's SHA-256, and installs it transactionally. Oxide/uMod uses `RustDedicated_Data/Managed`; Carbon uses `carbon/extensions`. Existing DLLs receive bounded rollback copies.
-
-The selected manifest is also passed to the Rust process, keeping RogueRust self-update checks on that server's chosen channel. Stop Rust before changing the channel or installing the extension.
-
-## Recommended production setup
-
-- Give every profile a unique installation folder and unique Game, Query, WebRCON, and Rust+ ports.
-- Leave **Always-on** enabled for production and enable **Auto-start** only when the server should launch with HighPop.
-- Use Stable RogueRust on production and Testing only on a separate development profile.
-- Configure automatic backups before enabling unattended updates or wipes.
-- Use tray/background mode when HighPop must retain live console and process handles.
-- Keep the remote API disabled unless it is protected by a trusted LAN, VPN, firewall allow-list, or HTTPS reverse proxy.
-
-## Build from source
-
-Requirements: Windows 10/Server 2019 or newer and the .NET 10 SDK.
-
-```powershell
-git clone https://github.com/RogueAssassin/HighPop-Rust-Manager.git
-cd HighPop-Rust-Manager
-dotnet restore HighPop.sln
-dotnet build HighPop.sln -c Release
-dotnet run --project HighPop.SmokeTests/HighPop.SmokeTests.csproj -c Release
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-HighPop.ps1
-```
-
-The build script creates the self-contained executable, minimal portable ZIP, checksums, and release manifest under `artifacts/`.
-
-If you are already inside Windows PowerShell and it reports that `Build-HighPop.ps1` is not
-digitally signed, use a process-only bypass and then run the script normally:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\Build-HighPop.ps1
-```
-
-The `Process` scope lasts only for the current PowerShell window and does not weaken the
-machine-wide or current-user execution policy. Do not change `LocalMachine` to `Unrestricted`
-just to build HighPop.
-
-## Project information
-
-- [Changelog](CHANGELOG.md) — version-by-version release history
-- [Roadmap](ROADMAP.md) — planned reliability, maintenance, interface, telemetry, and service work
-- [Security](SECURITY.md) — vulnerability reporting and deployment guidance
-- [Contributing](CONTRIBUTING.md) — development workflow
-- [Notice](NOTICE.md) — attribution and third-party notices
-
-HighPop is an independent community project and is not affiliated with or endorsed by Facepunch Studios or Valve.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+HighPop is an independent community project and is not affiliated with or endorsed by Facepunch Studios or Valve. Released under the [MIT license](LICENSE); see [NOTICE.md](NOTICE.md) for attributions.

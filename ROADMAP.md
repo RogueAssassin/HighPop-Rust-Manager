@@ -1,217 +1,51 @@
 # HighPop roadmap
 
-HighPop uses two long-lived branches: `main` is production-ready and release-producing; `testing` is the integration and release-candidate line. Work branches start from and return to `testing`. Promotion to `main` requires the gates in [AUDIT.md](AUDIT.md).
+HighPop will always manage local Rust servers without an account, subscription or recurring fee. Hosted services stay optional.
 
-## v0.8 — Testing baseline and visual system
+For what has already shipped, see the [changelog](CHANGELOG.md).
 
-Delivered on `testing`:
+## Delivered so far
 
-- Independent Auto-start and Always-on policies; a manual stop remains authoritative
-- Framework-aware, SHA-256 verified, transactional RogueRust deployment for Oxide/uMod and Carbon
-- Comment-preserving `server.cfg` synchronization with exact rollback snapshots and bounded retention
-- Case-insensitive `server.cfg` de-duplication with last-active-value precedence and one authoritative saved assignment
-- Explicit Start, Safe Stop, Force Stop, Restart, and Install/Update command deck
-- Safe Stop using `server.save` then `quit`, with a configurable 15–600 second deadline
-- Safe live-update detection using installed/current Rust build IDs and configurable in-game countdown messages
-- Graphite, violet, cyan, and metallic Rogue ecosystem theme applied through shared application resources
-- CI coverage for both `testing` and `main`; release packaging remains `main`-only
-- Full-fidelity close-to-tray, explicit process detachment, verified PID/start-time/path reattachment, WebRCON command fallback, and a per-user Windows logon task
+- **v0.8–v0.9**: a lifecycle coordinator that keeps start, stop and restart in a fixed order; safe stop (save, then quit, with a deadline); reattaching to running servers after HighPop restarts; per-server RogueRust Stable/Testing channels; the portable `HPRM` layout.
+- **v1.0**: log archives, one shared SteamCMD, world-size presets, firewall controls, profile export/import and verified self-updates.
+- **v1.0.1–v1.0.12**: the RogueRust plugin catalog, custom join domains with a DNS checker, a reliable WebRCON (delivery-confirmed `say`, live chat and F7 reports), Players admin tools, and a console that stays on the newest line after RDP reconnects.
+- **v1.0.13–v1.0.14**: the grouped server sidebar, faster server switching, lower RAM use in the tray and a fix for chart errors after RDP reconnects. This delivers part of the v1.2 interface work below.
 
-Promotion work:
+## v1.1: Safer updates and recovery
 
-- Add disposable-process lifecycle and concurrency tests
-- Complete clean-install and v0.6/v0.7 profile migration testing
-- Run the Auto-start × Always-on × manager-restart/PID-reattach matrix
-- Verify tray close, explicit exit/reopen, reattached save/stop, and Windows sign-in recovery on a real Rust process
-- Validate Windows 10/11 at 100%, 125%, 150%, and 200% DPI
+- Maintenance windows with player thresholds, deferral, operator override and cancellable countdowns.
+- Checks before stopping Rust: disk space, Steam build, backup destination, framework state and room for a rollback copy.
+- Download Rust updates into a staging folder, swap them in with a rollback record, and resume or roll back after a crash or reboot.
+- Snapshot Carbon, Oxide, RogueRust, plugins and config before maintenance, and only reopen the server once they pass health checks.
+- Verify every maintenance backup before anything destructive, optional restore drills, and retention that never deletes the last good full backup.
 
-## v0.8.1 — Deterministic lifecycle coordinator
+## v1.2: Interface overhaul (partly delivered)
 
-Implemented on `testing`; live Rust validation is in progress:
+- ✅ Server pages grouped into a sidebar and loaded on demand.
+- An operations timeline that ties lifecycle, update, backup, RCON and scheduler events together.
+- Single-server and fleet dashboards that show what needs action instead of raw numbers.
+- Consistent confirmations, validation, keyboard navigation, focus order, high contrast and multi-monitor behaviour.
+- Virtualised large logs and player lists. Target: no UI stall over 250 ms during background work.
 
-- Persisted desired state separately from observed lifecycle phase
-- Added monotonic lifecycle generations, operation IDs, initiators, reasons, and timestamps
-- Made Stop persist intent before process shutdown and cancel stale automatic work
-- Routed local and remote lifecycle entry points through labelled coordinator operations
-- Added visible lifecycle phase/reason details and migration/recovery smoke coverage
-- Added deadline-aware lifecycle operations, cancellation of superseded starts, and a 32-entry durable result journal per server
-- Track process-running, Rust-ready, WebRCON-ready, and fresh-player-data timestamps independently
-- Added bounded exponential WebRCON reconnect cycles with jitter and lifecycle-generation cancellation
-- Added a local health summary and exportable support bundle with secret redaction and bounded logs
-- Added policy, signal, reconnect-bound, and redaction smoke coverage
-- Added complete four-port allocation/editing for multi-server creation with profile, Windows-listener, and install-folder conflict checks
-- Added source-aware, severity-filtered console reporting with batched UI ingestion and bounded duplicate tracking
+## v1.3: Secure RogueRust live map
 
-Validation remaining before promotion:
+- A local-only RogueRust bridge by default, with a random key per Rust boot, authenticated sessions, replay protection and TLS for any remote access.
+- Read-only map access by default, with separate scopes for player identity, administration and diagnostics.
+- A live map with monuments, grid, players, Bradley, helicopters, supply drops, locked crates and events, with filters, follow mode and team colours.
+- Delta updates, 1–5 second sampling and under 1% Rust main-thread overhead. A 72-hour soak test must show no unbounded memory, queue or disk growth.
 
-- Complete the disposable Rust-process start/stop/race and injected-failure matrix on Windows
-- Confirm support bundles contain enough evidence for a failed boot while never exposing credentials
-- Run a slow-start/WebRCON-loss/manual-stop soak against the final `testing` head
+## v2.0: Service-grade HighPop
 
-Performance benefit: fewer duplicate processes and hot recovery loops, bounded waits, faster diagnosis, and no UI thread dependency for lifecycle correctness. Target unexpected-exit detection under 10 seconds and 99% of available scheduled actions starting within 30 seconds.
+- Run lifecycle, scheduling, health, updates and recovery in a headless Windows service, with the window as a client.
+- Authenticated local IPC, operator roles and tamper-evident audit records.
+- Staged HighPop self-updates with automatic rollback.
+- Prometheus/OpenTelemetry metrics and versioned webhook schemas.
+- First-run checks for NAT, firewall, SteamCMD, WebRCON, Rust+ and RogueRust.
+- Optional S3-compatible and SFTP/FTPS backup copies.
 
-## v0.8.2 — Multi-server reliability and portable delivery
+## Backlog
 
-Implemented on `testing`; Windows and live Rust validation is in progress:
-
-- Validate Game, Query, WebRCON, and Rust+ edits against all saved profiles and active listeners before accepting them
-- Refuse to persist invalid legacy port collisions and safely snapshot UI-owned profile data during autosave
-- Keep reattached Rust reporting alive by following `RustDedicated.log`
-- Add console pause/resume, export, source/severity filtering, and recycling virtualization
-- Add framework-aware Explorer shortcuts without creating inactive Oxide/Carbon folder trees
-- Apply firewall and UPnP mappings as rollback-capable transactions with visible errors
-- Skip unchanged periodic profile rewrites and avoid rebuilding hidden server charts
-- Produce and CI-verify a portable ZIP rooted at `HPRM/`, containing `HighPop.exe`, the complete `assets/` tree, and a separate `Servers/` root
-- Retain a standalone executable for in-place upgrades
-
-Validation remaining before promotion:
-
-- Run two simultaneous Rust servers through start, RCON, Rust+, query, safe stop, restart, and manager reattachment
-- Inject firewall and UPnP partial failures and confirm no partial mappings remain
-- Soak console pause/resume and reattached log rotation under high output
-- Extract the CI ZIP into a clean writable location and confirm application state stays below `HPRM/assets/` while Rust installations stay below `HPRM/Servers/`
-
-Performance benefit: unchanged profile state no longer rewrites encrypted JSON every five seconds, while console virtualization bounds visual-tree cost during long high-output sessions.
-
-## v0.8.5 — Release channels and clean delivery
-
-Implemented on `testing`; Windows and live Rust validation is in progress:
-
-- Persist a Stable or Testing RogueRust channel independently for every managed server
-- Resolve both channels through RogueRust's public update manifests and validate channel identity, download origin, and SHA-256 before changing a server
-- Pass the selected manifest to Rust so RogueRust remains on the chosen channel across restarts and self-update checks
-- Preserve channel choice when cloning profiles and make Testing risk explicit in the Mods workspace
-- Limit the portable ZIP to the executable, assets tree, and changelog, with an exact CI content allow-list
-- Keep the README product-focused and route release history to the standalone changelog
-
-Validation remaining before promotion:
-
-- Install Stable on a production-profile server and Testing on a development-profile server, then confirm both survive restart without crossing channels
-- Promote a new RogueRust testing manifest and confirm only Testing profiles stage the update
-- Extract the portable ZIP into a clean writable directory and complete first-run, install, restart, and update checks
-
-### Manager capability review — prioritized gaps
-
-HighPop already covers the common install/update/start/stop/console/backup/monitor/schedule baseline. The next material improvements are:
-
-1. **Windows service host and operator accounts** — move lifecycle ownership out of the desktop session, then add authenticated role-based access and optional two-factor authentication.
-2. **Verified remote backups** — add S3-compatible and SFTP targets, encryption, integrity checks, restore drills, and a rule that preserves the last verified recovery chain.
-3. **Unified first-run diagnostics** — test SteamCMD, disk space, filesystem permissions, firewall, NAT/UPnP, WebRCON, Rust+, Carbon/Oxide, and RogueRust before declaring a server ready.
-4. **Transactional maintenance** — stage Rust updates outside the live installation, retain exact rollback manifests, recover interrupted updates, and verify framework health before reopening the server.
-5. **Safer extension/plugin lifecycle** — inventory compatibility, detect changed hashes, quarantine failed updates, and support an opt-in signed catalog without executing untrusted downloads silently.
-6. **Fleet operations** — bounded rolling restarts, maintenance groups, cross-server resource limits, and a single correlated operations timeline.
-7. **Observability and alert quality** — health-based alerts, deduplication, escalation, quiet hours, Prometheus/OpenTelemetry export, and clear readiness/service-level history.
-
-## v0.9 — Production reliability and official release
-
-### v0.9.0 — Production release
-
-Delivered and promoted from `testing`:
-
-- Production-ready deterministic lifecycle, multi-server port isolation, portable layout, and process reattachment
-- Per-server RogueRust Stable/Testing channels with verified transactional installation
-- Framework-specific live console handling: Carbon process streams and a single authoritative Oxide logfile
-- Official public Oxide updates with correct Rust-extension version reporting
-- Startup, periodic, title-bar, and manual About-page application update checks with verified in-place installation
-- Minimal CI-verified portable package containing only the executable, assets, and changelog
-
-## v1.0.0 — Stable HighPop release
-
-Delivered from the tested v0.9 production baseline:
-
-- Bounded Rust, Oxide, and Carbon log archival with two dated recovery archives per server
-- One shared portable SteamCMD installation beneath `assets/SteamCMD`
-- Eleven editable world-size presets from 1000 through 6000 with world-size-based spawning
-- Hardened Windows Firewall setup and per-server automatic firewall controls
-- Portable per-server HPRM profile export/import with moved-install relinking, safe runtime reset, secret omission, and conflict-free ports
-- Self-contained Windows x64 delivery, verified application updates, and the minimal `HPRM` portable package
-- Documented support for Windows 10/11 and Windows Server 2012 through 2025 within supported .NET/Windows lifecycle combinations
-
-## Post-v1.0 roadmap
-
-### v1.1 — Transactional maintenance and recovery
-
-Maintenance policy and preflight:
-
-- Add per-server maintenance windows with player thresholds, bounded deferral, operator override, quiet-hours handling, and cancellable countdowns
-- Preflight disk space, install ownership, Steam build identity, backup destination, framework state, and writable rollback storage before stopping Rust
-- Persist one maintenance operation ID across countdown, save, stop, stage, commit, framework verification, and return-to-service
-
-Staged update transaction:
-
-- Download and validate SteamCMD updates in a sibling staging directory without mutating the live server
-- Commit staged files with an exact rollback manifest; reject path traversal, cross-volume non-atomic assumptions, and incomplete manifests
-- Resume or roll back interrupted operations after manager/host restart, with explicit terminal results in the lifecycle journal
-
-Framework-safe return to service:
-
-- Snapshot and verify Carbon, Oxide/uMod, RogueRust, plugin, and config state before maintenance
-- Reapply only artifacts invalidated by the Rust update, then run framework/RogueRust readiness probes before admitting players
-- Broadcast reason, remaining time, save start, shutdown, rollback, and return-to-service through Rust with RogueRust enrichment when available
-
-Verified recovery points:
-
-- Verify every maintenance backup by reading the archive, validating its manifest/hash set, and enforcing path safety before destructive work
-- Add opt-in scheduled restore drills into an isolated directory with recovery-point and recovery-time reporting
-- Add retention and disk-pressure policies that never delete the last verified full recovery chain
-
-Release gates:
-
-- Failure injection at every transaction boundary proves either the old or new installation remains bootable
-- Host/manager restart tests cover countdown, download, staging, commit, rollback, framework verification, and restart
-- Multi-server tests prove disk/network/process concurrency stays bounded and one server's maintenance cannot block unrelated lifecycle work
-- The full lifecycle/manual-stop matrix remains green on the final `testing` head
-
-Performance benefit: non-destructive build-ID checks remain lightweight; downloads and validation run with bounded disk/network concurrency; update work cannot block the UI or leave half-replaced server files.
-
-## v1.2 — Complete operator-interface overhaul
-
-- Split the server workspace into focused Operations, Console, Rust, Automation, Mods, Players, Map, Telemetry, and Files modules
-- Carry the Rogue identity through consistent typography, iconography, cards, dialogs, selection states, and progress surfaces
-- Add a unified operations timeline with correlated lifecycle, update, backup, RCON, and scheduler events
-- Replace raw metric density with actionable single-server and fleet dashboards
-- Standardize confirmation, validation, keyboard navigation, focus order, high contrast, fullscreen, and multi-monitor behavior
-- Virtualize large logs/player lists and load heavy workspaces on demand
-
-Performance benefit: smaller view models, lower initial visual-tree cost, less retained UI state, and smoother large-server operation. Target no background-operation UI stall over 250 ms.
-
-## v1.3 — Secure RogueRust live map
-
-RogueRust bridge:
-
-- Bind to `127.0.0.1` by default on a configurable dedicated port; remote binding is an explicit advanced setting
-- Generate a cryptographically random 256-bit runtime API key on every Rust boot and publish it through an owner-readable local handoff file
-- Authenticate every WebSocket/HTTP session, rotate on restart, use timestamped sequence numbers and message authentication to reject replay
-- Require TLS through HighPop or a trusted reverse proxy for any non-loopback connection; never place keys in URLs or logs
-- Add scopes for map-read, player-identity, administration, and diagnostics; map access is read-only by default
-- Validate schema version, payload size, frequency, coordinates, entity type, and server identity before accepting telemetry
-
-Map experience:
-
-- Render the active procedural/custom map, monuments, grid, and server bounds
-- Stream delta updates for players, Bradley APC, patrol helicopter, supply/transport helicopter, supply drops, locked crates, and configured event entities
-- Provide role-based player-name visibility, team colours, filters, follow mode, event history, and last-update health
-- Keep telemetry local by default with bounded retention; make public/remote map sharing an explicit opt-in
-- Degrade safely when RogueRust disconnects: retain the last snapshot, mark it stale, reconnect with jitter, and never affect the Rust process
-
-Performance targets: delta rather than full-state updates, coalesced UI rendering, configurable 1–5 second sampling, bounded queues, and less than 1% average Rust main-thread overhead in the test profile. A 72-hour player/entity churn soak must show no unbounded memory, queue, or disk growth.
-
-## v2.0 — Service-grade HighPop
-
-- Move lifecycle, scheduling, health, update, and recovery ownership from the current tray/background host into a true headless Windows service
-- Use authenticated local IPC with least privilege, operator roles, and tamper-evident audit records
-- Add staged HighPop self-update with schema migration recovery and automatic rollback
-- Publish Prometheus/OpenTelemetry metrics and versioned webhook schemas
-- Add first-run NAT, firewall, SteamCMD, WebRCON, Rust+, and RogueRust diagnostics
-- Support optional S3-compatible and SFTP/FTPS backup replication and signed provider interfaces without making local management account-dependent
-
-Performance target: a seven-day multi-server soak survives desktop-client crashes and host reboot without data loss, duplicate scheduled work, uncontrolled restart loops, or update corruption.
-
-## Later audit backlog
-
-- Narrow firewall rules and CORS, add request limits, audit authentication failures, and separate public status from control endpoints
-- Add time-zone/DST-aware schedule storage, restart catch-up, overlap suppression, and persistent countdown state
-- Add notification deduplication, severity routing, quiet hours, and persistent-fault escalation
-- Benchmark backup compression, log ingestion, database growth, fleet polling, and multi-server startup contention
-
-Hosted vendor datasets and accounts remain optional. HighPop must continue to manage local Rust servers without an account, subscription, or recurring fee.
+- Narrower firewall rules and CORS, request limits, logging of failed sign-ins, and separate public status and control endpoints for the Web API.
+- Time-zone and daylight-saving aware schedules, catch-up after downtime, overlap prevention and persistent countdowns.
+- Alert deduplication, severity routing, quiet hours and escalation for persistent faults.
+- Benchmarks for backup compression, log ingestion, database growth and multi-server startup.

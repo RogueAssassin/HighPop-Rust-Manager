@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.14
+
+- Fixed "This PlotModel is already in use by some other PlotView control" errors after logging back in over RDP. When the server page was rebuilt, the old Charts page still held the server's charts, so the new one could not show them. The Charts page now takes the charts only while it is on screen and releases them when hidden.
+- Rewrote the README with screenshots of the server workspace and dialogs. Moved the detailed reference (WebRCON, players, configuration, mods, storage layout) to `docs/`, removed the outdated v0.8 audit and refreshed the roadmap and contributing guide.
+- Advanced metadata to v1.0.14.
+
 ## 1.0.13
 
 - Reworked the server page. The 14 tabs are now six groups in a sidebar: Console, Players, Configure, Automation, Monitoring and Files, each with its pages along the top. The colours are calmer and the active page is easier to see.
