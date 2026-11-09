@@ -2,27 +2,27 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- Background layers -->
-    <Color x:Key="BgDeepColor">#070811</Color>
-    <Color x:Key="BgSurfaceColor">#0D101A</Color>
-    <Color x:Key="BgSurface2Color">#141827</Color>
-    <Color x:Key="BgSurface3Color">#1B2134</Color>
+    <Color x:Key="BgDeepColor">#0B0D14</Color>
+    <Color x:Key="BgSurfaceColor">#10131C</Color>
+    <Color x:Key="BgSurface2Color">#161A25</Color>
+    <Color x:Key="BgSurface3Color">#1E2331</Color>
 
     <!-- Accent colors -->
-    <Color x:Key="AccentBlueColor">#22D3EE</Color>
+    <Color x:Key="AccentBlueColor">#38BDF8</Color>
     <Color x:Key="AccentVioletColor">#A855F7</Color>
-    <Color x:Key="AccentGreenColor">#38C976</Color>
-    <Color x:Key="AccentRedColor">#FF5D5D</Color>
+    <Color x:Key="AccentGreenColor">#34C77B</Color>
+    <Color x:Key="AccentRedColor">#F06A6A</Color>
     <Color x:Key="AccentYellowColor">#FFB020</Color>
     <Color x:Key="AccentOrangeColor">#F59E0B</Color>
 
     <!-- Text -->
-    <Color x:Key="TextPrimaryColor">#F5F7FF</Color>
-    <Color x:Key="TextSecondaryColor">#B8C1D9</Color>
-    <Color x:Key="TextMutedColor">#77819A</Color>
+    <Color x:Key="TextPrimaryColor">#EEF1F8</Color>
+    <Color x:Key="TextSecondaryColor">#AEB6C8</Color>
+    <Color x:Key="TextMutedColor">#7A8398</Color>
 
     <!-- Border -->
-    <Color x:Key="BorderColor">#27324A</Color>
-    <Color x:Key="BorderActiveColor">#22D3EE</Color>
+    <Color x:Key="BorderColor">#252B3A</Color>
+    <Color x:Key="BorderActiveColor">#38BDF8</Color>
 
     <!-- Brushes -->
     <SolidColorBrush x:Key="BgDeepBrush"     Color="{StaticResource BgDeepColor}"/>
@@ -54,9 +54,9 @@
         <GradientStop Color="#22D3EE" Offset="1"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="BrandHeaderBrush" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Color="#17112C" Offset="0"/>
-        <GradientStop Color="#0D1528" Offset="0.55"/>
-        <GradientStop Color="#081A24" Offset="1"/>
+        <GradientStop Color="#141226" Offset="0"/>
+        <GradientStop Color="#10141F" Offset="0.55"/>
+        <GradientStop Color="#0E171E" Offset="1"/>
     </LinearGradientBrush>
 
 </ResourceDictionary>

@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $xamlFiles = @(
     Join-Path $repoRoot 'HighPop\MainWindow.xaml'
-) + @(Get-ChildItem (Join-Path $repoRoot 'HighPop\Views') -Filter '*.xaml' | ForEach-Object FullName)
+) + @(Get-ChildItem (Join-Path $repoRoot 'HighPop\Views') -Filter '*.xaml' -Recurse | ForEach-Object FullName)
 $viewModelSource = (Get-ChildItem (Join-Path $repoRoot 'HighPop\ViewModels') -Filter '*.cs' |
     Get-Content -Raw) -join "`n"
 $issues = [System.Collections.Generic.List[string]]::new()

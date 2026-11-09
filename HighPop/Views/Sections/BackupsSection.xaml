@@ -1,0 +1,92 @@
+<UserControl x:Class="HighPop.Views.Sections.BackupsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
+    <Grid Background="{StaticResource BgDeepBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,12">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="{Binding Loc.BackupCreate}" Style="{StaticResource PrimaryButton}"
+                            Command="{Binding CreateBackupCommand}" Margin="0,0,8,0"/>
+                    <TextBlock Text="{Binding Backups.Count, Mode=OneWay, StringFormat='{}{0} backups'}"
+                               VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" FontSize="13"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <TextBlock Text="Keep at most" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,8,0"/>
+                    <TextBox Style="{StaticResource DarkTextBox}" Width="60" TextAlignment="Center"
+                             Text="{Binding BackupRetention, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Text="backups (0 = unlimited)" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="8,0,24,0"/>
+                    <TextBlock Text="Delete backups older than" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,8,0"/>
+                    <TextBox Style="{StaticResource DarkTextBox}" Width="60" TextAlignment="Center"
+                             Text="{Binding BackupMaxAgeDays, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Text="days (0 = off)" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="8,0,16,0"/>
+                    <Button Content="🗑 Clean up now" Style="{StaticResource GhostButton}"
+                            Command="{Binding CleanupBackupsNowCommand}"
+                            ToolTip="Permanently delete backups that exceed the limits above, right now"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <CheckBox IsChecked="{Binding UseIncrementalBackups}" Style="{StaticResource DarkCheckBox}"
+                              Content="Incremental backups" Margin="0,0,16,0"
+                              ToolTip="Only changed files are zipped after the first backup — much faster and smaller for large worlds"/>
+                    <TextBlock Text="Full backup every" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,8,0"
+                               Visibility="{Binding UseIncrementalBackups, Converter={StaticResource BoolToVis}}"/>
+                    <TextBox Style="{StaticResource DarkTextBox}" Width="60" TextAlignment="Center"
+                             Text="{Binding FullBackupEveryN, UpdateSourceTrigger=PropertyChanged}"
+                             Visibility="{Binding UseIncrementalBackups, Converter={StaticResource BoolToVis}}"/>
+                    <TextBlock Text="backups" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="8,0,0,0"
+                               Visibility="{Binding UseIncrementalBackups, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="16">
+            <ItemsControl ItemsSource="{Binding Backups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" FontSize="13">
+                                        <Run Text="{Binding CreatedAt, StringFormat='dd.MM.yyyy HH:mm:ss', Mode=OneWay}"/>
+                                        <Run Text=" · "/>
+                                        <Run Text="{Binding IsIncremental, Converter={StaticResource BoolToIncrementalLabel}, Mode=OneWay}"
+                                             Foreground="{StaticResource TextMutedBrush}" FontWeight="Normal" FontSize="11"/>
+                                    </TextBlock>
+                                    <TextBlock Foreground="{StaticResource TextSecondaryBrush}" FontSize="12">
+                                        <Run Text="{Binding SizeText, Mode=OneWay}"/>
+                                        <Run Text=" · "/>
+                                        <Run Text="{Binding FilePath, Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="↩ Restore" Style="{StaticResource GhostButton}" Margin="0,0,8,0"
+                                            Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Content="✕" Style="{StaticResource DangerButton}" Width="32" Padding="0"
+                                            Command="{Binding DataContext.DeleteBackupCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

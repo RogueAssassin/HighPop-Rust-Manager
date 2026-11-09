@@ -85,9 +85,26 @@ When reading `server.cfg`, a trailing `# comment` or `// comment` is never part 
 an older tool quoted twice (`"\"1\""`) read as `1`. On save, active lines are written as `name "value"`
 and an inline comment is moved to its own line just above.
 
+## Server workspace
+
+Each server's pages are grouped in a sidebar:
+
+| Group | Pages |
+|---|---|
+| Console | Console, Reference |
+| Players | Playing now, Player tools, Chat & reports, Moderation, History, Statistics, Activity |
+| Configure | Settings, Rust, Config files, Mods |
+| Automation | Automation, Schedule, Backups, Log watcher |
+| Monitoring | Info, Charts, Action log |
+| Files | File browser |
+
+A page is built the first time you open it and then kept, and switching servers only refreshes
+the page on screen. Charts are redrawn only while the Charts page is open. When HighPop has been
+minimised or in the tray for 10 seconds it releases idle memory back to Windows.
+
 ## Rust command reference
 
-The per-server **Reference** tab loads the current command and ConVar metadata from
+The per-server **Reference** page (Console group) loads the current command and ConVar metadata from
 [Rogue Rust Reference](https://api.roguegaming.com.au). Search results show execution scope,
 descriptions, types, and defaults. **Insert** copies only the selected name into the Console input
 for operator review; reference entries are never executed automatically. The compact commands and

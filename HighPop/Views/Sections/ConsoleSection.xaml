@@ -1,0 +1,228 @@
+<UserControl x:Class="HighPop.Views.Sections.ConsoleSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
+    <Grid Background="{StaticResource BgDeepBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Background="{StaticResource BgSurface2Brush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                Padding="12,7" Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <CheckBox Content="Auto-connect WebRCON when Rust starts"
+                          IsChecked="{Binding AutoConnectRcon}"
+                          Style="{StaticResource DarkCheckBox}"
+                          ToolTip="Waits for the configured slow-start delay, then retries WebRCON for the configured connection window."/>
+                <TextBlock Grid.Column="1" Text="{Binding RconStatusText}" HorizontalAlignment="Right"
+                           VerticalAlignment="Center" FontSize="11"
+                           Foreground="{StaticResource TextMutedBrush}"/>
+            </Grid>
+        </Border>
+
+        <!-- Filter bar -->
+        <Border Grid.Row="1" Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="200"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="🔍 Filter:" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,8,0"/>
+                <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}"
+                         Text="{Binding ConsoleFilter, UpdateSourceTrigger=PropertyChanged}"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="12,0,0,0">
+                    <ToggleButton Content="Info" IsChecked="{Binding ShowConsoleInfo}"
+                                  Style="{StaticResource GhostToggleButton}" Padding="9,3"/>
+                    <ToggleButton Content="Warnings" IsChecked="{Binding ShowConsoleWarnings}"
+                                  Style="{StaticResource GhostToggleButton}" Padding="9,3" Margin="5,0,0,0"/>
+                    <ToggleButton Content="Errors" IsChecked="{Binding ShowConsoleErrors}"
+                                  Style="{StaticResource GhostToggleButton}" Padding="9,3" Margin="5,0,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="3" Orientation="Horizontal">
+                    <ToggleButton Content="⏸ Pause" IsChecked="{Binding IsConsolePaused}"
+                                  Style="{StaticResource GhostToggleButton}" Padding="9,3"
+                                  ToolTip="Pause screen updates while the complete log continues recording"/>
+                    <ToggleButton x:Name="AutoScrollToggle" IsChecked="True"
+                                  Style="{StaticResource GhostToggleButton}"
+                                  Content="⬇ Auto scroll" ToolTip="Scroll to latest output automatically"
+                                  Margin="8,0,0,0" Checked="AutoScrollToggle_Changed" Unchecked="AutoScrollToggle_Changed"/>
+                    <Button Content="Export" Style="{StaticResource GhostButton}"
+                            Margin="8,0,0,0" Command="{Binding ExportConsoleCommand}"/>
+                    <Button Content="{Binding Loc.ConsoleClear}" Style="{StaticResource GhostButton}"
+                            Margin="8,0,0,0" Command="{Binding ClearConsoleCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Log output -->
+        <ListBox Grid.Row="2" x:Name="LogList" ItemsSource="{Binding FilteredLog}"
+                 Background="{StaticResource BgDeepBrush}" BorderThickness="0" Padding="8"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.CanContentScroll="True"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 VirtualizingPanel.VirtualizationMode="Recycling">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="Padding" Value="0"/>
+                </Style>
+            </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="65"/>
+                                <ColumnDefinition Width="82"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding FormattedTime}"
+                                       FontFamily="Consolas" FontSize="11"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Padding="4,1" VerticalAlignment="Top"/>
+                            <TextBlock Grid.Column="1" Text="{Binding SourceLabel}"
+                                       FontFamily="Consolas" FontSize="10"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Padding="4,2" VerticalAlignment="Top"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Column="2" Text="{Binding Text}"
+                                       FontFamily="Consolas"
+                                       Typography.Kerning="False"
+                                       Typography.StandardLigatures="False"
+                                       FontSize="12" TextWrapping="Wrap" Padding="4,1">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Type}" Value="Error">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentRedBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Type}" Value="Warning">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentYellowBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Type}" Value="System">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentBlueBrush}"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Type}" Value="Input">
+                                                <Setter Property="Foreground" Value="{StaticResource AccentGreenBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Quick commands -->
+        <Border Grid.Row="3" Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,8">
+            <StackPanel>
+                <TextBlock Text="Quick Commands" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,4"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           ToolTip="One-click console command shortcuts you save below. Click a button to send its command instantly — hover a button to see exactly what it sends. Click ✕ to remove one. These can also be scheduled to run automatically from the Schedule tab."/>
+                <WrapPanel>
+                    <ItemsControl ItemsSource="{Binding QuickCommands}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="4" Margin="0,0,6,6">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="{Binding Label}" Style="{StaticResource GhostButton}"
+                                                Padding="8,4"
+                                                Command="{Binding DataContext.RunQuickCommandCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" ToolTip="{Binding Command}"/>
+                                        <Button Content="✕" Style="{StaticResource GhostButton}" Width="22" Padding="0" FontSize="10"
+                                                Command="{Binding DataContext.RemoveQuickCommandCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </WrapPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                    <TextBox Style="{StaticResource DarkTextBox}" Width="100" Margin="0,0,4,0"
+                             Text="{Binding NewQuickCommandLabel, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Button label, e.g. Welcome message"/>
+                    <TextBox Style="{StaticResource DarkTextBox}" Width="220" Margin="0,0,4,0"
+                             FontFamily="Consolas"
+                             Text="{Binding NewQuickCommandCommand, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Console command, e.g. say Welcome to the server!"/>
+                    <Button Content="+ Add" Style="{StaticResource GhostButton}" Padding="10,4"
+                            Command="{Binding AddQuickCommandCommand}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Command input -->
+        <Border Grid.Row="4" Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ToggleButton Grid.Column="0" Margin="0,0,8,0" Padding="10,4"
+                              IsChecked="{Binding ConsoleChatMode}"
+                              Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}"
+                              ToolTip="Off: the box runs Rust console commands (to chat, type say your message). On: everything you type is sent to all players as in-game chat.">
+                    <ToggleButton.Style>
+                        <Style TargetType="ToggleButton" BasedOn="{StaticResource GhostToggleButton}">
+                            <Setter Property="Content" Value="&gt; Command"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter Property="Content" Value="💬 Chat"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ToggleButton.Style>
+                </ToggleButton>
+                <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}"
+                         Text="{Binding ConsoleInput, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="Command mode: Rust console commands, for example say Hello, kick Name, server.save. Chat mode: a message for all players."
+                         FontFamily="Cascadia Code, Consolas">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter" Command="{Binding SendConsoleCommandCommand}"/>
+                    </TextBox.InputBindings>
+                </TextBox>
+                <!-- RCON connect button -->
+                <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6"
+                        Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
+                            <Setter Property="Content" Value="RCON: Connect"/>
+                            <Setter Property="Command" Value="{Binding ConnectRconCommand}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RconConnected}" Value="True">
+                                    <Setter Property="Content" Value="RCON: Disconnect"/>
+                                    <Setter Property="Command" Value="{Binding DisconnectRconCommand}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Grid.Column="3" Content="{Binding Loc.ConsoleSend}" Style="{StaticResource PrimaryButton}"
+                        Margin="8,0,0,0" Command="{Binding SendConsoleCommandCommand}"/>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

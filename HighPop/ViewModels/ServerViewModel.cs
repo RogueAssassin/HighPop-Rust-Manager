@@ -75,6 +75,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private bool _isOxideInstalled;
     [ObservableProperty] private bool _isCarbonInstalled;
     [ObservableProperty] private bool _isWorkspaceActive;
+    /// <summary>Set by the Charts section while it is on screen; charts are not redrawn otherwise.</summary>
+    [ObservableProperty] private bool _chartsVisible;
 
     // Rogue Rust Reference — loaded on demand and shared across all server workspaces.
     private List<RustReferenceEntry> _allRustReferenceEntries = [];
@@ -246,6 +248,11 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     partial void OnIsWorkspaceActiveChanged(bool value)
+    {
+        if (value && ChartsVisible) UpdatePerfChart();
+    }
+
+    partial void OnChartsVisibleChanged(bool value)
     {
         if (value) UpdatePerfChart();
     }
@@ -3633,7 +3640,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     (network?.BytesInPerSec ?? 0) / 1024.0,
                     (network?.BytesOutPerSec ?? 0) / 1024.0,
                     Server.CurrentPlayers);
-                if (IsWorkspaceActive)
+                if (IsWorkspaceActive && ChartsVisible)
                 {
                     var nowTicks = DateTime.UtcNow.Ticks;
                     var dueTicks = Interlocked.Read(ref _nextPerfChartRefreshUtcTicks);
@@ -3840,11 +3847,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             added++;
         }
 
+        // Both lists are in arrival order, so the oldest line is always at index 0 of FilteredLog
+        // if it is there at all. Checking that avoids a full search of the list for every new line.
         while (Log.Count > MaxConsoleLines)
         {
             var removed = Log[0];
             Log.RemoveAt(0);
-            FilteredLog.Remove(removed);
+            if (FilteredLog.Count > 0 && ReferenceEquals(FilteredLog[0], removed)) FilteredLog.RemoveAt(0);
         }
 
         Interlocked.Exchange(ref _consoleFlushScheduled, 0);

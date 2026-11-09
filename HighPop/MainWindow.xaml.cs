@@ -12,6 +12,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Helpers.WindowWorkArea.Attach(this);
+        Helpers.BackgroundMemoryTrim.Attach(this);
         DataContext = App.Services.GetRequiredService<MainViewModel>();
         try
         {

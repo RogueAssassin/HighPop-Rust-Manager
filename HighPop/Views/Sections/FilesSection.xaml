@@ -1,0 +1,231 @@
+<UserControl x:Class="HighPop.Views.Sections.FilesSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
+    <Grid Background="{StaticResource BgDeepBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Background="{StaticResource BgSurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="↑" Style="{StaticResource GhostButton}" Width="32" Padding="0" Margin="0,0,4,0"
+                            ToolTip="Up" Command="{Binding FileBrowser.GoUpCommand}"
+                            IsEnabled="{Binding FileBrowser.CanGoUp}"/>
+                    <Button Content="↻" Style="{StaticResource GhostButton}" Width="32" Padding="0" Margin="0,0,4,0"
+                            ToolTip="Refresh" Command="{Binding FileBrowser.RefreshCommand}"/>
+                    <Button Content="📁 New folder" Style="{StaticResource GhostButton}" Margin="0,0,4,0"
+                            Command="{Binding FileBrowser.CreateFolderCommand}"/>
+                    <Button Content="🗔 Explorer" Style="{StaticResource GhostButton}" Margin="0,0,12,0"
+                            Command="{Binding FileBrowser.OpenInExplorerCommand}"/>
+                    <TextBlock Text="{Binding FileBrowser.StatusText}" FontSize="11"
+                               Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <!-- Search field -->
+                <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}" Width="200"
+                         Text="{Binding FileBrowser.SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="Search by filename"/>
+            </Grid>
+        </Border>
+
+        <!-- Main content -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Breadcrumb -->
+            <ItemsControl Grid.Row="0" ItemsSource="{Binding FileBrowser.Breadcrumb}" Margin="12,6,12,4">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="›" Foreground="{StaticResource TextMutedBrush}" Margin="4,0"/>
+                            <TextBlock Text="{Binding}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Rename box -->
+            <Border Grid.Row="1" Background="{StaticResource BgSurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,1" Padding="12,6"
+                    Visibility="{Binding FileBrowser.ShowRenameBox, Converter={StaticResource BoolToVis}}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="New name:" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <TextBox Style="{StaticResource DarkTextBox}" Width="300"
+                             Text="{Binding FileBrowser.NewName, UpdateSourceTrigger=PropertyChanged}">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Return" Command="{Binding FileBrowser.ConfirmRenameCommand}"/>
+                            <KeyBinding Key="Escape" Command="{Binding FileBrowser.CancelRenameCommand}"/>
+                        </TextBox.InputBindings>
+                    </TextBox>
+                    <Button Content="✓" Style="{StaticResource SuccessButton}" Margin="6,0" Width="32" Padding="0"
+                            Command="{Binding FileBrowser.ConfirmRenameCommand}"/>
+                    <Button Content="✕" Style="{StaticResource DangerButton}" Width="32" Padding="0"
+                            Command="{Binding FileBrowser.CancelRenameCommand}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Tiedostolista + editori rinnakkain -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <!-- Editori vie 50% tilasta kun auki -->
+                    <ColumnDefinition Width="{Binding FileBrowser.IsEditing,
+                        Converter={StaticResource BoolToGridLength}, ConverterParameter=*}"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Tiedostolista -->
+                <ListView ItemsSource="{Binding FileBrowser.Items}"
+                          SelectedItem="{Binding FileBrowser.SelectedItem}"
+                          Background="{StaticResource BgDeepBrush}" BorderThickness="0">
+                    <ListView.Resources>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#29214A"/>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#1C2034"/>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF"/>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            <Setter Property="Padding" Value="6,4"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="BorderBrush" Value="{StaticResource AccentOrangeBrush}"/>
+                                    <Setter Property="Foreground" Value="White"/>
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="{StaticResource BgSurface3Brush}"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListView.Resources>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Name" Width="260">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Icon}" Margin="0,0,6,0"/>
+                                            <TextBlock Text="{Binding Name}" FontSize="12"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Size" Width="80"
+                                            DisplayMemberBinding="{Binding SizeText}"/>
+                            <GridViewColumn Header="Modified" Width="130"
+                                            DisplayMemberBinding="{Binding Modified}"/>
+                        </GridView>
+                    </ListView.View>
+                    <ListView.InputBindings>
+                        <MouseBinding MouseAction="LeftDoubleClick"
+                                      Command="{Binding FileBrowser.OpenCommand}"
+                                      CommandParameter="{Binding FileBrowser.SelectedItem,
+                                          RelativeSource={RelativeSource AncestorType=ListView}}"/>
+                    </ListView.InputBindings>
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Open / Navigate"
+                                      Command="{Binding FileBrowser.OpenCommand}"
+                                      CommandParameter="{Binding FileBrowser.SelectedItem}"/>
+                            <MenuItem Header="✏ Edit as text"
+                                      Command="{Binding FileBrowser.EditSelectedItemCommand}"/>
+                            <MenuItem Header="📥 Download"
+                                      Command="{Binding FileBrowser.DownloadFileCommand}"
+                                      CommandParameter="{Binding FileBrowser.SelectedItem}"/>
+                            <Separator/>
+                            <MenuItem Header="Rename"
+                                      Command="{Binding FileBrowser.RenameItemCommand}"
+                                      CommandParameter="{Binding FileBrowser.SelectedItem}"/>
+                            <Separator/>
+                            <MenuItem Header="🗑 Delete"
+                                      Command="{Binding FileBrowser.DeleteItemCommand}"
+                                      CommandParameter="{Binding FileBrowser.SelectedItem}"/>
+                        </ContextMenu>
+                    </ListView.ContextMenu>
+                </ListView>
+
+                <!-- Text editor (visible only when IsEditing=true) -->
+                <Border Grid.Column="1"
+                        Background="{StaticResource BgSurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0"
+                        Visibility="{Binding FileBrowser.IsEditing, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Editor title bar -->
+                        <Border Grid.Row="0" Background="{StaticResource BgSurface2Brush}"
+                                Padding="10,6" BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,0,0,1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="✏ " FontSize="12"/>
+                                    <TextBlock Text="{Binding FileBrowser.EditingFileName}"
+                                               FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text=" •" FontSize="12" Foreground="#E3B341"
+                                               Visibility="{Binding FileBrowser.EditorDirty,
+                                                   Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="✕" Style="{StaticResource GhostButton}"
+                                        Width="28" Padding="0"
+                                        Command="{Binding FileBrowser.CloseEditorCommand}"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Text field -->
+                        <TextBox Grid.Row="1"
+                                 Text="{Binding FileBrowser.EditorContent,
+                                     UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True" AcceptsTab="True"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas, Courier New" FontSize="12"
+                                 Background="#0D1117" Foreground="#C9D1D9"
+                                 BorderThickness="0" Padding="10"
+                                 TextWrapping="NoWrap"/>
+
+                        <!-- Tallennuspalkki -->
+                        <Border Grid.Row="2" Background="{StaticResource BgSurface2Brush}"
+                                Padding="10,6" BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="0,1,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="💾 Save" Style="{StaticResource SuccessButton}"
+                                        Margin="0,0,8,0"
+                                        Command="{Binding FileBrowser.SaveEditCommand}"/>
+                                <Button Content="Close" Style="{StaticResource GhostButton}"
+                                        Command="{Binding FileBrowser.CloseEditorCommand}"/>
+                                <TextBlock Margin="12,0,0,0" FontSize="11"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding FileBrowser.StatusText}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

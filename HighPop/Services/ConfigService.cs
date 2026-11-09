@@ -173,12 +173,14 @@ public class ConfigService
                 var servers = array.ToObject<List<GameServer>>() ?? [];
                 var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var installPathMigrated = false;
+                var idsRepaired = false;
                 foreach (var server in servers)
                 {
                     if (!Guid.TryParse(server.Id, out _) || !ids.Add(server.Id))
                     {
                         server.Id = Guid.NewGuid().ToString();
                         ids.Add(server.Id);
+                        idsRepaired = true;
                     }
                     server.GameSpecificSettings ??= new Dictionary<string, string>();
                     server.RogueRustChannel = ModManagerService.NormalizeRogueRustChannel(server.RogueRustChannel);
@@ -204,6 +206,17 @@ public class ConfigService
                 _lastServersSnapshotHash = installPathMigrated
                     ? null
                     : ComputeServersSnapshotHash(servers);
+                // A missing, invalid or duplicate Id was replaced in memory. Write it back now:
+                // otherwise lifecycle saves cannot find the new Id in the file and append a copy
+                // of the server on every launch.
+                if (idsRepaired)
+                {
+                    _lastServersSnapshotHash = null;
+                    // Best effort: a read-only or locked file must not stop the servers loading.
+                    // The next normal save retries because the snapshot hash is cleared.
+                    try { SaveServers(servers); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+                }
                 return servers;
             }
             catch { return []; }

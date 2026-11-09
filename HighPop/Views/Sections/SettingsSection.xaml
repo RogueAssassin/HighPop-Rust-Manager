@@ -1,0 +1,406 @@
+<UserControl x:Class="HighPop.Views.Sections.SettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
+    <ScrollViewer Background="{StaticResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24">
+            <TextBlock Text="Server settings" Style="{StaticResource SectionHeader}"/>
+
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/><RowDefinition Height="12"/>
+                        <RowDefinition/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.Column="0">
+                        <TextBlock Text="Display name" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="0" Grid.Column="2">
+                        <TextBlock Text="Server name (in-game)" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.ServerName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="2" Grid.Column="0">
+                        <TextBlock Text="IP address" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.ServerIp, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="2">
+                        <TextBlock Text="Max players" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.MaxPlayers, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="4" Grid.Column="0">
+                        <TextBlock Text="Game port" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding GamePort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                 IsEnabled="{Binding IsStopped}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Row="4" Grid.Column="2">
+                        <TextBlock Text="Query port" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding QueryPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                 IsEnabled="{Binding IsStopped}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="6" Grid.Column="0"
+                                Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="RCON port" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding RconPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                 IsEnabled="{Binding IsStopped}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Row="6" Grid.Column="2"
+                                Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Rust+ port" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding RustPlusPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"
+                                 IsEnabled="{Binding IsStopped}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="3">
+                        <TextBlock Text="Password" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.ServerPassword, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="10" Grid.Column="0" Grid.ColumnSpan="3"
+                                Visibility="{Binding HasRcon, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="RCON password" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.RconPassword, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="12" Grid.Column="0" Grid.ColumnSpan="3">
+                        <TextBlock Text="{Binding PortConfigurationStatus}" FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
+                        <TextBlock Text="Stop Rust before changing ports so the running process, firewall, WebRCON, and saved profile stay consistent."
+                                   FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
+                        <CheckBox Content="Automatically manage Windows Firewall rules when this server starts"
+                                  IsChecked="{Binding Server.FirewallAutoManage}"
+                                  Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0"/>
+                        <TextBlock Text="Requires HighPop to run as Administrator. Disable this if Group Policy or another firewall product manages the ports."
+                                   FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="14" Grid.Column="0" Grid.ColumnSpan="3">
+                        <TextBlock Text="Extra start parameters" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.CustomArgs, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DarkTextBox}"
+                                 AcceptsReturn="True" TextWrapping="Wrap"
+                                 Height="80" VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Cascadia Code, Consolas" FontSize="12"/>
+                    </StackPanel>
+
+                    <!-- Notes -->
+                    <StackPanel Grid.Row="16" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,12">
+                        <TextBlock Text="Notes" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Text="{Binding Server.Notes, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DarkTextBox}"
+                                 AcceptsReturn="True" TextWrapping="Wrap"
+                                 Height="72" VerticalScrollBarVisibility="Auto"
+                                 FontSize="12"/>
+                    </StackPanel>
+
+                    <!-- Custom server image -->
+                    <StackPanel Grid.Row="18" Grid.Column="0" Grid.ColumnSpan="3">
+                        <TextBlock Text="Custom server image" Style="{StaticResource FieldLabel}"/>
+                        <TextBlock Text="Replaces the default game image in the server list. Recommended: 300×110 px (landscape), PNG or JPG."
+                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource GhostButton}" FontSize="11" Height="28" Padding="10,0"
+                                    Content="📁 Choose image" Command="{Binding PickCustomImageCommand}"/>
+                            <Button Style="{StaticResource GhostButton}" FontSize="11" Height="28" Padding="10,0" Margin="6,0,0,0"
+                                    Content="✕ Remove image" Command="{Binding RemoveCustomImageCommand}"
+                                    Visibility="{Binding HasCustomImage, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Config Presets -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                    Visibility="{Binding AvailablePresets.Count, Converter={StaticResource CountToVis}}">
+                <StackPanel>
+                    <TextBlock Text="Config Presets" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" TextWrapping="Wrap"
+                               Text="Apply a ready-made configuration template. World-spawn targets scale only from map size; the vanilla player cap remains 150 and can be edited independently. The original config file is backed up automatically."/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0" ItemsSource="{Binding AvailablePresets}"
+                                  SelectedItem="{Binding SelectedPreset}"
+                                  DisplayMemberPath="Name"
+                                  Background="#161B22" Foreground="#E6EDF3"
+                                  BorderBrush="#30363D" Padding="10,6"/>
+                        <Button Grid.Column="1" Content="Apply Preset" Style="{StaticResource PrimaryButton}"
+                                Margin="8,0,0,0" Command="{Binding ApplyPresetCommand}"/>
+                    </Grid>
+                    <TextBlock Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                               Text="{Binding SelectedPreset.Description}"/>
+                    <TextBlock Margin="0,4,0,0" FontSize="11" Foreground="{StaticResource AccentYellowBrush}"
+                               Text="World-size changes take effect on the next start and can generate a new map. Review the preset values before applying."/>
+                </StackPanel>
+            </Border>
+
+            <!-- Plugin-specific settings -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+                    BorderBrush="{StaticResource AccentBlueBrush}" BorderThickness="3,1,1,1"
+                    Visibility="{Binding PluginFields.Count, Converter={StaticResource CountToVis}}">
+                <StackPanel>
+                    <TextBlock Margin="0,0,0,2" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondaryBrush}">
+                        <Run Text="🎮 "/>
+                        <Run Text="{Binding Plugin.GameName, Mode=OneWay}"/>
+                        <Run Text=" settings"/>
+                    </TextBlock>
+                    <TextBlock Text="Only applies to this game. General settings (name, port, password) are in the card above."
+                               FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" TextWrapping="Wrap"/>
+                    <ItemsControl ItemsSource="{Binding PluginFields}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Width="280" Margin="0,0,16,12">
+                                    <TextBlock Text="{Binding Field.Label}" Style="{StaticResource FieldLabel}"/>
+                                    <TextBox Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource DarkTextBox}"/>
+                                    <TextBlock Text="{Binding Field.Description}" FontSize="10"
+                                               Foreground="{StaticResource TextMutedBrush}" Margin="0,3,0,0"
+                                               TextWrapping="Wrap"
+                                               Visibility="{Binding Field.Description, Converter={StaticResource StringToVis}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Performance -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Performance" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+
+                    <!-- Process priority -->
+                    <TextBlock Text="Process priority" Style="{StaticResource FieldLabel}"/>
+                    <ComboBox ItemsSource="{Binding PriorityOptions}"
+                              SelectedItem="{Binding Server.ProcessPriority}"
+                              Style="{StaticResource DarkComboBox}" Margin="0,0,0,12"/>
+
+                    <!-- CPU affinity -->
+                    <TextBlock Text="CPU affinity" Style="{StaticResource FieldLabel}"/>
+                    <TextBlock Text="Uncheck cores to exclude them. All checked = no restriction."
+                               FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6"/>
+                    <ItemsControl ItemsSource="{Binding CpuCores}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Label}"
+                                          IsChecked="{Binding IsEnabled}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Margin="0,0,12,6"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- RAM limit -->
+                    <TextBlock Text="RAM limit (MB)" Style="{StaticResource FieldLabel}" Margin="0,12,0,0"/>
+                    <TextBlock Text="Hard Windows process limit. If Rust exceeds it, Windows can terminate the server. Use 0 for unlimited."
+                               FontSize="11" Foreground="{StaticResource AccentOrangeBrush}"
+                               TextWrapping="Wrap" Margin="0,0,0,6"/>
+                    <TextBox Text="{Binding MaxRamMb, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource DarkTextBox}" Margin="0,0,0,4"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Install path + port check -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Files &amp; Ports" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="Install directory" Style="{StaticResource FieldLabel}"/>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding Server.InstallPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/>
+                        <Button Grid.Column="1" Content="📁 Open" Style="{StaticResource GhostButton}" Margin="8,0,0,0"
+                                Command="{Binding OpenInstallFolderCommand}"/>
+                    </Grid>
+                    <Button Content="🔍  Check ports" Style="{StaticResource GhostButton}"
+                            HorizontalAlignment="Left" Command="{Binding CheckPortsCommand}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Server hygiene -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Server Hygiene" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,10"
+                               Text="Scans for leftover Rust log files, crash dumps, and interrupted-update temp files. Oxide and Carbon folders are always protected. Only works while the server is stopped."/>
+                    <Button Content="🧹 Scan &amp; clean up junk files" Style="{StaticResource GhostButton}"
+                            HorizontalAlignment="Left" Command="{Binding CleanupJunkFilesCommand}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Templates -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+                <StackPanel>
+                    <TextBlock Text="Server Templates" Style="{StaticResource SectionHeader}"/>
+
+                    <!-- Tallennuslomake -->
+                    <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="6"
+                            Padding="10,8" Margin="0,4,0,10">
+                        <StackPanel>
+                            <TextBlock Text="Save current settings as template"
+                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="120"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Name *" Style="{StaticResource FieldLabel}" Margin="0,0,0,2"/>
+                                    <TextBox Style="{StaticResource DarkTextBox}"
+                                             Text="{Binding TemplateName, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Template name (required)"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Category" Style="{StaticResource FieldLabel}" Margin="0,0,0,2"/>
+                                    <TextBox Style="{StaticResource DarkTextBox}"
+                                             Text="{Binding TemplateCategory, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Category (optional)"/>
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Text="Tags (comma-separated)" Style="{StaticResource FieldLabel}" Margin="0,6,0,2"/>
+                            <TextBox Style="{StaticResource DarkTextBox}" Margin="0,0,0,4"
+                                     Text="{Binding TemplateTagsInput, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Tags separated by commas, e.g. pvp,hardcore,competitive"/>
+                            <TextBlock Text="Description" Style="{StaticResource FieldLabel}" Margin="0,0,0,2"/>
+                            <TextBox Style="{StaticResource DarkTextBox}" Margin="0,0,0,6"
+                                     Text="{Binding TemplateDescription, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Description (optional)"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="💾 Save as template" Style="{StaticResource GhostButton}" Margin="0,0,8,0"
+                                        Command="{Binding SaveAsTemplateCommand}"/>
+                                <Button Content="📥 Import from file" Style="{StaticResource GhostButton}"
+                                        Command="{Binding ImportTemplatesCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Suodatuspalkki -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="Filter:" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <ComboBox Style="{StaticResource DarkComboBox}" Width="130" Margin="0,0,6,0"
+                                  ItemsSource="{Binding AvailableCategories}"
+                                  SelectedItem="{Binding TemplateFilterCategory}"
+                                  ToolTip="Filter by category"/>
+                        <TextBox Style="{StaticResource DarkTextBox}" Width="130"
+                                 Text="{Binding TemplateFilterTag, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Filter by tag"/>
+                    </StackPanel>
+
+                    <!-- Mallilista -->
+                    <TextBlock Text="No templates for this game." FontSize="12"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Visibility="{Binding FilteredTemplates.Count, Converter={StaticResource ZeroToVis}, Mode=OneWay}"/>
+                    <ItemsControl ItemsSource="{Binding FilteredTemplates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="6"
+                                        Padding="10,8" Margin="0,0,0,4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Nimi + kategoria + tagit -->
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                                           Text="{Binding Category}"
+                                                           Visibility="{Binding Category.Length, Converter={StaticResource ZeroToVis}}"/>
+                                                <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                                           Text=" · " Margin="0"
+                                                           Visibility="{Binding Category.Length, Converter={StaticResource ZeroToVis}}"/>
+                                                <ItemsControl ItemsSource="{Binding Tags}"
+                                                              Visibility="{Binding Tags.Count, Converter={StaticResource ZeroToVis}, Mode=OneWay}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel Orientation="Horizontal"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="#2A4A6B" CornerRadius="4"
+                                                                    Padding="5,1" Margin="0,0,3,0">
+                                                                <TextBlock Text="{Binding}" FontSize="10"
+                                                                           Foreground="#7EC8E3"/>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Toimintopainikkeet -->
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Content="↺" Style="{StaticResource GhostButton}"
+                                                    Width="32" Padding="0" Margin="0,0,2,0"
+                                                    ToolTip="Apply this template"
+                                                    Command="{Binding DataContext.ApplyTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Content="⎘" Style="{StaticResource GhostButton}"
+                                                    Width="32" Padding="0" Margin="0,0,2,0"
+                                                    ToolTip="Kloonaa malli"
+                                                    Command="{Binding DataContext.CloneTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Content="📤" Style="{StaticResource GhostButton}"
+                                                    Width="32" Padding="0" Margin="0,0,2,0"
+                                                    ToolTip="Vie tiedostoon"
+                                                    Command="{Binding DataContext.ExportTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Content="🗑" Style="{StaticResource DangerButton}"
+                                                    Width="32" Padding="0"
+                                                    ToolTip="Delete template"
+                                                    Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

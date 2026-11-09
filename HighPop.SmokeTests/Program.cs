@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.12", "application and release metadata report v1.0.12");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.12", "1.0.11")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.12")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.12", "1.0.12")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.12"),
+Check(AppInfo.Version == "1.0.13", "application and release metadata report v1.0.13");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.13", "1.0.12")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.13")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.13", "1.0.13")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.13"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -1202,6 +1202,34 @@ try
     }
     catch (InvalidDataException) { traversalRejected = true; }
     Check(traversalRejected, "preset path traversal rejected");
+
+    // Invalid or duplicate server Ids are repaired on load and written back, so loading again
+    // (and lifecycle saves that look servers up by Id) never multiplies the server list.
+    {
+        var idConfig = new ConfigService();
+        var savedServersJson = File.Exists(idConfig.ServersFile) ? File.ReadAllText(idConfig.ServersFile) : null;
+        try
+        {
+            var dupId = Guid.NewGuid().ToString();
+            File.WriteAllText(idConfig.ServersFile,
+                $$"""[{"Id":"not-a-guid","GameId":"rust","DisplayName":"A"},{"Id":"{{dupId}}","GameId":"rust","DisplayName":"B"},{"Id":"{{dupId}}","GameId":"rust","DisplayName":"C"}]""");
+            var firstLoad = idConfig.LoadServers();
+            foreach (var loaded in firstLoad) idConfig.PersistServerLifecycle(loaded);
+            var secondLoad = new ConfigService().LoadServers();
+            using var savedDoc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(idConfig.ServersFile));
+            var savedIds = savedDoc.RootElement.EnumerateArray().Select(e => e.GetProperty("Id").GetString()).ToList();
+            Check(firstLoad.Count == 3 && secondLoad.Count == 3 && savedIds.Count == 3,
+                "repaired server ids do not duplicate servers across loads");
+            Check(savedIds.Distinct().Count() == 3 && savedIds.All(id => Guid.TryParse(id, out _))
+                    && secondLoad.Select(s => s.Id).OrderBy(id => id).SequenceEqual(firstLoad.Select(s => s.Id).OrderBy(id => id)),
+                "repaired server ids are persisted");
+        }
+        finally
+        {
+            if (savedServersJson != null) File.WriteAllText(idConfig.ServersFile, savedServersJson);
+            else File.Delete(idConfig.ServersFile);
+        }
+    }
 
     var config = new ConfigService { BackupPath = Path.Combine(testRoot, "backups") };
     var backups = new BackupService(config);

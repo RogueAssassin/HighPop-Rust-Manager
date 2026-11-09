@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.13
+
+- Reworked the server page. The 14 tabs are now six groups in a sidebar: Console, Players, Configure, Automation, Monitoring and Files, each with its pages along the top. The colours are calmer and the active page is easier to see.
+- The server page loads faster and switching servers is about five times quicker (about 15 ms instead of 65–100 ms in testing). Each page is now built the first time it is opened instead of all 14 at once. Switching servers only refreshes the page on screen.
+- Charts are redrawn only while the Charts page is open.
+- Once the console holds 2,000 lines, dropping the oldest line no longer searches the whole filtered list, which cuts UI work on busy servers.
+- When HighPop has been minimised or in the tray for 10 seconds it compacts memory and returns idle pages to Windows. In testing its RAM use while minimised dropped from about 205 MB to 55 MB. Opening the window again brings back only what is shown.
+- Removed a hidden copy of the automation settings from the Settings page. Everything it held is on the Automation page.
+- Fixed servers being duplicated on every launch when `servers.json` contained a server with a missing, invalid or repeated Id (for example after hand editing). The repaired Ids are now saved straight away.
+- Updated Microsoft.Data.Sqlite and Microsoft.Extensions.DependencyInjection to 10.0.14, and removed the unused Microsoft.CodeAnalysis.CSharp package. No known vulnerable or deprecated packages remain.
+- Advanced metadata to v1.0.13.
+
 ## 1.0.12
 
 - Added a **Command / 💬 Chat** switch next to the Console input. In Chat mode, whatever you type goes to every player as in-game chat. In Command mode the box runs Rust console commands as before, so chat needs `say` first, for example `say This is a test`.
