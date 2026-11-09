@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10
+
+- Fixed the Console not following new output after reconnecting over Remote Desktop, unlocking the session or restoring the window: with **⬇ Auto scroll** on, it now re-renders and jumps to the newest line on its own instead of needing a manual scroll.
+- Auto scroll now scrolls the console's own scroll viewer to the end after layout, once per batch of lines, instead of calling `ScrollIntoView` for every line. This keeps it at the true end with long wrapped lines, filter changes, the 2,000-line trim and window resizes, and cuts the UI work during heavy log bursts.
+- Advanced metadata to v1.0.10.
+
 ## 1.0.9
 
 - Added custom join domain support. **Server → Settings → Public join domain** (for example `rust.example.com`) launches Rust with `+server.favoritesEndpoint`, so favourites follow the domain through IP and port changes, as Facepunch documents.
