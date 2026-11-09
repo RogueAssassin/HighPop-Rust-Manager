@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.12
+
+- Added a **Command / 💬 Chat** switch next to the Console input. In Chat mode, whatever you type goes to every player as in-game chat. In Command mode the box runs Rust console commands as before, so chat needs `say` first, for example `say This is a test`.
+- Typing plain text in Command mode used to be sent to Rust as a command named after its first word. Rust ignores unknown commands without replying, so the console only showed "No response from the Rust server within 8s". HighPop now checks the first word against the Rogue Rust Reference before sending and says straight away that it is not a Rust command, and how to message players instead. The line is still sent in case a plugin handles it. Carbon, Oxide and Harmony commands (`c.`, `o.`, `carbon.`, `oxide.`, `umod.`, `harmony.`) are not flagged.
+- Advanced metadata to v1.0.12.
+
 ## 1.0.11
 
 - Fixed in-game `say` from the Console tab not reaching players. Rust ignores commands written to its standard input, but HighPop used that input whenever the console was not connected to WebRCON, and logged the message as sent. Rust commands now always go over WebRCON. The console connects on demand, and the process console is only a last resort, with a warning that it may not arrive.

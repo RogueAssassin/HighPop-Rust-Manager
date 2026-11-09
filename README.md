@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.11-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.12-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -21,7 +21,7 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 |---|---|
 | Server setup | Streamed SteamCMD bootstrap and staged progress, Rust install/validate/update, independent server folders, templates, editable Game/Query/WebRCON/Rust+ ports, and collision checks |
 | Lifecycle | Start, safe stop, exact-PID force stop, restart, auto-start, always-on recovery, crash-loop protection, verified process reattachment, and durable operation history |
-| Console and players | Facepunch WebRCON as the primary command path for Rust (Rust ignores process input, so it is only a last resort), on-demand connection, `say` with in-game delivery confirmation, live in-game chat and F7 reports, a shared background channel, reconnect handling, a filtered live console pinned to the newest line (including after RDP reconnects), Rogue Rust Reference search, export, a live server strip (players, queue, FPS, entities, memory, uptime), player rows with health, IP, family-share and anti-hack flags, a give menu, mute, kill, teleport, blueprints, inventory, loadouts, moderator and queue-skip tools, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
+| Console and players | Facepunch WebRCON as the primary command path for Rust (Rust ignores process input, so it is only a last resort), on-demand connection, a Command/💬 Chat switch on the console box, `say` with in-game delivery confirmation, live in-game chat and F7 reports, a shared background channel, reconnect handling, a filtered live console pinned to the newest line (including after RDP reconnects), Rogue Rust Reference search, export, a live server strip (players, queue, FPS, entities, memory, uptime), player rows with health, IP, family-share and anti-hack flags, a give menu, mute, kill, teleport, blueprints, inventory, loadouts, moderator and queue-skip tools, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
 | Rust configuration | `server.cfg` variables, browser tags, Steam branch selection, custom maps, log paths, presets, launch arguments, CPU affinity, priority, and optional RAM limits |
 | Mods | Oxide/uMod and Carbon installation/detection, framework-aware folders, plugin/config inventory, live plugin reload, verified RogueRust Stable/Testing channels, and one-click install/update from the RogueRust plugin catalog |
 | Backups and wipes | Full and incremental ZIP backups, retention, pre-wipe safety backups, path-safe restore, map wipe, and full wipe |
@@ -41,11 +41,11 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 
 The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
 
-HPRM v1.0.11 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
+HPRM v1.0.12 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
 
 ### Supported server software
 
-| Component | v1.0.11 support |
+| Component | v1.0.12 support |
 |---|---|
 | Rust Dedicated Server | Steam public and staging branches through SteamCMD; Vanilla uses the authoritative live Rust logfile |
 | Carbon | Current installed/released Carbon framework with process-stream console reporting |

@@ -968,9 +968,53 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private async Task SendConsoleCommandAsync()
     {
         if (string.IsNullOrWhiteSpace(ConsoleInput)) return;
-        var cmd = ConsoleInput;
+        var cmd = ConsoleInput.Trim();
         ConsoleInput = string.Empty;
+        // Chat mode: plain text goes to every player. A typed "say …" is left as it is.
+        if (ConsoleChatMode && IsRust && !IsSayCommand(cmd))
+            cmd = "say " + RustModerationCommands.CleanQuoted(cmd);
         await RunCommandTextAsync(cmd);
+    }
+
+    /// <summary>
+    /// When on, the console box sends what is typed as in-game chat (<c>say</c>) instead of as a
+    /// Rust console command. Typing a sentence in command mode made Rust look for a command named
+    /// after the first word, which it silently ignores.
+    /// </summary>
+    [ObservableProperty] private bool _consoleChatMode;
+
+    /// <summary>
+    /// True when the first word of <paramref name="command"/> is not a Rust command or ConVar in the
+    /// Rogue Rust Reference. Plugin commands are not in the reference, so callers phrase the result
+    /// as a hint, not an error.
+    /// </summary>
+    private async Task<bool> IsUnknownRustCommandAsync(string command)
+    {
+        var text = command.TrimStart();
+        var end = text.IndexOfAny([' ', '\t']);
+        var name = (end < 0 ? text : text[..end]).ToLowerInvariant();
+        if (name.Length == 0) return false;
+        // Carbon, Oxide and Harmony commands are not part of the Rust reference.
+        if (name.StartsWith("c.", StringComparison.Ordinal)
+            || name.StartsWith("o.", StringComparison.Ordinal)
+            || name.StartsWith("carbon.", StringComparison.Ordinal)
+            || name.StartsWith("oxide.", StringComparison.Ordinal)
+            || name.StartsWith("umod.", StringComparison.Ordinal)
+            || name.StartsWith("harmony.", StringComparison.Ordinal))
+            return false;
+        try
+        {
+            var entries = _allRustReferenceEntries;
+            if (entries.Count == 0) entries = (await _rustReference.LoadAsync()).Entries.ToList();
+            if (entries.Count == 0) return false;
+            return !entries.Any(e =>
+                e.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+                || e.Name.Equals("global." + name, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return false;
+        }
     }
 
     [RelayCommand(AllowConcurrentExecutions = true)]
@@ -3249,7 +3293,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     if (rcon.IsConnected) return;
                     throw new IOException("the connection closed while sending");
                 }
+                // Rust answers an unknown command with nothing at all, which looked like a timeout.
+                // Warn straight away; the line is still sent in case it is a plugin command.
+                var unknown = await IsUnknownRustCommandAsync(cmd);
+                if (unknown)
+                {
+                    var word = cmd.TrimStart().Split([' ', '\t'], 2)[0];
+                    AppendLog(
+                        $"[RCON] '{word}' is not a Rust console command, so Rust will ignore this line unless a plugin handles it. " +
+                        $"To message players, type say {cmd.Trim()} or switch the input to 💬 Chat.",
+                        ConsoleMessageType.Warning);
+                }
                 var r = await rcon.SendCommandAsync(cmd);
+                if (unknown && r.StartsWith("[RCON] No response", StringComparison.Ordinal) && rcon.IsConnected)
+                    return;
                 if (!string.IsNullOrEmpty(r))
                     AppendLog(r, r.StartsWith("[RCON]", StringComparison.Ordinal)
                         ? ConsoleMessageType.Warning
