@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.0.10-00BFEF">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.0.11-00BFEF">
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-38C976">
@@ -21,7 +21,7 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 |---|---|
 | Server setup | Streamed SteamCMD bootstrap and staged progress, Rust install/validate/update, independent server folders, templates, editable Game/Query/WebRCON/Rust+ ports, and collision checks |
 | Lifecycle | Start, safe stop, exact-PID force stop, restart, auto-start, always-on recovery, crash-loop protection, verified process reattachment, and durable operation history |
-| Console and players | Facepunch WebRCON with concurrent, non-blocking commands and instant in-game `say`, a shared background channel, reconnect handling, filtered live console that stays pinned to the newest line (including after RDP reconnects and restoring from minimised), Rogue Rust Reference command/ConVar search, export, player sessions, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
+| Console and players | Facepunch WebRCON as the primary command path for Rust (Rust ignores process input, so it is only a last resort), on-demand connection, `say` with in-game delivery confirmation, live in-game chat and F7 reports, a shared background channel, reconnect handling, a filtered live console pinned to the newest line (including after RDP reconnects), Rogue Rust Reference search, export, a live server strip (players, queue, FPS, entities, memory, uptime), player rows with health, IP, family-share and anti-hack flags, a give menu, mute, kill, teleport, blueprints, inventory, loadouts, moderator and queue-skip tools, kick, timed/permanent bans, notes, whitelist permissions, and bulk moderation |
 | Rust configuration | `server.cfg` variables, browser tags, Steam branch selection, custom maps, log paths, presets, launch arguments, CPU affinity, priority, and optional RAM limits |
 | Mods | Oxide/uMod and Carbon installation/detection, framework-aware folders, plugin/config inventory, live plugin reload, verified RogueRust Stable/Testing channels, and one-click install/update from the RogueRust plugin catalog |
 | Backups and wipes | Full and incremental ZIP backups, retention, pre-wipe safety backups, path-safe restore, map wipe, and full wipe |
@@ -41,11 +41,11 @@ HighPop Rust Manager is a local-first control panel built specifically for Rust 
 
 The application is self-contained; a separate .NET runtime is not required. Windows SmartScreen may warn for unsigned community builds. Administrator rights are only required for system-wide firewall or URL ACL changes. Automatic firewall management can be disabled per server when Group Policy or another firewall product owns the rules.
 
-HPRM v1.0.10 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
+HPRM v1.0.11 uses .NET 10 and supports Windows 10/11 and Windows Server 2012 through 2025 within Microsoft's supported .NET/Windows lifecycle combinations. The firewall API itself exists on Windows 7 and Windows Server 2008 R2, but the current HPRM runtime does not support those retired operating systems.
 
 ### Supported server software
 
-| Component | v1.0.10 support |
+| Component | v1.0.11 support |
 |---|---|
 | Rust Dedicated Server | Steam public and staging branches through SteamCMD; Vanilla uses the authoritative live Rust logfile |
 | Carbon | Current installed/released Carbon framework with process-stream console reporting |
@@ -124,6 +124,36 @@ in-game messages complete as soon as they are sent instead of waiting out a time
 read-only `serverinfo` probe so a wrong RCON password shows as a failed connection instead of a socket
 that closes silently. WebRCON output that Oxide's live log does not show (for example RogueRust
 diagnostics) is written to the Console tab.
+
+Rust does not read commands from its standard input: a redirected pipe accepts the line and Rust drops
+it. HighPop therefore sends every Rust command over WebRCON, connecting on demand when the console is not
+connected yet, and uses the process console only as a last resort, with a warning. Rust gives `say` no
+reply, but it broadcasts the chat line to every WebRCON client, so HighPop confirms each message:
+**Delivered in game**, or a warning when a plugin blocked it.
+
+The RCON password is sent exactly as typed, because Rust compares the raw request path and never
+URL-decodes it. Spaces, double quotes, backticks, `# % / < > ? [ \ ] ^ { | }` and non-ASCII characters cannot be carried in that
+path, so HighPop reports such passwords as unusable instead of retrying them. Passwords that HighPop
+generates are hexadecimal and always work.
+
+## Players
+
+The Players tab shows live server numbers from `serverinfo` (players, queue, joining, server FPS,
+entities, memory, uptime and in-game time). Each player row shows ping, play time, health, IP address,
+Steam Family Sharing (the game owner's account, which shares its bans) and Rust's anti-hack violation
+level, with buttons for the Steam profile, copying the Steam64 ID, kick, ban and teleport.
+
+- **Player tools**: a give menu (common items by category with search, or any short name, an amount
+  and an optional skin ID; to one player or everyone), mute and unmute, team info, unlock or reset
+  blueprints, clear inventory, kill, teleport one player to another, moderator add/remove (saved with
+  `server.writecfg`), queue skip, saved loadouts, and the mute and ban lists. Rust's reply is shown under
+  the target.
+- **Chat & reports**: live in-game chat from WebRCON (starting with the last 50 lines from `chat.tail`),
+  a message box for all players with delivery confirmation, and F7 player reports as they arrive.
+
+Every player tool targets the Steam64 ID when it is known, quotes names, and validates item names,
+amounts and loadout names, so a value cannot inject a second console command. Destructive actions ask
+for confirmation first.
 
 ## Portable layout
 

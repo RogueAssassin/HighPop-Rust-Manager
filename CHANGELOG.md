@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.11
+
+- Fixed in-game `say` from the Console tab not reaching players. Rust ignores commands written to its standard input, but HighPop used that input whenever the console was not connected to WebRCON, and logged the message as sent. Rust commands now always go over WebRCON. The console connects on demand, and the process console is only a last resort, with a warning that it may not arrive.
+- `say` is now confirmed: Rust broadcasts every chat line to WebRCON clients, so the console reports **Delivered in game**, or warns when Rust accepted the message but did not broadcast it (for example, a plugin blocking `OnServerMessage`).
+- Fixed WebRCON failing for RCON passwords containing symbols such as `! $ + = @`. HighPop percent-encoded the password, but Rust compares the raw request path without decoding it. Passwords are now sent as typed. Passwords a URL cannot carry at all (spaces, `" # % / ? \` and non-ASCII) are reported with the reason instead of being retried every few seconds. WebRCON connection errors now say why they failed.
+- Background commands (scheduled broadcasts, restart warnings, Web API, Discord and stop requests) also use WebRCON first for Rust.
+- Removed the `+rcon.enabled 1` launch argument; Rust has no such command (the server log reported it as not found).
+- Players tab:
+  - A live server strip from `serverinfo`: players, queue, joining, server FPS, entities, memory, uptime and in-game time.
+  - Player rows now show health, IP address, Steam Family Sharing (with the owner's account) and the anti-hack violation level, with buttons to open the Steam profile, copy the Steam64 ID and choose a teleport destination.
+  - New **Player tools** tab:
+    - A give menu: 131 common items in categories with search, or any short name, with an amount, quick amounts and an optional skin ID. Items go to the selected player, or to everyone online after a confirmation.
+    - Mute and unmute, team info, unlocking or resetting blueprints, clearing an inventory, kill, and teleporting one player to another.
+    - Adding or removing moderators (saved with `server.writecfg`) and queue skip.
+    - Saved loadouts, and the mute and Rust ban lists.
+    - Rust's reply to each command is shown in the panel. Destructive actions ask for confirmation first.
+  - New **Chat & reports** tab: live in-game chat over WebRCON (starting with the last 50 lines), a message-all box with delivery confirmation, and F7 player reports as they arrive (reports are also written to the console).
+  - Every tool targets a player's Steam64 ID when it is known, quotes names, and validates item short names, amounts and loadout names, so typed values cannot inject a second console command.
+- Smoke coverage: the fake WebRCON server now compares the raw password path the way Rust does, using a password with symbols, and broadcasts `say` as chat. New tests cover `say` delivery and blocked messages, the chat relay, password validation, the player-tool command builders, the item catalog, the `serverinfo`, `playerlist` and F7 report parsers, and numeric broadcast types. Advanced metadata to v1.0.11.
+
 ## 1.0.10
 
 - Fixed the Console not following new output after reconnecting over Remote Desktop, unlocking the session or restoring the window: with **⬇ Auto scroll** on, it now re-renders and jumps to the newest line on its own instead of needing a manual scroll.

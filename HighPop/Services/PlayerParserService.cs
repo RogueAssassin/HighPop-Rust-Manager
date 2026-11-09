@@ -115,7 +115,41 @@ public static class PlayerParserService
             SteamId = steamId,
             Ping = ReadInt(item, "Ping", "Latency"),
             ConnectedSeconds = ReadInt(item, "ConnectedSeconds", "ConnectionSeconds", "Duration"),
+            Address = StripPort(UiTextSanitizer.Normalize(
+                ReadText(item, "Address", "IPAddress", "Ip"), UiTextSanitizer.MaxLabelLength)),
+            OwnerSteamId = UiTextSanitizer.Normalize(
+                ReadText(item, "OwnerSteamID", "OwnerSteamId"), UiTextSanitizer.MaxLabelLength),
+            Health = TryGetProperty(item, "Health", out _) ? ReadDouble(item, "Health") : -1,
+            // Rust's playerlist misspells this field "VoiationLevel".
+            ViolationLevel = ReadDouble(item, "VoiationLevel", "ViolationLevel"),
         });
+    }
+
+    /// <summary>"203.0.113.5:61234" → "203.0.113.5"; "[2001:db8::1]:61234" → "2001:db8::1".</summary>
+    internal static string StripPort(string address)
+    {
+        address = address.Trim();
+        if (address.StartsWith('['))
+        {
+            var close = address.IndexOf(']');
+            return close > 0 ? address[1..close] : address;
+        }
+        var colon = address.LastIndexOf(':');
+        return colon > 0 && address.IndexOf(':') == colon ? address[..colon] : address;
+    }
+
+    private static double ReadDouble(JsonElement item, params string[] properties)
+    {
+        foreach (var property in properties)
+        {
+            if (!TryGetProperty(item, property, out var value)) continue;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
+                return Math.Max(0, number);
+            if (double.TryParse(value.ToString(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                return Math.Max(0, parsed);
+        }
+        return 0;
     }
 
     private static bool HasProperty(JsonElement item, string property) =>

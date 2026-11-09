@@ -1174,20 +1174,31 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         try
         {
             if (_rcon != null)
+            {
+                _rcon.ChatReceived -= OnRconChat;
+                _rcon.ReportReceived -= OnRconReport;
                 await _rcon.DisconnectAsync(cancellationToken);
-            _rcon = new RconService();
+            }
+            var rcon = new RconService();
+            rcon.ChatReceived += OnRconChat;
+            rcon.ReportReceived += OnRconReport;
+            _rcon = rcon;
 
-            var ip = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp == "0.0.0.0"
+            var ip = string.IsNullOrEmpty(Server.ServerIp) || Server.ServerIp is "0.0.0.0" or "::" or "[::]"
                 ? "127.0.0.1"
                 : Server.ServerIp;
             var port = Server.RconPort > 0 ? Server.RconPort : Server.ServerPort + 1;
-            var ok = await _rcon.ConnectAsync(ip, port, Server.RconPassword, cancellationToken);
+            var ok = await rcon.ConnectAsync(ip, port, Server.RconPassword, cancellationToken);
+            var problem = rcon.LastError;
+            // A password Rust can never receive will not start working on a retry.
+            var permanent = !ok && !RconService.CanSendPassword(Server.RconPassword, out _);
 
             UiDispatcher.Post(() =>
             {
                 RconConnected = ok;
                 RconStatusText = ok
                     ? $"Connected to {ip}:{port}"
+                    : permanent ? "RCON password cannot be used over WebRCON"
                     : automatic ? $"Waiting for WebRCON on {ip}:{port}" : "Connection failed";
             });
             if (ok)
@@ -1197,11 +1208,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 AppendLog("[RCON] " + (automatic ? "Auto-connected." : Loc.RconConnectedMsg),
                     ConsoleMessageType.System);
                 AddActionLog(automatic ? "WebRCON auto-connected" : "WebRCON connected");
+                _ = LoadRecentChatAsync(rcon);
             }
-            else if (!automatic)
+            else if (!automatic || permanent)
             {
-                AppendLog("[RCON] " + Loc.RconFailedMsg, ConsoleMessageType.Error);
+                AppendLog("[RCON] " + (problem.Length > 0 ? problem : Loc.RconFailedMsg), ConsoleMessageType.Error);
                 AddActionLog("WebRCON connection failed");
+                if (permanent) _rconAutoConnectCts?.Cancel();
             }
             return ok;
         }
@@ -2277,6 +2290,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 {
                     parsed = rconPlayers;
                     querySource = "WebRCON";
+                    try { await RefreshServerInfoAsync(rcon); }
+                    catch (Exception ex) when (ex is not OutOfMemoryException) { }
                 }
                 else if (!rcon.IsConnected)
                 {
@@ -2386,6 +2401,247 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     private void RefreshModerationProfiles() =>
         ModerationProfiles = _moderation.GetRecords(Server.Id);
+
+    // ── Player tools (give menu, mute, teleport, roles, loadouts) ────────────
+
+    [ObservableProperty] private RustServerInfo? _serverInfo;
+    [ObservableProperty] private string _playerToolOutput = string.Empty;
+    [ObservableProperty] private string _giveCategory = RustItemCatalog.AllCategories;
+    [ObservableProperty] private string _giveSearch = string.Empty;
+    [ObservableProperty] private IReadOnlyList<RustCatalogItem> _giveItems = RustItemCatalog.Items;
+    [ObservableProperty] private RustCatalogItem? _selectedGiveItem;
+    [ObservableProperty] private string _giveShortName = string.Empty;
+    [ObservableProperty] private string _giveAmount = "1";
+    [ObservableProperty] private string _giveSkin = string.Empty;
+    [ObservableProperty] private string _teleportDestination = string.Empty;
+    [ObservableProperty] private string _loadoutName = string.Empty;
+
+    public IReadOnlyList<string> GiveCategories => RustItemCatalog.Categories;
+
+    partial void OnGiveCategoryChanged(string value) => FilterGiveItems();
+    partial void OnGiveSearchChanged(string value) => FilterGiveItems();
+    partial void OnSelectedGiveItemChanged(RustCatalogItem? value)
+    {
+        if (value == null) return;
+        GiveShortName = value.ShortName;
+        GiveAmount = value.DefaultAmount.ToString();
+    }
+
+    private void FilterGiveItems() => GiveItems = RustItemCatalog.Filter(GiveCategory, GiveSearch);
+
+    /// <summary>The player the tools act on: a 17-digit Steam64 ID when known, else the typed name.</summary>
+    private string ToolTarget()
+    {
+        var (steamId, name) = ResolvePlayer(PlayerInput);
+        return RustModerationCommands.IsSteamId(steamId) ? steamId : name;
+    }
+
+    private string ToolTargetName() => ResolvePlayer(PlayerInput).PlayerName;
+
+    /// <summary>Sends a player-tool command over WebRCON and shows Rust's reply in the tools panel.</summary>
+    private async Task SendPlayerToolAsync(string command, string description)
+    {
+        if (!IsRunning)
+        {
+            PlayerToolOutput = "Start the server first.";
+            return;
+        }
+        AppendLog("> " + command, ConsoleMessageType.Input);
+        AddActionLog(description);
+        var rcon = await EnsureRconForCommandAsync();
+        if (rcon == null)
+        {
+            await _manager.SendCommandAsync(Server.Id, command);
+            UiDispatcher.Post(() => PlayerToolOutput =
+                $"{description}: sent without WebRCON, so Rust's reply is not available. Connect WebRCON on the Console tab.");
+            return;
+        }
+
+        var reply = await rcon.SendCommandAsync(command);
+        if (reply.Length > 0)
+            AppendLog(reply, reply.StartsWith("[RCON]", StringComparison.Ordinal)
+                ? ConsoleMessageType.Warning
+                : ConsoleMessageType.Info);
+        UiDispatcher.Post(() => PlayerToolOutput = reply.Length > 0
+            ? $"{description}: {UiTextSanitizer.Normalize(reply, 2000)}"
+            : $"{description}: done at {DateTime.Now:HH:mm:ss}.");
+    }
+
+    private static bool Confirm(string title, string message) =>
+        System.Windows.MessageBox.Show(message, "HighPop — " + title,
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Warning) == System.Windows.MessageBoxResult.Yes;
+
+    private bool TryReadGive(out int amount, out ulong skin)
+    {
+        skin = 0;
+        if (!int.TryParse(GiveAmount, out amount))
+        {
+            PlayerToolOutput = "Amount must be a whole number.";
+            return false;
+        }
+        if (!string.IsNullOrWhiteSpace(GiveSkin) && !ulong.TryParse(GiveSkin.Trim(), out skin))
+        {
+            PlayerToolOutput = "Skin must be a Workshop skin ID (numbers only), or blank.";
+            return false;
+        }
+        return true;
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task GiveItemAsync()
+    {
+        if (!TryReadGive(out var amount, out var skin)) return;
+        if (!RustPlayerCommands.TryGive(ToolTarget(), GiveShortName, amount, skin, out var command, out var error))
+        {
+            PlayerToolOutput = error;
+            return;
+        }
+        var label = RustItemCatalog.Find(GiveShortName)?.DisplayName ?? GiveShortName.Trim();
+        await SendPlayerToolAsync(command, $"Gave {amount:N0} × {label} to {ToolTargetName()}");
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task GiveItemToAllAsync()
+    {
+        if (!TryReadGive(out var amount, out _)) return;
+        if (!RustPlayerCommands.TryGiveAll(GiveShortName, amount, out var command, out var error))
+        {
+            PlayerToolOutput = error;
+            return;
+        }
+        var label = RustItemCatalog.Find(GiveShortName)?.DisplayName ?? GiveShortName.Trim();
+        if (!Confirm("Give to everyone",
+                $"Give {amount:N0} × {label} to all {OnlinePlayers.Count} connected player(s)?\n\nRust announces this in chat."))
+            return;
+        await SendPlayerToolAsync(command, $"Gave {amount:N0} × {label} to everyone");
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task PlayerActionAsync(string? actionName)
+    {
+        if (!Enum.TryParse<RustPlayerAction>(actionName, out var action)) return;
+        if (!RustPlayerCommands.TryPlayerAction(action, ToolTarget(), out var command, out var error))
+        {
+            PlayerToolOutput = error;
+            return;
+        }
+        var name = ToolTargetName();
+        string? warning = action switch
+        {
+            RustPlayerAction.Kill => $"Kill {name}? They drop their inventory where they stand.",
+            RustPlayerAction.ClearInventory => $"Delete everything in {name}'s inventory? This cannot be undone.",
+            RustPlayerAction.UnlockBlueprints => $"Unlock every blueprint for {name}?",
+            RustPlayerAction.ResetBlueprints => $"Reset {name}'s learned blueprints to the defaults? This cannot be undone.",
+            _ => null,
+        };
+        var description = action switch
+        {
+            RustPlayerAction.Mute => $"Muted {name}",
+            RustPlayerAction.Unmute => $"Unmuted {name}",
+            RustPlayerAction.Kill => $"Killed {name}",
+            RustPlayerAction.ClearInventory => $"Cleared the inventory of {name}",
+            RustPlayerAction.UnlockBlueprints => $"Unlocked all blueprints for {name}",
+            RustPlayerAction.ResetBlueprints => $"Reset blueprints for {name}",
+            RustPlayerAction.TeamInfo => $"Team of {name}",
+            _ => action.ToString(),
+        };
+        if (warning != null && !Confirm(action.ToString(), warning)) return;
+        await SendPlayerToolAsync(command, description);
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task TeleportPlayerAsync()
+    {
+        var (destinationId, destinationName) = ResolvePlayer(TeleportDestination);
+        var destination = RustModerationCommands.IsSteamId(destinationId) ? destinationId : destinationName;
+        if (!RustPlayerCommands.TryTeleport(ToolTarget(), destination, out var command, out var error))
+        {
+            PlayerToolOutput = error;
+            return;
+        }
+        await SendPlayerToolAsync(command, $"Teleported {ToolTargetName()} to {destinationName}");
+    }
+
+    [RelayCommand]
+    private void UseAsTeleportDestination(Models.OnlinePlayer? player)
+    {
+        if (player == null) return;
+        TeleportDestination = RustModerationCommands.IsSteamId(player.SteamId) ? player.SteamId : player.Name;
+        PlayerToolOutput = $"Teleport destination: {player.Name}.";
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task SetModeratorAsync(string? grant)
+    {
+        var add = grant == "True";
+        var (steamId, name) = ResolvePlayer(PlayerInput);
+        if (!RustPlayerCommands.TrySetModerator(steamId, name, add, out var commands, out var error))
+        {
+            PlayerToolOutput = error;
+            return;
+        }
+        if (add && !Confirm("Add moderator",
+                $"Make {name} a Rust moderator (auth level 1)?\n\nModerators get the F1 admin console and admin commands."))
+            return;
+        foreach (var command in commands)
+            await SendPlayerToolAsync(command, add ? $"Made {name} a moderator" : $"Removed moderator from {name}");
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task SkipQueueAsync()
+    {
+        var (steamId, name) = ResolvePlayer(PlayerInput);
+        if (!RustPlayerCommands.TrySkipQueue(steamId, out var command, out var error))
+        {
+            PlayerToolOutput = error;
+            return;
+        }
+        await SendPlayerToolAsync(command, $"Gave {name} queue skip");
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task DeployLoadoutAsync()
+    {
+        if (!RustPlayerCommands.TryDeployLoadout(LoadoutName, ToolTarget(), out var command, out var error))
+        {
+            PlayerToolOutput = error;
+            return;
+        }
+        await SendPlayerToolAsync(command, $"Deployed loadout {LoadoutName.Trim()} to {ToolTargetName()}");
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task ListLoadoutsAsync() => SendPlayerToolAsync("inventory.listloadouts", "Saved loadouts");
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task ListMutesAsync() => SendPlayerToolAsync("mutelist", "Muted players");
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task ListBansAsync() => SendPlayerToolAsync("banlistex", "Rust ban list");
+
+    [RelayCommand]
+    private void OpenSteamProfile(Models.OnlinePlayer? player) =>
+        OpenTrustedUrl(player?.SteamProfileUrl, "steamcommunity.com");
+
+    [RelayCommand]
+    private void CopyPlayerSteamId(Models.OnlinePlayer? player)
+    {
+        if (player == null || player.SteamId.Length == 0) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(player.SteamId);
+            ModerationStatus = $"Copied {player.Name}'s Steam64 ID.";
+        }
+        catch (System.Runtime.InteropServices.ExternalException) { }
+    }
+
+    private async Task RefreshServerInfoAsync(RconService rcon)
+    {
+        var reply = await rcon.SendCommandAsync("serverinfo", TimeSpan.FromSeconds(5));
+        if (RustServerInfo.TryParse(reply, out var info))
+            UiDispatcher.Post(() => ServerInfo = info);
+    }
 
     // ── Performance history ──────────────────────────────────────────────────
 
@@ -2982,11 +3238,17 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         // RconService is safe for concurrent callers and correlates replies by identifier, so the
         // connection lock is deliberately NOT held here. Holding it across the reply wait
         // serialised every command (and the player refresh) behind slow or reply-less commands.
-        var rcon = _rcon;
-        if (RconConnected && rcon != null)
+        var rcon = await EnsureRconForCommandAsync();
+        if (rcon != null)
         {
             try
             {
+                if (IsSayCommand(cmd))
+                {
+                    await SendSayAsync(rcon, cmd);
+                    if (rcon.IsConnected) return;
+                    throw new IOException("the connection closed while sending");
+                }
                 var r = await rcon.SendCommandAsync(cmd);
                 if (!string.IsNullOrEmpty(r))
                     AppendLog(r, r.StartsWith("[RCON]", StringComparison.Ordinal)
@@ -3007,6 +3269,119 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             if (Server.AutoConnectRcon) StartAutoRconConnect();
         }
         await _manager.SendCommandAsync(Server.Id, cmd);
+        if (IsSayCommand(cmd))
+            UiDispatcher.Post(() => BroadcastStatus =
+                "WebRCON is not connected, so delivery cannot be confirmed. Check the console for the reason.");
+    }
+
+    private DateTime _lastOnDemandRconAttemptUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// Returns a connected WebRCON client, connecting on demand when the server is running but the
+    /// console is not connected yet (auto-connect off, still waiting, or the connection dropped).
+    /// Rust ignores process input, so without this a typed <c>say</c> was silently lost.
+    /// </summary>
+    private async Task<RconService?> EnsureRconForCommandAsync()
+    {
+        var rcon = _rcon;
+        if (RconConnected && rcon?.IsConnected == true) return rcon;
+        if (!IsRust || !HasRcon || !IsRunning) return null;
+        // One attempt every 10 seconds at most, so a burst of commands to a server that is still
+        // starting does not queue a connection attempt each.
+        if (DateTime.UtcNow - _lastOnDemandRconAttemptUtc < TimeSpan.FromSeconds(10)) return null;
+        _lastOnDemandRconAttemptUtc = DateTime.UtcNow;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            if (!await ConnectRconCoreAsync(automatic: true, timeout.Token)) return null;
+        }
+        catch (OperationCanceledException) { return null; }
+        rcon = _rcon;
+        return rcon?.IsConnected == true ? rcon : null;
+    }
+
+    private static bool IsSayCommand(string command)
+    {
+        var text = command.TrimStart();
+        var end = text.IndexOfAny([' ', '\t']);
+        var name = end < 0 ? text : text[..end];
+        return name.Equals("say", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("global.say", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("chat.say", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task SendSayAsync(RconService rcon, string command)
+    {
+        if (RconService.SayText(command).Length == 0)
+        {
+            AppendLog("[Chat] Type a message after say, for example: say Server restart in 10 minutes",
+                ConsoleMessageType.Warning);
+            return;
+        }
+        var result = await rcon.SayAsync(command, TimeSpan.FromSeconds(4));
+        if (!result.Sent)
+            AppendLog($"[Chat] Not sent: {result.Reply}", ConsoleMessageType.Warning);
+        else if (result.Delivered)
+            AppendLog("[Chat] Delivered in game.", ConsoleMessageType.System);
+        else
+            AppendLog("[Chat] Rust accepted the message but did not broadcast it within 4 s. " +
+                      "A Carbon/Oxide plugin may be blocking server messages (OnServerMessage), or chat is disabled.",
+                ConsoleMessageType.Warning);
+        UiDispatcher.Post(() => BroadcastStatus = !result.Sent
+            ? "Not sent: " + result.Reply
+            : result.Delivered ? $"Delivered in game at {DateTime.Now:HH:mm:ss}."
+            : "Sent, but Rust did not broadcast it. Check chat plugins.");
+    }
+
+    // ── In-game chat and F7 reports (WebRCON broadcasts) ─────────────────────
+
+    private const int MaxChatLines = 300;
+    public ObservableCollection<RconChatMessage> ChatLog { get; } = [];
+    public ObservableCollection<PlayerReport> PlayerReports { get; } = [];
+    [ObservableProperty] private string _broadcastMessage = string.Empty;
+    [ObservableProperty] private string _broadcastStatus = string.Empty;
+
+    private void OnRconChat(RconChatMessage chat) => UiDispatcher.Post(() => AddChat(chat));
+
+    private void AddChat(RconChatMessage chat)
+    {
+        // chat.tail on reconnect can repeat lines already shown.
+        if (ChatLog.Any(c => c.Time == chat.Time && c.UserId == chat.UserId && c.Message == chat.Message)) return;
+        ChatLog.Add(chat);
+        while (ChatLog.Count > MaxChatLines) ChatLog.RemoveAt(0);
+    }
+
+    private void OnRconReport(string json)
+    {
+        var report = PlayerReport.Parse(json);
+        UiDispatcher.Post(() =>
+        {
+            PlayerReports.Insert(0, report);
+            while (PlayerReports.Count > 100) PlayerReports.RemoveAt(PlayerReports.Count - 1);
+        });
+        AppendLog($"[Report] {report.Summary}", ConsoleMessageType.Warning);
+    }
+
+    private async Task LoadRecentChatAsync(RconService rcon)
+    {
+        try
+        {
+            var tail = await rcon.SendCommandAsync("chat.tail 50");
+            var lines = RconChatMessage.ParseTail(tail);
+            UiDispatcher.Post(() => { foreach (var line in lines) AddChat(line); });
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { }
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task SendBroadcastAsync()
+    {
+        var text = RustModerationCommands.CleanQuoted(BroadcastMessage);
+        if (text.Length == 0) return;
+        BroadcastMessage = string.Empty;
+        BroadcastStatus = "Sending…";
+        AddActionLog($"Chat broadcast: {SummarizeCommand(text)}");
+        await RunCommandTextAsync("say " + text);
     }
 
     // ── Templates ─────────────────────────────────────────────────────────────

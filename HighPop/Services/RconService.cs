@@ -64,6 +64,13 @@ public sealed class RconService : IDisposable, IAsyncDisposable
         string password,
         CancellationToken cancellationToken = default)
     {
+        LastError = string.Empty;
+        if (!CanSendPassword(password, out var passwordProblem))
+        {
+            LastError = passwordProblem;
+            return false;
+        }
+
         try
         {
             await DisconnectAsync(cancellationToken).ConfigureAwait(false);
@@ -71,11 +78,10 @@ public sealed class RconService : IDisposable, IAsyncDisposable
             socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
             _socket = socket;
 
-            var encodedPassword = Uri.EscapeDataString(password ?? string.Empty);
             using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
                 timeout.CancelAfter(TimeSpan.FromSeconds(8));
-                await socket.ConnectAsync(new Uri($"ws://{FormatHost(host)}:{port}/{encodedPassword}"), timeout.Token)
+                await socket.ConnectAsync(BuildEndpoint(host, port, password), timeout.Token)
                     .ConfigureAwait(false);
             }
 
@@ -93,14 +99,162 @@ public sealed class RconService : IDisposable, IAsyncDisposable
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             _authenticated = socket.State == WebSocketState.Open;
-            if (!_authenticated) await DisconnectAsync().ConfigureAwait(false);
+            if (!_authenticated)
+            {
+                LastError = "Rust closed the connection. The RCON password does not match the server's rcon.password.";
+                await DisconnectAsync().ConfigureAwait(false);
+            }
             return _authenticated;
         }
-        catch
+        catch (Exception ex)
         {
+            if (LastError.Length == 0)
+                LastError = ex is OperationCanceledException
+                    ? "Rust WebRCON did not answer in time."
+                    : "Rust WebRCON is not reachable: " + ex.Message;
             await DisconnectAsync().ConfigureAwait(false);
             return false;
         }
+    }
+
+    /// <summary>Why the last <see cref="ConnectAsync"/> failed, in words an operator can act on.</summary>
+    public string LastError { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Rust compares the raw WebSocket request path with <c>rcon.password</c> and never URL-decodes
+    /// it (Facepunch.Rcon uses <c>ConnectionInfo.Path.Substring(1)</c>). Percent-encoding a password
+    /// therefore makes every password with a symbol fail, so HighPop sends it unencoded. A password
+    /// containing a character a URL cannot carry unencoded cannot be used over WebRCON at all.
+    /// </summary>
+    public static bool CanSendPassword(string? password, out string problem)
+    {
+        problem = string.Empty;
+        if (string.IsNullOrEmpty(password))
+        {
+            problem = "No RCON password is set.";
+            return false;
+        }
+
+        var bad = password.FirstOrDefault(c =>
+            c <= ' ' || c >= 0x7F || UnsendablePasswordCharacters.Contains(c));
+        if (bad != default)
+        {
+            problem = "The RCON password contains " + DescribeCharacter(bad) +
+                      ", which Rust WebRCON cannot receive. Use letters, numbers and - _ . ~ ! $ & ' ( ) * + , ; = : @ only.";
+            return false;
+        }
+
+        if (BuildEndpoint("127.0.0.1", 28016, password).AbsolutePath != "/" + password)
+        {
+            problem = "The RCON password changes when it is put in a URL, so Rust would reject it. Use letters and numbers.";
+            return false;
+        }
+        return true;
+    }
+
+    private const string UnsendablePasswordCharacters = "\"#%/<>?[\\]^`{|}";
+
+    private static string DescribeCharacter(char c) => c switch
+    {
+        ' ' => "a space",
+        '"' => "a double quote",
+        _ when char.IsControl(c) => "a control character",
+        _ when c >= 0x7F => $"the non-ASCII character '{c}'",
+        _ => $"'{c}'",
+    };
+
+    internal static Uri BuildEndpoint(string host, int port, string password)
+        => new($"ws://{FormatHost(host)}:{port}/{password}");
+
+    /// <summary>In-game chat (including <c>say</c> from any source), relayed by Rust to every WebRCON client.</summary>
+    public event Action<RconChatMessage>? ChatReceived;
+
+    /// <summary>F7 player reports, relayed by Rust as WebRCON <c>Report</c> broadcasts.</summary>
+    public event Action<string>? ReportReceived;
+
+    private readonly ConcurrentDictionary<long, (string Expected, TaskCompletionSource<bool> Seen)> _chatWaiters = [];
+    private long _chatWaiterId;
+
+    /// <summary>
+    /// Sends a <c>say</c>-style command and reports whether Rust actually broadcast it: Rust gives
+    /// <c>say</c> no correlated reply, but every WebRCON client receives the chat line it produced.
+    /// </summary>
+    public async Task<RconSayResult> SayAsync(
+        string command,
+        TimeSpan confirmTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsConnected) return new RconSayResult(false, false, "[RCON] Not connected");
+        var expected = SayText(command);
+        var waiterId = Interlocked.Increment(ref _chatWaiterId);
+        var seen = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _chatWaiters[waiterId] = (NormalizeChat(expected), seen);
+        try
+        {
+            var reply = await SendCommandAsync(command, cancellationToken).ConfigureAwait(false);
+            if (reply.StartsWith("[RCON]", StringComparison.Ordinal))
+                return new RconSayResult(false, false, reply);
+
+            var finished = await Task.WhenAny(seen.Task, Task.Delay(confirmTimeout, cancellationToken))
+                .ConfigureAwait(false);
+            return new RconSayResult(true, finished == seen.Task, reply);
+        }
+        catch (OperationCanceledException)
+        {
+            return new RconSayResult(true, false, string.Empty);
+        }
+        finally
+        {
+            _chatWaiters.TryRemove(waiterId, out _);
+        }
+    }
+
+    /// <summary>The chat text a <c>say</c>/<c>global.say</c>/<c>chat.say</c> command broadcasts.</summary>
+    public static string SayText(string command)
+    {
+        var text = (command ?? string.Empty).Trim();
+        var space = text.IndexOfAny([' ', '\t']);
+        return space < 0 ? string.Empty : text[(space + 1)..].Trim();
+    }
+
+    internal static string NormalizeChat(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        var lastWasSpace = false;
+        foreach (var c in text)
+        {
+            if (c == '"') continue;
+            if (char.IsWhiteSpace(c))
+            {
+                if (!lastWasSpace && builder.Length > 0) builder.Append(' ');
+                lastWasSpace = true;
+                continue;
+            }
+            builder.Append(char.ToLowerInvariant(c));
+            lastWasSpace = false;
+        }
+        return builder.ToString().Trim();
+    }
+
+    private void DispatchBroadcast(string type, string message)
+    {
+        if (type.Equals("Report", StringComparison.OrdinalIgnoreCase))
+        {
+            ReportReceived?.Invoke(message);
+            return;
+        }
+        if (!type.Equals("Chat", StringComparison.OrdinalIgnoreCase)
+            || !RconChatMessage.TryParse(message, out var chat))
+            return;
+
+        var normalized = NormalizeChat(chat.Message);
+        foreach (var waiter in _chatWaiters.Values)
+        {
+            if (waiter.Expected.Length > 0
+                && (normalized == waiter.Expected || normalized.Contains(waiter.Expected, StringComparison.Ordinal)))
+                waiter.Seen.TrySetResult(true);
+        }
+        ChatReceived?.Invoke(chat);
     }
 
     public Task<string> SendCommandAsync(
@@ -213,7 +367,7 @@ public sealed class RconService : IDisposable, IAsyncDisposable
                 if (payload == null) break; // close frame
                 if (string.IsNullOrWhiteSpace(payload)) continue;
 
-                if (!TryReadResponse(payload, out var responseId, out var message))
+                if (!TryReadResponse(payload, out var responseId, out var message, out var messageType))
                 {
                     // A valid Rust response normally carries Identifier and Message. If a
                     // proxy strips the wrapper, only consume the raw payload when exactly
@@ -228,8 +382,14 @@ public sealed class RconService : IDisposable, IAsyncDisposable
                 }
 
                 // Identifiers 0 and -1 are unsolicited console/chat output. HPRM obtains its visible
-                // server console from the framework-specific authoritative log source.
-                if (responseId <= 0) continue;
+                // server console from the framework-specific authoritative log source, so only
+                // chat and F7 reports are taken from here.
+                if (responseId <= 0)
+                {
+                    try { DispatchBroadcast(messageType, message); }
+                    catch (Exception ex) when (ex is not OperationCanceledException) { }
+                    continue;
+                }
                 if (_pending.TryRemove(responseId, out var completion))
                     completion.TrySetResult(message);
             }
@@ -247,14 +407,22 @@ public sealed class RconService : IDisposable, IAsyncDisposable
     }
 
     internal static bool TryReadResponse(string payload, out int identifier, out string message)
+        => TryReadResponse(payload, out identifier, out message, out _);
+
+    internal static bool TryReadResponse(string payload, out int identifier, out string message, out string type)
     {
         identifier = -1;
         message = string.Empty;
+        type = string.Empty;
         try
         {
             using var document = JsonDocument.Parse(payload);
             var root = document.RootElement;
             if (!TryReadIdentifier(root, out identifier)) return false;
+            if (TryGetProperty(root, "Type", out var typeValue))
+                type = typeValue.ValueKind == JsonValueKind.Number && typeValue.TryGetInt32(out var typeNumber)
+                    ? typeNumber switch { 3 => "Chat", 4 => "Report", _ => typeNumber.ToString() }
+                    : typeValue.ToString();
             if (!TryGetProperty(root, "Message", out var content))
             {
                 message = payload;
@@ -408,5 +576,98 @@ public sealed class RconService : IDisposable, IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         await DisconnectAsync().ConfigureAwait(false);
+    }
+}
+
+/// <summary>Outcome of <see cref="RconService.SayAsync"/>.</summary>
+/// <param name="Sent">Rust accepted the command frame.</param>
+/// <param name="Delivered">Rust broadcast the chat line back, so players saw it.</param>
+/// <param name="Reply">Any reply or <c>[RCON]</c> error text.</param>
+public sealed record RconSayResult(bool Sent, bool Delivered, string Reply);
+
+/// <summary>One in-game chat line relayed by Rust WebRCON (a <c>Chat</c> broadcast).</summary>
+public sealed record RconChatMessage(
+    int Channel,
+    string Message,
+    string UserId,
+    string Username,
+    DateTime Time)
+{
+    public bool IsServer => UserId is "" or "0" || Username.Equals("SERVER", StringComparison.OrdinalIgnoreCase);
+
+    public string ChannelText => Channel switch
+    {
+        0 => "Global",
+        1 => "Team",
+        2 => "Server",
+        3 => "Cards",
+        4 => "Local",
+        5 => "Clan",
+        _ => $"Channel {Channel}",
+    };
+
+    public string TimeText => Time.ToLocalTime().ToString("HH:mm:ss");
+
+    public static bool TryParse(string json, out RconChatMessage chat)
+    {
+        chat = new RconChatMessage(0, string.Empty, string.Empty, string.Empty, DateTime.UtcNow);
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!TryRead(document.RootElement, out chat)) return false;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Parses <c>chat.tail</c> output: a JSON array of chat entries, oldest first.</summary>
+    public static List<RconChatMessage> ParseTail(string json)
+    {
+        var result = new List<RconChatMessage>();
+        if (string.IsNullOrWhiteSpace(json)) return result;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return result;
+            foreach (var item in document.RootElement.EnumerateArray())
+                if (TryRead(item, out var chat)) result.Add(chat);
+        }
+        catch (JsonException) { }
+        return result;
+    }
+
+    private static bool TryRead(JsonElement root, out RconChatMessage chat)
+    {
+        chat = new RconChatMessage(0, string.Empty, string.Empty, string.Empty, DateTime.UtcNow);
+        if (root.ValueKind != JsonValueKind.Object) return false;
+        string message = string.Empty, userId = string.Empty, username = string.Empty;
+        int channel = 0;
+        long time = 0;
+        foreach (var property in root.EnumerateObject())
+        {
+            var value = property.Value;
+            switch (property.Name.ToLowerInvariant())
+            {
+                case "message": message = value.ToString(); break;
+                case "userid": userId = value.ToString(); break;
+                case "username": username = value.ToString(); break;
+                case "channel": if (value.ValueKind == JsonValueKind.Number) value.TryGetInt32(out channel); break;
+                case "time": if (value.ValueKind == JsonValueKind.Number) value.TryGetInt64(out time); break;
+            }
+        }
+        if (message.Length == 0) return false;
+        var when = time > 0 && time < 32503680000
+            ? DateTimeOffset.FromUnixTimeSeconds(time).UtcDateTime
+            : DateTime.UtcNow;
+        chat = new RconChatMessage(
+            channel,
+            UiTextSanitizer.Normalize(message),
+            UiTextSanitizer.Normalize(userId, UiTextSanitizer.MaxLabelLength),
+            UiTextSanitizer.Normalize(username, UiTextSanitizer.MaxLabelLength),
+            when);
+        return true;
     }
 }

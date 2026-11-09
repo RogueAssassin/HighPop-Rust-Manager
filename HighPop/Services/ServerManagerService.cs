@@ -119,6 +119,9 @@ public class ServerInstance
     private readonly SemaphoreSlim _rconGate = new(1, 1);
     private RconService? _rcon;
 
+    /// <summary>Why the shared channel last failed to connect (empty after a success).</summary>
+    public string LastRconError { get; private set; } = string.Empty;
+
     public async Task<RconService?> GetRconAsync(
         string host,
         int port,
@@ -138,9 +141,11 @@ public class ServerInstance
             var rcon = new RconService();
             if (!await rcon.ConnectAsync(host, port, password, cancellationToken).ConfigureAwait(false))
             {
+                LastRconError = rcon.LastError;
                 rcon.Dispose();
                 return null;
             }
+            LastRconError = string.Empty;
             Volatile.Write(ref _rcon, rcon);
             return rcon;
         }
@@ -1238,16 +1243,22 @@ public class ServerManagerService
         string description,
         CancellationToken cancellationToken = default)
     {
-        if (!cancellationToken.IsCancellationRequested
+        var isRust = server.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase);
+
+        // Rust does not read commands from a redirected standard input: the pipe accepts the line
+        // and Rust silently drops it, so chat looked "sent" but never arrived in game. WebRCON is
+        // therefore the primary channel for Rust, and the process console only a last resort
+        // (for example before WebRCON has started, or after a reattachment without stdin).
+        if (!isRust
+            && !cancellationToken.IsCancellationRequested
             && await TrySendProcessCommandAsync(instance, command))
         {
             InjectLogLine(server.Id, $"[HighPop] {description}.", ConsoleMessageType.System);
             return true;
         }
 
-        // StandardInput cannot be reacquired after the manager process exits. A verified
-        // reattachment therefore uses Rust WebRCON for commands and graceful shutdown.
-        if (server.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase)
+        var rconProblem = string.Empty;
+        if (isRust
             && server.RconPort > 0
             && !string.IsNullOrWhiteSpace(server.RconPassword))
         {
@@ -1262,7 +1273,11 @@ public class ServerManagerService
                 {
                     var rcon = await instance.GetRconAsync(
                         host, server.RconPort, server.RconPassword, cancellationToken).ConfigureAwait(false);
-                    if (rcon == null) break;
+                    if (rcon == null)
+                    {
+                        rconProblem = instance.LastRconError;
+                        break;
+                    }
                     var response = await rcon.SendCommandAsync(command, cancellationToken).ConfigureAwait(false);
                     if (!rcon.IsConnected && response.StartsWith("[RCON]", StringComparison.Ordinal))
                     {
@@ -1288,8 +1303,20 @@ public class ServerManagerService
             }
         }
 
+        // Writing to the pipe is instant, so this last resort runs even after a timeout.
+        if (isRust && await TrySendProcessCommandAsync(instance, command))
+        {
+            InjectLogLine(server.Id,
+                $"[HighPop] {description} through the process console because WebRCON is unavailable" +
+                (rconProblem.Length > 0 ? $" ({rconProblem})" : string.Empty) +
+                ". Rust usually ignores process input, so this may not reach the server.",
+                ConsoleMessageType.Warning);
+            return true;
+        }
+
         InjectLogLine(server.Id,
-            $"[HighPop] Could not send '{command}' through the process console or WebRCON.",
+            $"[HighPop] Could not send '{command}' through WebRCON or the process console" +
+            (rconProblem.Length > 0 ? $": {rconProblem}" : "."),
             ConsoleMessageType.Warning);
         return false;
     }

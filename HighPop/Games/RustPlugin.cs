@@ -85,7 +85,7 @@ public class RustPlugin : GamePluginBase, IWipePlugin
         if (s.RconPort > 0)
             args += $" +rcon.port {s.RconPort}";
         if (!string.IsNullOrWhiteSpace(s.RconPassword))
-            args += $" +rcon.enabled 1 +rcon.password \"{Safe(s.RconPassword)}\"";
+            args += $" +rcon.password \"{Safe(s.RconPassword)}\"";
 
         return args;
     }

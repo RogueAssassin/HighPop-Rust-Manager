@@ -95,17 +95,42 @@ public partial class ServerDetailView : System.Windows.Controls.UserControl
             _hookedLog.CollectionChanged -= OnLogChanged;
             _hookedLog = null;
         }
+        if (_hookedChat != null)
+        {
+            _hookedChat.CollectionChanged -= OnChatChanged;
+            _hookedChat = null;
+        }
 
         if (e.NewValue is ServerViewModel vm)
         {
             _hookedLog = vm.FilteredLog;
             _hookedLog.CollectionChanged += OnLogChanged;
+            _hookedChat = vm.ChatLog;
+            _hookedChat.CollectionChanged += OnChatChanged;
         }
 
         RequestScrollToEnd();
     }
 
     private void OnLogChanged(object? sender, NotifyCollectionChangedEventArgs e) => RequestScrollToEnd();
+
+    private INotifyCollectionChanged? _hookedChat;
+
+    // Chat always follows the newest line; it is short and has no pause control.
+    private void OnChatChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action != NotifyCollectionChangedAction.Add) return;
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (ChatList?.Items.Count > 0) ChatList.ScrollIntoView(ChatList.Items[^1]);
+        }, DispatcherPriority.Background);
+    }
+
+    private void GiveAmountPreset_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button { Content: string amount } && DataContext is ServerViewModel vm)
+            vm.GiveAmount = amount;
+    }
 
     // When the log grows or the panel is re-measured (for example after an RDP reconnect resizes the
     // window), stay pinned to the newest line.

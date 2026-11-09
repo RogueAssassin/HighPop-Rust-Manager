@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.10", "application and release metadata report v1.0.10");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.10", "1.0.9")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.10")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.10", "1.0.10")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.10"),
+Check(AppInfo.Version == "1.0.11", "application and release metadata report v1.0.11");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.11", "1.0.10")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.11")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.11", "1.0.11")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.11"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -50,6 +50,85 @@ Check(fakeRcon.Skipped || fakeRcon.SayReturnedQuickly,
     "WebRCON in-game say returns as soon as it is sent instead of waiting for a reply");
 Check(fakeRcon.Skipped || fakeRcon.ConcurrentRepliesCorrelated,
     "WebRCON concurrent commands are not serialised behind a slow reply and keep their own responses");
+Check(fakeRcon.Skipped || fakeRcon.SymbolPasswordAccepted,
+    "WebRCON sends the password unencoded, as Rust compares the raw request path");
+Check(fakeRcon.Skipped || (fakeRcon.SayConfirmed && fakeRcon.BlockedSayReported && fakeRcon.ChatRelayed),
+    "WebRCON say is confirmed by Rust's chat broadcast, a blocked say is reported, and chat is relayed");
+
+Check(RconService.CanSendPassword("A1b2C3d4E5f6", out _)
+      && RconService.CanSendPassword("pa$$w0rd!+=*@:~", out _)
+      && !RconService.CanSendPassword("has space here", out _)
+      && !RconService.CanSendPassword("hash#tag12345", out _)
+      && !RconService.CanSendPassword("question?mark", out _)
+      && !RconService.CanSendPassword("percent%41abc", out _)
+      && !RconService.CanSendPassword("quote\"inside", out _)
+      && !RconService.CanSendPassword("slash/inside1", out _)
+      && !RconService.CanSendPassword("ünïcødé-pass", out _)
+      && !RconService.CanSendPassword("", out _),
+    "RCON passwords that a URL path cannot carry unencoded are rejected with a reason");
+Check(RconService.SayText("say \"Restart in 5\"") == "\"Restart in 5\""
+      && RconService.NormalizeChat("\"Restart   in 5\"") == "restart in 5"
+      && RconService.SayText("say") == string.Empty,
+    "say text is extracted and normalised for delivery confirmation");
+Check(RconChatMessage.TryParse("{\"Channel\":1,\"Message\":\"hi team\",\"UserId\":\"76561198000000001\",\"Username\":\"Bob\",\"Color\":\"#5af\",\"Time\":1794168497}", out var teamChat)
+      && teamChat.ChannelText == "Team" && teamChat.Username == "Bob" && !teamChat.IsServer
+      && RconChatMessage.ParseTail("[{\"Channel\":0,\"Message\":\"a\",\"UserId\":\"0\",\"Username\":\"SERVER\",\"Time\":1}]").Single().IsServer
+      && RconChatMessage.ParseTail("not json").Count == 0,
+    "Rust chat broadcasts and chat.tail output are parsed");
+Check(RconService.TryReadResponse("{\"Identifier\":-1,\"Message\":\"{}\",\"Type\":\"Chat\"}", out var chatId, out _, out var chatType)
+      && chatId == -1 && chatType == "Chat"
+      && RconService.TryReadResponse("{\"Identifier\":0,\"Message\":\"{}\",\"Type\":4}", out _, out _, out var reportType)
+      && reportType == "Report",
+    "WebRCON broadcast types are read as text or Rust's numeric LogType");
+
+Check(RustPlayerCommands.TryGive("76561198000000001", "Rifle.AK", 1, 0, out var giveCommand, out _)
+      && giveCommand == "inventory.giveto 76561198000000001 \"rifle.ak\" 1"
+      && RustPlayerCommands.TryGive("Bob \"the\" Builder", "wood", 1000, 123456, out var giveByName, out _)
+      && giveByName == "inventory.giveto \"Bob 'the' Builder\" \"wood\" 1000 123456"
+      && !RustPlayerCommands.TryGive("76561198000000001", "wood; quit", 1, 0, out _, out _)
+      && !RustPlayerCommands.TryGive("76561198000000001", "wood", 0, 0, out _, out _)
+      && !RustPlayerCommands.TryGive("76561198000000001", "wood", RustPlayerCommands.MaxGiveAmount + 1, 0, out _, out _)
+      && !RustPlayerCommands.TryGive("", "wood", 1, 0, out _, out _)
+      && RustPlayerCommands.TryGiveAll("scrap", 50, out var giveAll, out _) && giveAll == "inventory.giveall \"scrap\" 50",
+    "Give commands target Steam64 IDs, quote names, and reject unsafe items and amounts");
+Check(RustPlayerCommands.TryPlayerAction(RustPlayerAction.Mute, "76561198000000001", out var mute, out _) && mute == "mute 76561198000000001"
+      && RustPlayerCommands.TryPlayerAction(RustPlayerAction.Kill, "76561198000000001", out var kill, out _) && kill == "killplayer 76561198000000001"
+      && RustPlayerCommands.TryPlayerAction(RustPlayerAction.ClearInventory, "76561198000000001", out var clear, out _)
+      && clear == "inventory.clearinventory 76561198000000001"
+      && RustPlayerCommands.TryTeleport("76561198000000001", "76561198000000002", out var teleport, out _)
+      && teleport == "teleport 76561198000000001 76561198000000002"
+      && !RustPlayerCommands.TryTeleport("76561198000000001", "76561198000000001", out _, out _)
+      && RustPlayerCommands.TryDeployLoadout("pvp_kit", "76561198000000001", out var loadout, out _)
+      && loadout == "inventory.deployloadout pvp_kit 76561198000000001"
+      && !RustPlayerCommands.TryDeployLoadout("kit; quit", "76561198000000001", out _, out _)
+      && RustPlayerCommands.TrySetModerator("76561198000000001", "Mod", true, out var modCommands, out _)
+      && modCommands.Length == 2 && modCommands[1] == "server.writecfg"
+      && !RustPlayerCommands.TrySetModerator("Mod", "Mod", true, out _, out _),
+    "Player tool commands are built from validated targets");
+Check(RustItemCatalog.Items.All(i => RustPlayerCommands.IsItemShortName(i.ShortName))
+      && RustItemCatalog.Items.Select(i => i.ShortName).Distinct().Count() == RustItemCatalog.Items.Count
+      && RustItemCatalog.Filter("Weapons", "ak").Any(i => i.ShortName == "rifle.ak")
+      && RustItemCatalog.Filter(RustItemCatalog.AllCategories, "").Count == RustItemCatalog.Items.Count,
+    "The give-menu catalog has unique, valid short names and filters by category and search");
+Check(RustServerInfo.TryParse("{\"Hostname\":\"x\",\"MaxPlayers\":100,\"Players\":42,\"Queued\":3,\"Joining\":1,\"EntityCount\":119196,\"GameTime\":\"11/09/2026 14:32:05\",\"Uptime\":90061,\"Map\":\"Procedural Map\",\"Framerate\":29.7,\"Memory\":10240}", out var info)
+      && info.PlayersText == "42/100 (+3 queued, 1 joining)" && info.Framerate == 29
+      && info.UptimeText == "1d 1h" && info.GameTimeText == "14:32"
+      && !RustServerInfo.TryParse("[]", out _),
+    "Rust serverinfo is parsed for the Players tab status strip");
+Check(PlayerReport.Parse("{\"PlayerId\":\"1\",\"PlayerName\":\"Alice\",\"TargetId\":\"2\",\"TargetName\":\"Bob\",\"Subject\":\"aimbot\",\"Message\":\"look\",\"Type\":\"cheat\"}").Summary
+          == "Alice reported Bob (cheat): aimbot"
+      && PlayerReport.Parse("plain text").Message == "plain text",
+    "F7 reports are summarised");
+var richPlayers = PlayerParserService.ParseRustPlayerList(
+    "[{\"SteamID\":\"76561198000000001\",\"OwnerSteamID\":\"76561198000000009\",\"DisplayName\":\"Alice\",\"Ping\":45,\"Address\":\"203.0.113.5:61234\",\"ConnectedSeconds\":120,\"VoiationLevel\":2.5,\"Health\":87.4}," +
+    "{\"SteamID\":\"76561198000000002\",\"OwnerSteamID\":\"0\",\"DisplayName\":\"Bob\",\"Ping\":0,\"Address\":\"[2001:db8::1]:5000\",\"ConnectedSeconds\":5}]");
+Check(richPlayers.Count == 2
+      && richPlayers[0].Address == "203.0.113.5" && richPlayers[0].IsFamilyShared && richPlayers[0].HasViolations
+      && richPlayers[0].HealthText == "87 HP"
+      && richPlayers[0].SteamProfileUrl == "https://steamcommunity.com/profiles/76561198000000001"
+      && richPlayers[1].Address == "2001:db8::1" && !richPlayers[1].IsFamilyShared && richPlayers[1].HealthText == "—"
+      && richPlayers[1].FlagsText.Length == 0,
+    "Rust playerlist address, health, family share and violation fields are read");
 
 Check(RustReferenceService.ReferenceUrl == "https://api.roguegaming.com.au"
       && RogueGamingEndpoints.ApiUrl == "https://api.roguegaming.com.au"
@@ -1191,17 +1270,20 @@ static async Task<bool> RconDisposeOnBlockedContextCompletesAsync()
     return finished && completed;
 }
 
-// Minimal Facepunch WebRCON stand-in: rejects the wrong password by closing the socket, never
-// answers `say`, answers `slow` after 1.5 s and everything else immediately.
-static async Task<(bool Skipped, bool WrongPasswordRejected, bool SayReturnedQuickly, bool ConcurrentRepliesCorrelated)>
+// Minimal Facepunch WebRCON stand-in: compares the raw request path with the password (as Rust
+// does, without URL-decoding) and closes the socket when it differs, never answers `say` but
+// broadcasts it as a Chat line (except "say blocked"), answers `slow` after 1.5 s and everything
+// else immediately.
+static async Task<(bool Skipped, bool WrongPasswordRejected, bool SayReturnedQuickly, bool ConcurrentRepliesCorrelated,
+    bool SymbolPasswordAccepted, bool SayConfirmed, bool BlockedSayReported, bool ChatRelayed)>
     FakeRustRconScenarioAsync()
 {
-    const string password = "smoke-pass";
+    const string password = "smoke!pass$+=*";
     var port = GetFreeTcpPort();
     using var listener = new System.Net.HttpListener();
     listener.Prefixes.Add($"http://localhost:{port}/");
     try { listener.Start(); }
-    catch (System.Net.HttpListenerException) { return (true, false, false, false); }
+    catch (System.Net.HttpListenerException) { return (true, false, false, false, false, false, false, false); }
 
     using var stop = new CancellationTokenSource();
     var serverTask = Task.Run(async () =>
@@ -1217,7 +1299,7 @@ static async Task<(bool Skipped, bool WrongPasswordRejected, bool SayReturnedQui
                 {
                     if (!context.Request.IsWebSocketRequest) { context.Response.Close(); return; }
                     var ws = (await context.AcceptWebSocketAsync(null)).WebSocket;
-                    if (context.Request.Url?.AbsolutePath.Trim('/') != password)
+                    if (context.Request.RawUrl?.TrimStart('/') != password)
                     {
                         await ws.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation,
                             "bad password", CancellationToken.None);
@@ -1232,7 +1314,25 @@ static async Task<(bool Skipped, bool WrongPasswordRejected, bool SayReturnedQui
                         using var doc = System.Text.Json.JsonDocument.Parse(buffer.AsMemory(0, result.Count));
                         var id = doc.RootElement.GetProperty("Identifier").GetInt32();
                         var message = doc.RootElement.GetProperty("Message").GetString() ?? string.Empty;
-                        if (message.StartsWith("say", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (message.StartsWith("say", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var said = message[3..].Trim().Trim('"');
+                            if (said == "blocked") continue;
+                            var chatLine = System.Text.Json.JsonSerializer.Serialize(new
+                            {
+                                Channel = 0, Message = said, UserId = "0", Username = "SERVER", Color = "#eee", Time = 1794168497,
+                            });
+                            var broadcast = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                                new { Identifier = -1, Message = chatLine, Type = "Chat" });
+                            await sendLock.WaitAsync();
+                            try
+                            {
+                                await ws.SendAsync(broadcast, System.Net.WebSockets.WebSocketMessageType.Text,
+                                    true, CancellationToken.None);
+                            }
+                            finally { sendLock.Release(); }
+                            continue;
+                        }
                         _ = Task.Run(async () =>
                         {
                             if (message == "slow") await Task.Delay(1500);
@@ -1261,7 +1361,7 @@ static async Task<(bool Skipped, bool WrongPasswordRejected, bool SayReturnedQui
 
         await using var rcon = new RconService();
         if (!await rcon.ConnectAsync("localhost", port, password))
-            return (false, wrongPasswordRejected, false, false);
+            return (false, wrongPasswordRejected, false, false, false, false, false, false);
 
         var sayTimer = Stopwatch.StartNew();
         var sayResponse = await rcon.SendCommandAsync("say \"hello\"");
@@ -1275,7 +1375,14 @@ static async Task<(bool Skipped, bool WrongPasswordRejected, bool SayReturnedQui
         var correlated = fast == "reply:fast"
                          && slowReply == "reply:slow"
                          && fastElapsed < TimeSpan.FromSeconds(1);
-        return (false, wrongPasswordRejected, sayReturnedQuickly, correlated);
+        var chatSeen = new TaskCompletionSource<RconChatMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        rcon.ChatReceived += chat => chatSeen.TrySetResult(chat);
+        var confirmed = await rcon.SayAsync("say Restart in 5 minutes", TimeSpan.FromSeconds(3));
+        var blocked = await rcon.SayAsync("say blocked", TimeSpan.FromMilliseconds(500));
+        var relayed = await Task.WhenAny(chatSeen.Task, Task.Delay(2000)) == chatSeen.Task
+                      && chatSeen.Task.Result.IsServer;
+        return (false, wrongPasswordRejected, sayReturnedQuickly, correlated,
+            true, confirmed.Sent && confirmed.Delivered, blocked.Sent && !blocked.Delivered, relayed);
     }
     finally
     {
