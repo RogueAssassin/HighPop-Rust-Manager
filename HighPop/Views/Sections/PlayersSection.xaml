@@ -60,9 +60,11 @@
                         </StackPanel>
                     </Border>
                 </WrapPanel>
+                <!-- Moderation inputs and actions bind to ServerViewModel.Players (ServerPlayersViewModel). -->
+                <StackPanel DataContext="{Binding Players}">
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                     <Button Content="↻ Refresh" Style="{StaticResource GhostButton}"
-                            Command="{Binding RefreshPlayersCommand}"/>
+                            Command="{Binding DataContext.RefreshPlayersCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                     <Button Content="Select all online" Style="{StaticResource GhostButton}" Margin="6,0,0,0"
                             Command="{Binding SelectAllPlayersCommand}"/>
                     <Button Content="Clear selection" Style="{StaticResource GhostButton}" Margin="6,0,0,0"
@@ -120,6 +122,7 @@
                            FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,7,0,0" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding ModerationStatus}" FontSize="11"
                            Foreground="{StaticResource AccentBlueBrush}" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
             </StackPanel>
         </Border>
 
@@ -228,37 +231,37 @@
                                                     <Button Content="🌐" Style="{StaticResource GhostButton}"
                                                             Width="34" Padding="0" Margin="0,0,3,0"
                                                             ToolTip="Open Steam profile"
-                                                            Command="{Binding DataContext.OpenSteamProfileCommand,
+                                                            Command="{Binding DataContext.Players.OpenSteamProfileCommand,
                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Content="⧉" Style="{StaticResource GhostButton}"
                                                             Width="34" Padding="0" Margin="0,0,3,0"
                                                             ToolTip="Copy Steam64 ID"
-                                                            Command="{Binding DataContext.CopyPlayerSteamIdCommand,
+                                                            Command="{Binding DataContext.Players.CopyPlayerSteamIdCommand,
                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Content="📍" Style="{StaticResource GhostButton}"
                                                             Width="34" Padding="0" Margin="0,0,3,0"
                                                             ToolTip="Use as the teleport destination in Player tools"
-                                                            Command="{Binding DataContext.UseAsTeleportDestinationCommand,
+                                                            Command="{Binding DataContext.Players.UseAsTeleportDestinationCommand,
                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Content="✎" Style="{StaticResource GhostButton}"
                                                             Width="34" Padding="0" Margin="0,0,3,0"
                                                             ToolTip="Select this player for moderation and Player tools"
-                                                            Command="{Binding DataContext.UsePlayerForModerationCommand,
+                                                            Command="{Binding DataContext.Players.UsePlayerForModerationCommand,
                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Content="👢" Style="{StaticResource GhostButton}"
                                                             Width="34" Padding="0" Margin="0,0,3,0"
                                                             ToolTip="Kick"
-                                                            Command="{Binding DataContext.KickOnlinePlayerCommand,
+                                                            Command="{Binding DataContext.Players.KickOnlinePlayerCommand,
                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Content="🚫" Style="{StaticResource DangerButton}"
                                                             Width="34" Padding="0"
                                                             ToolTip="Ban"
-                                                            Command="{Binding DataContext.BanOnlinePlayerCommand,
+                                                            Command="{Binding DataContext.Players.BanOnlinePlayerCommand,
                                                                 RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                             CommandParameter="{Binding}"/>
                                                 </StackPanel>
@@ -274,7 +277,7 @@
 
             <!-- ── Player tools: give menu, admin actions, roles ── -->
             <TabItem Header="🧰 Player tools" Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,10">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,10" DataContext="{Binding Players}">
                     <StackPanel>
                         <Border Background="{StaticResource BgSurface2Brush}" CornerRadius="6" Padding="12,8" Margin="0,0,0,10">
                             <StackPanel>

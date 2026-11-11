@@ -38,6 +38,6 @@ public partial class PlayersSection : System.Windows.Controls.UserControl
     private void GiveAmountPreset_Click(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.Button { Content: string amount } && DataContext is ServerViewModel vm)
-            vm.GiveAmount = amount;
+            vm.Players.GiveAmount = amount;
     }
 }
