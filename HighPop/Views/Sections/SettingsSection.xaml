@@ -127,8 +127,8 @@
                 </Grid>
             </Border>
 
-            <!-- Config Presets -->
-            <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+            <!-- Config Presets (bound to ServerViewModel.Config) -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16" DataContext="{Binding Config}"
                     Visibility="{Binding AvailablePresets.Count, Converter={StaticResource CountToVis}}">
                 <StackPanel>
                     <TextBlock Text="Config Presets" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"
@@ -265,8 +265,8 @@
                 </StackPanel>
             </Border>
 
-            <!-- Templates -->
-            <Border Style="{StaticResource Card}" Margin="0,0,0,8">
+            <!-- Templates (bound to ServerViewModel.Config) -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,8" DataContext="{Binding Config}">
                 <StackPanel>
                     <TextBlock Text="Server Templates" Style="{StaticResource SectionHeader}"/>
 
@@ -376,22 +376,22 @@
                                             <Button Content="↺" Style="{StaticResource GhostButton}"
                                                     Width="32" Padding="0" Margin="0,0,2,0"
                                                     ToolTip="Apply this template"
-                                                    Command="{Binding DataContext.ApplyTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Command="{Binding DataContext.ApplyTemplateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <Button Content="⎘" Style="{StaticResource GhostButton}"
                                                     Width="32" Padding="0" Margin="0,0,2,0"
                                                     ToolTip="Kloonaa malli"
-                                                    Command="{Binding DataContext.CloneTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Command="{Binding DataContext.CloneTemplateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <Button Content="📤" Style="{StaticResource GhostButton}"
                                                     Width="32" Padding="0" Margin="0,0,2,0"
                                                     ToolTip="Vie tiedostoon"
-                                                    Command="{Binding DataContext.ExportTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Command="{Binding DataContext.ExportTemplateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <Button Content="🗑" Style="{StaticResource DangerButton}"
                                                     Width="32" Padding="0"
                                                     ToolTip="Delete template"
-                                                    Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Command="{Binding DataContext.DeleteTemplateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                         </StackPanel>
                                     </Grid>

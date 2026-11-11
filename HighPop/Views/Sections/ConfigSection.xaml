@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
-    <Grid Background="{StaticResource BgDeepBrush}">
+    <!-- Bound to ServerViewModel.Config (ServerConfigViewModel), not the whole server. -->
+    <Grid Background="{StaticResource BgDeepBrush}" DataContext="{Binding Config}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -57,7 +58,7 @@
                                                        FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
                                             <Button Content="↩ Restore" Style="{StaticResource GhostButton}"
                                                     FontSize="11" Padding="6,3" Margin="0,4,0,0" HorizontalAlignment="Left"
-                                                    Command="{Binding DataContext.RestoreConfigSnapshotCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Command="{Binding DataContext.RestoreConfigSnapshotCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                         </StackPanel>
                                     </Border>
