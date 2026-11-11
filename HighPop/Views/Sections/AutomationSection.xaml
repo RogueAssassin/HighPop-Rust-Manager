@@ -168,7 +168,7 @@
                     <TextBlock Text="Public status-board channel ID (optional)" Style="{StaticResource FieldLabel}"/>
                     <TextBox Text="{Binding Server.DiscordStatusChannelId, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource DarkTextBox}" Margin="0,0,0,4"/>
-                    <TextBlock Text="Leave empty to use the combined board configured in Settings → Discord Bot."
+                    <TextBlock Text="Leave empty to use the combined board configured in Settings → Discord Remote Control Bot."
                                FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12"/>
                     <CheckBox IsChecked="{Binding Server.DiscordAdminControls}" Style="{StaticResource DarkCheckBox}"
                               Content="Publish administrator action buttons" Margin="0,0,0,8"/>

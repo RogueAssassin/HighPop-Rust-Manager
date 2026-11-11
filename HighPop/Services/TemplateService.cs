@@ -149,7 +149,7 @@ public class TemplateService
         }
     }
 
-    /// <summary>Vie kaikki templatet yhteen .json-tiedostoon.</summary>
+    /// <summary>Exports every template to one .json file.</summary>
     public void ExportAll(string filePath)
     {
         lock (_lock)

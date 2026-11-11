@@ -69,11 +69,11 @@ public partial class MainViewModel : BaseViewModel
     [ObservableProperty] private bool _showSupport;
     [ObservableProperty] private bool _showMachines;
 
-    // Laskettu: näytä normaali palvelinruudukko vain kun mikään sivu ei ole auki
+    // Computed: show the normal server grid only when no page is open
     public bool ShowServerGrid =>
         !ShowDashboard && !ShowSupport && !ShowMachines && SelectedRemoteServer == null;
 
-    // Laskettu: näytä etäpalvelimen hallintanäkymä
+    // Computed: show the remote server management view
     public bool ShowRemoteDetail =>
         SelectedRemoteServer != null && !ShowDashboard && !ShowSupport && !ShowMachines;
 

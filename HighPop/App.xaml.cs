@@ -99,7 +99,7 @@ public partial class App : System.Windows.Application
                 System.Windows.MessageBoxImage.Warning);
         }
 
-        // UI-säikeen poikkeukset
+        // UI-thread exceptions
         DispatcherUnhandledException += (_, ex) =>
         {
             if (IsRecoverableUiBindingFailure(ex.Exception))
@@ -180,7 +180,7 @@ public partial class App : System.Windows.Application
             ex.Handled = true;
         };
 
-        // Background-säikeiden poikkeukset
+        // Background-thread exceptions
         AppDomain.CurrentDomain.UnhandledException += (_, ex) =>
             WriteLog($"APPDOMAIN: {ex.ExceptionObject}");
 

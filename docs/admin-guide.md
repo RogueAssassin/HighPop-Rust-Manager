@@ -9,6 +9,9 @@ Detailed reference for server operators. For an overview and screenshots, see th
 - [RogueRust release channels](#roguerust-release-channels)
 - [RogueRust plugin catalog](#roguerust-plugin-catalog)
 - [Rogue Gaming endpoints](#rogue-gaming-endpoints)
+- [Log Watcher](#log-watcher)
+- [Discord bot](#discord-bot)
+- [Web API and remote machines](#web-api-and-remote-machines)
 - [Portable layout](#portable-layout)
 - [Recommended production setup](#recommended-production-setup)
 - [Custom join domains](custom-domains.md)
@@ -106,6 +109,45 @@ HighPop only reads from these public Rogue Gaming hosts, over HTTPS, when you us
 | `api.roguegaming.com.au` | Rogue Rust Reference command/ConVar metadata (`data/current/*.json`, `data/metadata.json`) |
 | `plugins.roguegaming.com.au` | RogueRust plugin catalog, documentation pages, and `.cs` plugin downloads |
 
+## Log Watcher
+
+**Automation → Log watcher** runs an action when a keyword appears in the server's console: **Notify**
+(Discord/webhook alert), **SendRcon** (a console command you enter), **Stop** or **Restart**. Matching
+ignores case. Each rule has a cooldown in minutes, and a rule fires once even when several matching
+lines arrive together.
+
+- Player chat lines (`[CHAT]`, `[TEAM CHAT]`) never trigger **Stop** or **Restart** rules, so players
+  cannot take the server down by typing a keyword. Notify and SendRcon rules still see chat.
+- HighPop's own `[LogWatch] …` lines are ignored, so a rule cannot trigger itself.
+- Pick keywords that only Rust or your plugins print, and keep a cooldown on Restart rules.
+
+## Discord bot
+
+**Settings → Discord Remote Control Bot** connects a bot to one channel. It posts live status boards and admin
+buttons (Start, Stop, Restart, Backup, Update) and accepts text commands with the configured prefix,
+including `!cmd <console command>`.
+
+Only the Discord user IDs listed under **Admin User IDs** can press the buttons or run commands. With
+an empty list, the bot refuses everything and Settings shows a warning (before v1.0.15 an empty list
+let anyone in the channel use it). To find your ID, enable Discord's Developer Mode, right-click your
+name and choose **Copy User ID**. Keep the bot's channel staff-only as well.
+
+## Web API and remote machines
+
+**Settings → Web Remote Control (HTTP API)** starts an HTTP API used by **Remote Machines** (one HighPop
+controlling servers on other PCs) and, if you enable it, a browser dashboard. Every `/api` request needs
+the API token or a dashboard user's token.
+
+- The API is plain HTTP. HighPop adds a Windows Firewall rule for its port that admits only the local
+  subnet, and removes the rule when the API stops or the port changes. To use it across the internet,
+  put it behind a VPN or an HTTPS reverse proxy and open the port yourself.
+- After 10 wrong tokens in 10 minutes, an address is refused for the rest of that window, and each
+  wrong token is answered slowly.
+- Request bodies are limited to 64 KB, and error replies never include internal details.
+- Restoring a backup through the API is refused while that server is running.
+- Remote machine tokens are stored encrypted. Prefer `https://` URLs for machines outside your LAN,
+  because the token is sent with every request.
+
 ## Portable layout
 
 The release ZIP contains only the application, its assets, and release history:
@@ -144,6 +186,12 @@ only while they are still byte-identical to the deployed copy; an edited copy st
 
 Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up an installation. Secrets are protected with Windows DPAPI for the current Windows user and machine; do not publish `assets/data`.
 
+If `servers.json` or `machines.json` cannot be read at startup, HighPop keeps a copy named
+`<file>.unreadable-<date-time>` and does not overwrite the original with an empty list. If saved
+passwords cannot be decrypted (for example after copying HPRM to another Windows account), a copy is
+kept as `servers.json.undecryptable-<date-time>`; re-enter the RCON and server passwords on the new
+account.
+
 ## Recommended production setup
 
 - Give every profile a unique installation folder and unique Game, Query, WebRCON, and Rust+ ports.
@@ -152,4 +200,5 @@ Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up a
 - Configure automatic backups before enabling unattended updates or wipes.
 - Use tray/background mode when HighPop must retain live console and process handles.
 - Keep the remote API disabled unless it is protected by a trusted LAN, VPN, firewall allow-list, or HTTPS reverse proxy.
+- If you use the Discord bot, add every admin's Discord user ID; the bot refuses all actions until you do.
 

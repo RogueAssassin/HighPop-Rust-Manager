@@ -17,7 +17,7 @@ namespace HighPop.Services;
 /// Setup:
 ///   1. Create a Bot at https://discord.com/developers/applications
 ///   2. Give it Read/Send Messages permissions in your control channel
-///   3. Copy the Bot Token and the Channel ID into HighPop Settings → Discord Bot
+///   3. Copy the Bot Token and the Channel ID into HighPop Settings → Discord Remote Control Bot
 ///
 /// Commands (prefix configurable, default !):
 ///   !help                    — list commands
@@ -160,7 +160,7 @@ public class DiscordBotService : IDisposable
             Start();
             if (string.IsNullOrWhiteSpace(AllowedUserIds))
                 StatusChanged?.Invoke("⚠ No Discord admin user IDs are set. Buttons and commands are refused " +
-                                      "until you add your user ID in Settings → Discord Bot.");
+                                      "until you add your user ID in Settings → Discord Remote Control Bot.");
         }
     }
 

@@ -96,8 +96,8 @@ Actions that need input open over the workspace, so you never lose your place.
 | **Mods** | Oxide/uMod and Carbon install and detection, live plugin reload, RogueRust Stable/Testing channels and a one-click plugin catalog |
 | **Backups and wipes** | Full and incremental ZIP backups, retention, pre-wipe safety backups, safe restore, map wipe and full wipe |
 | **Automation** | Scheduled restarts, updates, backups, wipes, broadcasts and commands, with in-game countdowns |
-| **Monitoring** | CPU, RAM, network and player charts, health checks, log watchers, crash warnings and support bundles with secrets removed |
-| **Remote** | Optional token-protected REST API and dashboard, Discord status and admin controls, webhooks, email alerts and multi-machine control |
+| **Monitoring** | CPU, RAM, network and player charts, health checks with recovery restarts, log watchers, crash warnings and support bundles with secrets removed |
+| **Remote** | Optional token-protected REST API and dashboard (local-subnet firewall rule, token lockout), Discord status boards and admin-only controls, webhooks, email alerts and multi-machine control |
 | **Windows** | Portable folder, system tray, start with Windows, firewall rules, optional UPnP and verified in-place updates |
 | **Light on resources** | Releases idle memory when minimised to the tray (about 55 MB in testing) and only redraws charts while they are on screen |
 
@@ -105,7 +105,7 @@ Actions that need input open over the workspace, so you never lose your place.
 
 | Guide | What it covers |
 |---|---|
-| [Admin guide](docs/admin-guide.md) | WebRCON, player tools, `server.cfg`, RogueRust channels, plugin catalog, folder layout and production tips |
+| [Admin guide](docs/admin-guide.md) | WebRCON, player tools, `server.cfg`, RogueRust channels, plugin catalog, Log Watcher, Discord bot, Web API security, folder layout and production tips |
 | [Custom join domains](docs/custom-domains.md) | `client.connect rust.example.com` with DNS steps for Cloudflare, GoDaddy, Namecheap, Route 53 and more |
 | [Changelog](CHANGELOG.md) | What changed in every release |
 | [Roadmap](ROADMAP.md) | What is planned next |

@@ -9,7 +9,7 @@ This project contains code derived from Windows Game Server (WGS):
 - Copyright (c) 2025 Windows Game Server Contributors
 - License: MIT; the permission notice is retained in `LICENSE`.
 
-The HighPop name, orange server-tower mark, Rust-specific WebRCON implementation, portable asset layout, Rust port/profile hardening, Carbon workflow, safe-wipe changes, presets, documentation, and release packaging were created for this project.
+The HighPop name and HP logo, Rust-specific WebRCON implementation, portable asset layout, Rust port/profile hardening, Carbon workflow, safe-wipe changes, presets, documentation, and release packaging were created for this project.
 
 The following products and projects were reviewed for publicly described feature ideas only. Their source, hosted data, trademarks, and proprietary services are not redistributed:
 

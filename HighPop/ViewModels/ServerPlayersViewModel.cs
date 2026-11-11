@@ -290,7 +290,7 @@ public partial class ServerPlayersViewModel : BaseViewModel
     }
     // ── Player Management ─────────────────────────────────────────────────────
 
-    // Vanhanmallinen tekstisyöttö (yhteensopivuus)
+    // Legacy text input (compatibility)
     [ObservableProperty] private string _playerInput = string.Empty;
 
     [RelayCommand]

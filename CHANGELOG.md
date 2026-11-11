@@ -2,7 +2,7 @@
 
 ## 1.0.15
 
-- **Discord bot now refuses actions when no admin user IDs are set.** Before, an empty "Admin User IDs" list let anyone in the channel press Start/Stop/Restart/Update or run `!cmd` RCON commands. Add your Discord user ID in Settings → Discord Bot to keep using the buttons and commands; Settings and the bot status show a warning until you do.
+- **Discord bot now refuses actions when no admin user IDs are set.** Before, an empty "Admin User IDs" list let anyone in the channel press Start/Stop/Restart/Update or run `!cmd` RCON commands. Add your Discord user ID in Settings → Discord Remote Control Bot to keep using the buttons and commands; Settings and the bot status show a warning until you do.
 - **Web API hardening.**
   - The firewall rule HighPop adds for the Web API port now only admits the local network, and is removed when the API stops or changes port. To reach the API from the internet, open the port yourself, ideally behind a VPN or an HTTPS proxy.
   - Repeated wrong tokens are slowed down, and an address is locked out for 10 minutes after 10 failures.

@@ -79,7 +79,7 @@ public class UserService
             """;
         cmd.ExecuteNonQuery();
 
-        // Migraatio: lisaa last_login jos puuttuu
+        // Migration: add last_login when it is missing
         try
         {
             using var alt = db.CreateCommand();
@@ -230,7 +230,7 @@ public class UserService
             cmd.Parameters.AddWithValue("$r", role.ToString());
             cmd.Parameters.AddWithValue("$t", ProtectToken(NewToken()));
             cmd.ExecuteNonQuery();
-            WriteAudit("system", "create_user", $"user={username} role={role}", db); // #4: auditointi metodin sisään
+            WriteAudit("system", "create_user", $"user={username} role={role}", db); // audit inside the method
         }
         catch { }
     }
@@ -348,7 +348,7 @@ public class UserService
         catch { return []; }
     }
 
-    // Julkinen overload ilman olemassa olevaa yhteyttä
+    // Public overload without an existing connection
     public void WriteAudit(string username, string action, string detail = "")
     {
         if (!_available) return;

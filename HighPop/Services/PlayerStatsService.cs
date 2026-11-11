@@ -156,7 +156,7 @@ public class PlayerStatsService
         {
             using var db  = OpenDb();
             using var cmd = db.CreateCommand();
-            // Yritä ensin SteamID-matchilla, fallback nimellä
+            // Match by SteamID first, then fall back to the name
             var where = !string.IsNullOrEmpty(steamId)
                 ? "server_id = $s AND steam_id = $id AND leave_time IS NULL"
                 : "server_id = $s AND player_name = $p AND leave_time IS NULL";
@@ -210,7 +210,7 @@ public class PlayerStatsService
         catch { return []; }
     }
 
-    /// <summary>Palauttaa per-pelaaja tilastot: sessioita, peliaika, viimeksi nähty.</summary>
+    /// <summary>Returns per-player statistics: sessions, play time and last seen.</summary>
     public List<PlayerStats> GetPlayerStats(string serverId, int limit = 50)
     {
         if (!_available) return [];

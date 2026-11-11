@@ -22,7 +22,7 @@ public class NetworkMonitorService : IDisposable
     // serverId → stats
     private readonly ConcurrentDictionary<string, ServerNetworkStats> _serverStats = new();
 
-    // serverId → PID (päivitetään ulkoa Register-kutsuilla)
+    // serverId → PID (updated from outside through Register calls)
     private readonly ConcurrentDictionary<string, int> _serverPids = new();
 
     public double CurrentBytesInPerSec  { get; private set; }
@@ -43,16 +43,16 @@ public class NetworkMonitorService : IDisposable
         _timer.Start();
     }
 
-    // ── Rekisteröinti ─────────────────────────────────────────────────────────
+    // ── Registration ──────────────────────────────────────────────────────────
 
-    /// <summary>Rekisteröi palvelimen PID seurantaan kun prosessi käynnistyy.</summary>
+    /// <summary>Starts tracking a server's PID when its process starts.</summary>
     public void RegisterServer(string serverId, int pid)
     {
         _serverPids[serverId] = pid;
         _serverStats.TryAdd(serverId, new ServerNetworkStats { ServerId = serverId });
     }
 
-    /// <summary>Poistaa palvelimen seurannasta kun se pysäytetään.</summary>
+    /// <summary>Stops tracking a server when it is stopped.</summary>
     public void UnregisterServer(string serverId)
     {
         _serverPids.TryRemove(serverId, out _);
@@ -68,7 +68,7 @@ public class NetworkMonitorService : IDisposable
     public ServerNetworkStats? GetServerStats(string serverId)
         => _serverStats.TryGetValue(serverId, out var s) ? s : null;
 
-    // ── Näytteistys ───────────────────────────────────────────────────────────
+    // ── Sampling ──────────────────────────────────────────────────────────────
 
     private void Sample()
     {
@@ -91,7 +91,7 @@ public class NetworkMonitorService : IDisposable
 
             Updated?.Invoke();
 
-            // Per-prosessi: vain jos on rekisteröityjä palvelimia
+            // Per process: only when servers are registered
             if (!_serverPids.IsEmpty)
                 UpdateServerStats(totalIn, totalOut);
         }
@@ -102,10 +102,10 @@ public class NetworkMonitorService : IDisposable
     {
         try
         {
-            // Hae kaikki TCP-yhteydet kerran — yksi P/Invoke-kutsu riittää
+            // Read all TCP connections once; one P/Invoke call is enough
             var connsByPid = ProcessNetworkTracker.GetConnectionCountsByPid();
 
-            // Laske kaikki aktiiviset yhteydet referenssiksi
+            // Count all active connections as the reference
             int totalConns = connsByPid.Values.Sum();
 
             foreach (var (serverId, pid) in _serverPids)
@@ -116,14 +116,14 @@ public class NetworkMonitorService : IDisposable
                     _serverStats[serverId] = stats;
                 }
 
-                // Onko prosessi vielä elossa?
+                // Is the process still alive?
                 bool alive = false;
                 try { alive = !Process.GetProcessById(pid).HasExited; }
                 catch { }
 
                 if (!alive)
                 {
-                    // Prosessi ei enää käynnissä — nolla-arvot
+                    // Process no longer running: zero values
                     stats.ConnectionCount = 0;
                     stats.BytesInPerSec   = 0;
                     stats.BytesOutPerSec  = 0;
@@ -135,8 +135,8 @@ public class NetworkMonitorService : IDisposable
                 connsByPid.TryGetValue(pid, out int serverConns);
                 stats.ConnectionCount = serverConns;
 
-                // Kaistaosuus = tämän palvelimen yhteydet / kaikki koneen yhteydet
-                // Painotettu minimikynnyksen yläpuolella olevan liikenteen mukaan
+                // Bandwidth share = this server's connections / all connections on the machine
+                // Weighted by the traffic above the minimum threshold
                 double share = totalConns > 0 && serverConns > 0
                     ? (double)serverConns / totalConns
                     : 0.0;

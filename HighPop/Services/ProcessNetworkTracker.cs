@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace HighPop.Services;
 
 /// <summary>
-/// Hakee TCP-yhteyksien PID-omistajuustiedot iphlpapi.dll:stä.
+/// Reads the owning PID of each TCP connection from iphlpapi.dll.
 /// Ei vaadi korotettuja oikeuksia (admin), toimii Windows 7+.
 /// </summary>
 public static class ProcessNetworkTracker
@@ -29,8 +29,8 @@ public static class ProcessNetworkTracker
     }
 
     /// <summary>
-    /// Palauttaa TCP-yhteyksien lukumäärän per PID.
-    /// Kutsutaan taustaketjulta — ei UI-threadia.
+    /// Returns the number of TCP connections per PID.
+    /// Called from a background thread, not the UI thread.
     /// </summary>
     public static Dictionary<int, int> GetConnectionCountsByPid()
     {
@@ -67,7 +67,7 @@ public static class ProcessNetworkTracker
     }
 
     /// <summary>
-    /// Palauttaa prosessin kuuntelevat portit (LISTEN-tila = 2).
+    /// Returns the ports the process listens on (LISTEN state = 2).
     /// </summary>
     public static List<int> GetListeningPortsForPid(int pid)
     {

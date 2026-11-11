@@ -2358,7 +2358,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _manager.PortsReassigned   -= OnPortsReassigned;
         _steamCmd.OutputReceived   -= OnSteamOutput;
         _steamCmd.ProgressDetailChanged -= OnSteamProgressDetail;
-        _network.ServerStatsUpdated -= OnServerStatsUpdated; // #1: estää muistivuodon poistetuille palvelimille
+        _network.ServerStatsUpdated -= OnServerStatsUpdated; // prevents a leak for removed servers
 
         StopUpdateTimer();
         StopPerfMonitoring();
