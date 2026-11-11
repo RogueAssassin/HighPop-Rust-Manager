@@ -22,7 +22,7 @@
                 </Grid>
             </Border>
 
-            <!-- Framework-aware Windows Explorer shortcuts -->
+            <!-- Framework-aware Windows Explorer shortcuts. Cards with DataContext="{Binding Mods}" bind to ServerModsViewModel. -->
             <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                 <StackPanel>
                     <TextBlock Text="Windows Explorer shortcuts" FontSize="14" FontWeight="SemiBold"
@@ -38,23 +38,23 @@
                         <Button Content="📂 Rust logs" Style="{StaticResource GhostButton}"
                                 Command="{Binding OpenLogDirectoryCommand}" Margin="0,0,8,8"/>
                         <Button Content="📂 Framework root" Style="{StaticResource GhostButton}"
-                                Command="{Binding OpenActiveFrameworkFolderCommand}" Margin="0,0,8,8"
+                                Command="{Binding Mods.OpenActiveFrameworkFolderCommand}" Margin="0,0,8,8"
                                 Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
                         <Button Content="📂 Active plugins" Style="{StaticResource GhostButton}"
-                                Command="{Binding OpenActivePluginFolderCommand}" Margin="0,0,8,8"
+                                Command="{Binding Mods.OpenActivePluginFolderCommand}" Margin="0,0,8,8"
                                 Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
                         <Button Content="📂 Plugin configs" Style="{StaticResource GhostButton}"
-                                Command="{Binding OpenActiveModConfigFolderCommand}" Margin="0,0,8,8"
+                                Command="{Binding Mods.OpenActiveModConfigFolderCommand}" Margin="0,0,8,8"
                                 Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
                         <Button Content="📂 Extensions" Style="{StaticResource GhostButton}"
-                                Command="{Binding OpenActiveExtensionFolderCommand}" Margin="0,0,8,8"
+                                Command="{Binding Mods.OpenActiveExtensionFolderCommand}" Margin="0,0,8,8"
                                 Visibility="{Binding HasSingleModFramework, Converter={StaticResource BoolToVis}}"/>
                     </WrapPanel>
                 </StackPanel>
             </Border>
 
             <!-- Status bar -->
-            <Border Style="{StaticResource Card}" Margin="0,0,0,16"
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16" DataContext="{Binding Mods}"
                     Visibility="{Binding ModStatusText, Converter={StaticResource StringToVis}}">
                 <TextBlock Text="{Binding ModStatusText}" FontSize="13"
                            Foreground="{StaticResource AccentBlueBrush}" TextWrapping="Wrap"/>
@@ -63,7 +63,7 @@
             <!-- Oxide section -->
             <Border Style="{StaticResource Card}" Margin="0,0,0,16"
                     Visibility="{Binding Plugin.SupportsOxide, Converter={StaticResource BoolToVis}}">
-                <StackPanel>
+                <StackPanel DataContext="{Binding Mods}">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <TextBlock Text="Oxide / uMod" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -84,7 +84,7 @@
                                 IsEnabled="{Binding CanInstallOxide}"/>
                         <Button Content="📂 Open plugins folder" Style="{StaticResource GhostButton}"
                                 Command="{Binding OpenPluginFolderCommand}"
-                                Visibility="{Binding IsOxideInstalled, Converter={StaticResource BoolToVis}}"/>
+                                Visibility="{Binding DataContext.IsOxideInstalled, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -92,7 +92,7 @@
             <!-- Carbon section (Rust only) -->
             <Border Style="{StaticResource Card}" Margin="0,0,0,16"
                     Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
-                <StackPanel>
+                <StackPanel DataContext="{Binding Mods}">
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <TextBlock Text="Carbon" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -111,7 +111,7 @@
                                 IsEnabled="{Binding CanInstallCarbon}"/>
                         <Button Content="📂 Open Carbon plugins" Style="{StaticResource GhostButton}"
                                 Command="{Binding OpenCarbonPluginFolderCommand}"
-                                Visibility="{Binding IsCarbonInstalled, Converter={StaticResource BoolToVis}}"/>
+                                Visibility="{Binding DataContext.IsCarbonInstalled, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -119,7 +119,7 @@
             <!-- RogueRust extension -->
             <Border Style="{StaticResource Card}" Margin="0,0,0,16"
                     Visibility="{Binding IsRust, Converter={StaticResource BoolToVis}}">
-                <Grid>
+                <Grid DataContext="{Binding Mods}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="6"/>
                         <ColumnDefinition Width="*"/>
@@ -151,7 +151,7 @@
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,10,0"/>
                             <ComboBox Grid.Column="1" ItemsSource="{Binding RogueRustChannelOptions}"
                                       SelectedItem="{Binding RogueRustChannel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                      IsEnabled="{Binding IsStopped}"/>
+                                      IsEnabled="{Binding DataContext.IsStopped, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                             <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
                                        Text="Stable is recommended for production. Testing is intended for development servers and may contain unreleased changes."
                                        Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap"/>
@@ -171,7 +171,7 @@
             </Border>
 
             <!-- RogueRust plugin catalog (plugins.roguegaming.com.au) -->
-            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16" DataContext="{Binding Mods}">
                 <StackPanel>
                     <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
@@ -226,11 +226,11 @@
                                                    Foreground="{StaticResource AccentGreenBrush}"/>
                                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Button Content="Docs" Style="{StaticResource GhostButton}" Margin="0,0,6,0"
-                                                    Command="{Binding DataContext.OpenCatalogPluginDocsCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    Command="{Binding DataContext.OpenCatalogPluginDocsCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                             <Button Content="{Binding ActionText, Mode=OneWay}" Style="{StaticResource PrimaryButton}"
-                                                    IsEnabled="{Binding DataContext.ModBusy, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource InvBool}}"
-                                                    Command="{Binding DataContext.InstallCatalogPluginCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    IsEnabled="{Binding DataContext.ModBusy, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={StaticResource InvBool}}"
+                                                    Command="{Binding DataContext.InstallCatalogPluginCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"/>
                                         </StackPanel>
                                     </Grid>

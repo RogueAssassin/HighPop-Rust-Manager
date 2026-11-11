@@ -66,10 +66,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private bool _showConsoleErrors = true;
     [ObservableProperty] private bool _isConsolePaused;
     [ObservableProperty] private string _portConfigurationStatus = "Ports are valid.";
-    [ObservableProperty] private string _modStatusText   = string.Empty;
-    [ObservableProperty] private bool   _modBusy;
     [ObservableProperty] private string _detectedModFramework = "Not scanned";
-    [ObservableProperty] private string _rogueRustStatus = "Not installed";
     [ObservableProperty] private List<InstalledModPlugin> _installedPlugins = [];
     [ObservableProperty] private bool _isOxideInstalled;
     [ObservableProperty] private bool _isCarbonInstalled;
@@ -142,7 +139,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         ["Community (Vanilla)", "Modded", "Development"];
     public IReadOnlyList<string> RustSteamBranchOptions { get; } =
         ["public", "staging", "aux01"];
-    public IReadOnlyList<string> RogueRustChannelOptions { get; } = ["Stable", "Testing"];
     public ObservableCollection<RustBrowserTagOption> RustBrowserTags { get; } = [];
     public string EffectiveLogDirectory => IsRust
         ? RustPlugin.GetEffectiveLogDirectory(Server)
@@ -185,6 +181,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private ServerConfigViewModel? _configVm;
     public ServerConfigViewModel Config => _configVm ??= new(this, _configEditor, _presets, _templates, _config);
     /// <summary>Tells the pages that values on <see cref="Server"/> changed outside a bound property.</summary>
+
+    // Mods page: framework installs, RogueRust and the plugin catalog. Created on first use.
+    private ServerModsViewModel? _modsVm;
+    public ServerModsViewModel Mods => _modsVm ??= new(this, _mods, _pluginCatalog, _manager);
     internal void NotifyServerChanged() => OnPropertyChanged(nameof(Server));
 
     public bool HasPlayerCommands => Plugin?.GetPlayersCommand() != null
@@ -199,14 +199,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public bool HasModSupport       => Plugin?.SupportsOxide == true;
     public bool IsRust              => Plugin?.GameId == "rust";
     public bool HasSingleModFramework => IsOxideInstalled ^ IsCarbonInstalled;
-    public bool CanInstallOxide => IsStopped && !ModBusy && !IsCarbonInstalled;
-    public bool CanInstallCarbon => IsStopped && !ModBusy && !IsOxideInstalled;
-
-    partial void OnModBusyChanged(bool value)
-    {
-        OnPropertyChanged(nameof(CanInstallOxide));
-        OnPropertyChanged(nameof(CanInstallCarbon));
-    }
 
     partial void OnIsWorkspaceActiveChanged(bool value)
     {
@@ -463,22 +455,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                      && RustServerProfile == "Development")
                 RustServerProfile = "Community (Vanilla)";
             AddActionLog($"Rust SteamCMD branch changed to {branch}");
-        }
-    }
-
-    public string RogueRustChannel
-    {
-        get => ModManagerService.NormalizeRogueRustChannel(Server.RogueRustChannel);
-        set
-        {
-            var channel = ModManagerService.NormalizeRogueRustChannel(value);
-            if (RogueRustChannel == channel) return;
-            Server.RogueRustChannel = channel;
-            OnPropertyChanged();
-            RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
-                ? $"Installed {version} · {channel} channel"
-                : $"Not installed · {channel} channel";
-            AddActionLog($"RogueRust channel changed to {channel}");
         }
     }
 
@@ -1700,237 +1676,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         return true;
     }
 
-    // ── Mod manager ──────────────────────────────────────────────────────────
-
-    [RelayCommand]
-    private async Task InstallOxideAsync()
-    {
-        if (Plugin == null || !Plugin.SupportsOxide) return;
-        if (IsRunning)
-        {
-            ModStatusText = "Stop the server before installing or updating Oxide.";
-            return;
-        }
-        if (Plugin.GameId == "rust" && ModManagerService.IsCarbonInstalled(Server.InstallPath))
-        {
-            ModStatusText = "Carbon is already installed. Use one Rust mod framework at a time.";
-            return;
-        }
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                UiDispatcher.Post(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-
-            await _mods.InstallOxideAsync(Plugin, Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Oxide installed successfully.", ConsoleMessageType.System);
-            AddActionLog("Oxide / uMod installed or updated");
-            RefreshInstalledPlugins();
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            UiDispatcher.Post(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallCarbonAsync()
-    {
-        if (Plugin?.GameId != "rust") return;
-        if (IsRunning)
-        {
-            ModStatusText = "Stop the Rust server before installing or updating Carbon.";
-            return;
-        }
-        if (ModManagerService.GetInstalledOxideVersion(Server.InstallPath) != null)
-        {
-            ModStatusText = "Oxide is already installed. Use one Rust mod framework at a time.";
-            return;
-        }
-
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                UiDispatcher.Post(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            await _mods.InstallCarbonAsync(Server.InstallPath, progress);
-            AppendLog("[Mods] ✅ Carbon installed successfully.", ConsoleMessageType.System);
-            AddActionLog("Carbon installed or updated");
-            RefreshInstalledPlugins();
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {ex.Message}", ConsoleMessageType.Error);
-            UiDispatcher.Post(() => ModStatusText = $"❌ {ex.Message}");
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallRogueRustAsync()
-    {
-        if (Plugin?.GameId != "rust") return;
-        if (IsRunning)
-        {
-            ModStatusText = "Stop the Rust server before installing or updating RogueRust.";
-            return;
-        }
-        if (ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Count == 0)
-        {
-            ModStatusText = "RogueRust requires Oxide/uMod or Carbon. Install a mod framework first.";
-            return;
-        }
-
-        ModBusy = true;
-        try
-        {
-            var progress = new Progress<(int pct, string msg)>(x =>
-                UiDispatcher.Post(() => ModStatusText = $"[{x.pct}%] {x.msg}"));
-            var version = await _mods.InstallRogueRustAsync(Server.InstallPath, RogueRustChannel, progress);
-            var frameworks = string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath)
-                .Select(target => target.Framework));
-            RogueRustStatus = $"Installed {version} · {RogueRustChannel} · {frameworks}";
-            AppendLog($"[Mods] ✅ RogueRust {version} ({RogueRustChannel}) installed for {frameworks} and SHA-256 verified.", ConsoleMessageType.System);
-            AddActionLog($"RogueRust {version} ({RogueRustChannel}) installed or updated");
-            RefreshInstalledPlugins();
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ RogueRust: {ex.Message}", ConsoleMessageType.Error);
-            ModStatusText = $"❌ {ex.Message}";
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private async Task CheckRogueRustHealthAsync()
-    {
-        if (!IsRunning)
-        {
-            ModStatusText = "Start Rust before sending RogueRust diagnostics.";
-            return;
-        }
-        await _manager.SendCommandAsync(Server.Id, "roguerust.version");
-        await _manager.SendCommandAsync(Server.Id, "roguerust.readiness");
-        ModStatusText = "RogueRust version and readiness commands sent. Review their responses in the Console tab.";
-        AddActionLog("Requested RogueRust readiness diagnostics");
-    }
-
-    [RelayCommand]
-    private void OpenCarbonPluginFolder()
-    {
-        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
-        if (paths?.Framework != "Carbon"
-            || !ModManagerService.OpenExistingFolder(paths.PluginDirectory))
-            ModStatusText = "Carbon is not active for this server, or its plugins folder does not exist yet.";
-    }
-
-    [RelayCommand]
-    private void OpenPluginFolder()
-    {
-        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
-        if (paths?.Framework != "Oxide / uMod"
-            || !ModManagerService.OpenExistingFolder(paths.PluginDirectory))
-            ModStatusText = "Oxide/uMod is not active for this server, or its plugins folder does not exist yet.";
-    }
-
-    [RelayCommand]
-    private void OpenActiveFrameworkFolder()
-    {
-        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
-        if (paths == null || !ModManagerService.OpenExistingFolder(paths.RootDirectory))
-            ModStatusText = "Install exactly one supported mod framework before opening its folder.";
-    }
-
-    [RelayCommand]
-    private void OpenActivePluginFolder()
-    {
-        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
-        if (paths == null || !ModManagerService.OpenExistingFolder(paths.PluginDirectory))
-            ModStatusText = "The active framework plugins folder does not exist yet.";
-    }
-
-    [RelayCommand]
-    private void OpenActiveModConfigFolder()
-    {
-        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
-        if (paths == null || !ModManagerService.OpenExistingFolder(paths.ConfigDirectory))
-            ModStatusText = "The active framework configuration folder does not exist yet.";
-    }
-
-    // ── RogueRust plugin catalog (plugins.roguegaming.com.au) ───────────────
-
-    private IReadOnlyList<RogueRustCatalogPlugin> _catalogSource = [];
-    [ObservableProperty] private List<RogueRustCatalogPlugin> _catalogPlugins = [];
-    [ObservableProperty] private bool _pluginCatalogLoading;
-    [ObservableProperty] private string _pluginCatalogStatus =
-        $"Load the catalog to browse RogueRust plugins from {RogueGamingEndpoints.PluginsHost}.";
-
-    [RelayCommand]
-    private async Task RefreshPluginCatalogAsync()
-    {
-        if (PluginCatalogLoading) return;
-        PluginCatalogLoading = true;
-        PluginCatalogStatus = $"Downloading the plugin catalog from {RogueGamingEndpoints.PluginsHost}…";
-        try
-        {
-            _catalogSource = await _pluginCatalog.LoadAsync(refresh: _catalogSource.Count > 0);
-            CatalogPlugins = RogueRustPluginCatalogService.WithInstalledVersions(_catalogSource, Server.InstallPath);
-            var updates = CatalogPlugins.Count(plugin => plugin.UpdateAvailable);
-            var installed = CatalogPlugins.Count(plugin => plugin.IsInstalled);
-            PluginCatalogStatus = $"{CatalogPlugins.Count} plugins listed · {installed} installed · " +
-                                  (updates == 0 ? "all up to date" : $"{updates} update(s) available");
-        }
-        catch (Exception ex)
-        {
-            PluginCatalogStatus = ex.Message;
-        }
-        finally { PluginCatalogLoading = false; }
-    }
-
-    [RelayCommand]
-    private async Task InstallCatalogPluginAsync(RogueRustCatalogPlugin? plugin)
-    {
-        if (plugin == null || Plugin?.GameId != "rust" || ModBusy) return;
-        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
-        if (paths == null)
-        {
-            ModStatusText = "Install exactly one mod framework (Oxide/uMod or Carbon) before adding RogueRust plugins.";
-            return;
-        }
-
-        ModBusy = true;
-        try
-        {
-            ModStatusText = $"Downloading {plugin.FileName} from {RogueGamingEndpoints.PluginsHost}…";
-            var version = await _pluginCatalog.InstallAsync(plugin, Server.InstallPath);
-            var requiresExtension = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) == null;
-            ModStatusText = $"✅ {plugin.Name} v{version} installed to {paths.Framework} plugins." +
-                            (IsRunning ? " The framework hot-loads it; no restart is needed." : string.Empty) +
-                            (requiresExtension ? " Note: RogueRust plugins need the RogueRust extension installed." : string.Empty);
-            AppendLog($"[Mods] ✅ {plugin.FileName} v{version} installed from {RogueGamingEndpoints.PluginsHost}.",
-                ConsoleMessageType.System);
-            AddActionLog($"RogueRust plugin {plugin.Name} v{version} installed or updated");
-            RefreshInstalledPlugins();
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"[Mods] ❌ {plugin.FileName}: {ex.Message}", ConsoleMessageType.Error);
-            ModStatusText = $"❌ {ex.Message}";
-        }
-        finally { ModBusy = false; }
-    }
-
-    [RelayCommand]
-    private void OpenCatalogPluginDocs(RogueRustCatalogPlugin? plugin)
-        => OpenTrustedUrl(plugin?.DocumentationUrl, RogueGamingEndpoints.PluginsHost);
-
-    [RelayCommand]
-    private void OpenPluginCatalogSite()
-        => OpenTrustedUrl(RogueGamingEndpoints.PluginsUrl, RogueGamingEndpoints.PluginsHost);
-
     // ── Custom join domain ───────────────────────────────────────────────────
 
     public const string CustomDomainGuideUrl =
@@ -1986,7 +1731,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private void OpenCustomDomainGuide() => OpenTrustedUrl(CustomDomainGuideUrl, "github.com");
 
-    private static void OpenTrustedUrl(string? url, string host)
+    internal static void OpenTrustedUrl(string? url, string host)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || !RogueGamingEndpoints.IsHttpsOnHost(uri, host))
             return;
@@ -2001,25 +1746,13 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     }
 
     [RelayCommand]
-    private void OpenActiveExtensionFolder()
-    {
-        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
-        if (paths == null || !ModManagerService.OpenExistingFolder(paths.ExtensionDirectory))
-            ModStatusText = "The active framework extension folder does not exist yet.";
-    }
-
-    [RelayCommand]
-    private void RefreshInstalledPlugins()
+    internal void RefreshInstalledPlugins()
     {
         IsOxideInstalled = ModManagerService.GetInstalledOxideVersion(Server.InstallPath) != null;
         IsCarbonInstalled = ModManagerService.IsCarbonInstalled(Server.InstallPath);
         DetectedModFramework = ModManagerService.GetDetectedFramework(Server.InstallPath);
-        RogueRustStatus = ModManagerService.GetInstalledRogueRustVersion(Server.InstallPath) is { Length: > 0 } version
-            ? $"Installed {version} · {RogueRustChannel} · {string.Join(" + ", ModManagerService.GetRogueRustInstallTargets(Server.InstallPath).Select(target => target.Framework))}"
-            : $"Not installed · {RogueRustChannel} channel";
         InstalledPlugins = ModManagerService.GetInstalledPlugins(Server.InstallPath);
-        if (_catalogSource.Count > 0)
-            CatalogPlugins = RogueRustPluginCatalogService.WithInstalledVersions(_catalogSource, Server.InstallPath);
+        _modsVm?.Refresh();
 
         if (!DetectedModFramework.StartsWith("Vanilla", StringComparison.OrdinalIgnoreCase))
         {
@@ -2027,8 +1760,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 RustServerProfile = "Modded";
         }
         OnPropertyChanged(nameof(HasSingleModFramework));
-        OnPropertyChanged(nameof(CanInstallOxide));
-        OnPropertyChanged(nameof(CanInstallCarbon));
         OnPropertyChanged(nameof(EffectiveLogDirectory));
     }
 
@@ -3607,8 +3338,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         OnPropertyChanged(nameof(CanStop));
         OnPropertyChanged(nameof(CanForceStop));
         OnPropertyChanged(nameof(CanInstallServerFiles));
-        OnPropertyChanged(nameof(CanInstallOxide));
-        OnPropertyChanged(nameof(CanInstallCarbon));
+        _modsVm?.RaiseCanInstallChanged();
         OnPropertyChanged(nameof(StatusColor));
         OnPropertyChanged(nameof(UptimeText));
     }
@@ -3619,7 +3349,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         {
             if (!ModManagerService.OpenExistingFolder(path))
             {
-                ModStatusText = $"The {label} folder does not exist yet.";
+                Mods.ModStatusText = $"The {label} folder does not exist yet.";
                 AppendLog($"[Files] The {label} folder does not exist yet.", ConsoleMessageType.Warning);
                 return;
             }
@@ -3627,7 +3357,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         }
         catch (Exception ex)
         {
-            ModStatusText = $"Could not open {label}: {ex.Message}";
+            Mods.ModStatusText = $"Could not open {label}: {ex.Message}";
             AppendLog($"[Files] Could not open {label}: {ex.Message}", ConsoleMessageType.Error);
         }
     }
