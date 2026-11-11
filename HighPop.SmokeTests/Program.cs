@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.15", "application and release metadata report v1.0.15");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.15", "1.0.14")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.15")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.15", "1.0.15")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.15"),
+Check(AppInfo.Version == "1.0.16", "application and release metadata report v1.0.16");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.16", "1.0.15")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.16")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.16", "1.0.16")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.16"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())

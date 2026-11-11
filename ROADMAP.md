@@ -10,7 +10,7 @@ For what has already shipped, see the [changelog](CHANGELOG.md).
 - **v1.0**: log archives, one shared SteamCMD, world-size presets, firewall controls, profile export/import and verified self-updates.
 - **v1.0.1–v1.0.12**: the RogueRust plugin catalog, custom join domains with a DNS checker, a reliable WebRCON (delivery-confirmed `say`, live chat and F7 reports), Players admin tools, and a console that stays on the newest line after RDP reconnects.
 - **v1.0.13–v1.0.14**: the grouped server sidebar, faster server switching, lower RAM use in the tray and a fix for chart errors after RDP reconnects. This delivers part of the v1.2 interface work below.
-- **v1.0.15**: a Discord bot that refuses actions without configured admins, a local-subnet firewall rule, token lockout and request limits for the Web API, protection against losing `servers.json`, and safer Log Watcher and health-check recovery.
+- **v1.0.15–v1.0.16**: Oxide and Carbon downloads verified against the SHA-256 GitHub publishes, a Discord bot that refuses actions without configured admins, a local-subnet firewall rule, token lockout and request limits for the Web API, protection against losing `servers.json`, and safer Log Watcher and health-check recovery.
 
 ## v1.1: Safer updates and recovery
 
