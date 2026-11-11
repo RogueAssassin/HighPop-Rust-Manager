@@ -4,7 +4,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $xamlFiles = @(
     Join-Path $repoRoot 'HighPop\MainWindow.xaml'
 ) + @(Get-ChildItem (Join-Path $repoRoot 'HighPop\Views') -Filter '*.xaml' -Recurse | ForEach-Object FullName)
-$viewModelSource = (Get-ChildItem (Join-Path $repoRoot 'HighPop\ViewModels') -Filter '*.cs' |
+$viewModelSource = (Get-ChildItem (Join-Path $repoRoot 'HighPop\ViewModels') -Filter '*.cs' -Recurse |
     Get-Content -Raw) -join "`n"
 $issues = [System.Collections.Generic.List[string]]::new()
 $bindingCount = 0
@@ -15,8 +15,10 @@ foreach ($xamlFile in $xamlFiles) {
     catch { $issues.Add("$xamlFile is not valid XML: $($_.Exception.Message)") }
 
     foreach ($match in [regex]::Matches($xaml, 'Command="\{Binding\s+([^,}\s]+)')) {
-        $command = $match.Groups[1].Value
-        if ($command.Contains('.') -or $command -in @('DataContext', 'FileBrowser')) { continue }
+        # Dotted paths (DataContext.XCommand, Backups.XCommand) are checked by their last
+        # segment, so commands on per-page view-models are covered too.
+        $command = ($match.Groups[1].Value -split '\.')[-1]
+        if ($command -notlike '*Command') { continue }
         $bindingCount++
         $stem = $command -replace 'Command$', ''
         if ($viewModelSource -notmatch "\b$([regex]::Escape($stem))(?:Async)?\s*\(") {

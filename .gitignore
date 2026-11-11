@@ -44,3 +44,6 @@ desktop.ini
 *.pfx
 *.p12
 *.snk
+
+# graphify knowledge-graph output (local only)
+graphify-out/

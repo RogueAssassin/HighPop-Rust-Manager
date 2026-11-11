@@ -47,7 +47,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private const int MaxConsoleLines = 2000;
     public ObservableCollection<ConsoleMessage> Log { get; } = [];
     public ObservableCollection<ConsoleMessage> FilteredLog { get; } = [];
-    public ObservableCollection<BackupEntry> Backups { get; } = [];
     public ObservableCollection<string> ActionLog { get; } = [];
 
     [ObservableProperty] private int _serverNumber;
@@ -184,15 +183,12 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private long _maxRamMb;
     partial void OnMaxRamMbChanged(long value) => Server.MaxRamMb = value;
 
-    // Backup retention
-    [ObservableProperty] private int _backupRetention;
-    partial void OnBackupRetentionChanged(int value) => Server.BackupRetention = value;
-    [ObservableProperty] private int _backupMaxAgeDays;
-    partial void OnBackupMaxAgeDaysChanged(int value) => Server.BackupMaxAgeDays = value;
-    [ObservableProperty] private bool _useIncrementalBackups;
-    partial void OnUseIncrementalBackupsChanged(bool value) => Server.UseIncrementalBackups = value;
-    [ObservableProperty] private int _fullBackupEveryN;
-    partial void OnFullBackupEveryNChanged(int value) => Server.FullBackupEveryN = value;
+    // Backups page. Created on first use so servers whose Backups page is never opened
+    // do not read their backup folder at startup.
+    private ServerBackupsViewModel? _backupsVm;
+    public ServerBackupsViewModel Backups => _backupsVm ??= new(this, _backup, _notifications);
+    /// <summary>Reloads the backup list if the Backups page has been opened; otherwise it loads on first open.</summary>
+    public void RefreshBackups() => _backupsVm?.Refresh();
 
     public bool HasPlayerCommands => Plugin?.GetPlayersCommand() != null
                                   || Plugin?.GetKickCommand("") != null;
@@ -653,10 +649,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         }
 
         _maxRamMb = Server.MaxRamMb; // initialize without triggering OnMaxRamMbChanged
-        _backupRetention   = Server.BackupRetention;
-        _backupMaxAgeDays  = Server.BackupMaxAgeDays;
-        _useIncrementalBackups = Server.UseIncrementalBackups;
-        _fullBackupEveryN  = Server.FullBackupEveryN;
         foreach (var qc in Server.QuickCommands) QuickCommands.Add(qc);
         foreach (var r in Server.LogWatchRules)  LogWatchRules.Add(r);
 
@@ -673,7 +665,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             .ToList() ?? [];
 
         RefreshStatus();
-        RefreshBackups();
         RefreshModerationProfiles();
         RefreshInstalledPlugins();
         RefreshScheduledTasks();
@@ -786,7 +777,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     AppendLog("[HighPop] Creating backup before start...", ConsoleMessageType.System);
                     await _backup.CreateBackupAsync(Server);
                     AppendLog("[HighPop] Backup created.", ConsoleMessageType.System);
-                    RefreshBackups();
+                    _backupsVm?.Refresh();
                 }
                 catch (Exception ex) { AppendLog($"[HighPop] Backup before start failed: {ex.Message}", ConsoleMessageType.Warning); }
             }
@@ -832,7 +823,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     AppendLog("[HighPop] Creating backup after shutdown...", ConsoleMessageType.System);
                     await _backup.CreateBackupAsync(Server);
                     AppendLog("[HighPop] Backup created.", ConsoleMessageType.System);
-                    RefreshBackups();
+                    _backupsVm?.Refresh();
                 }
                 catch (Exception ex) { AppendLog($"[HighPop] Backup after shutdown failed: {ex.Message}", ConsoleMessageType.Warning); }
             }
@@ -917,7 +908,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         // Auto-backup before update (only when there is something to back up)
         if (Server.BackupEnabled && hadExistingInstall)
         {
-            try { await _backup.CreateBackupAsync(Server); AppendLog("[Backup] Auto-backup created before update.", ConsoleMessageType.System); RefreshBackups(); }
+            try { await _backup.CreateBackupAsync(Server); AppendLog("[Backup] Auto-backup created before update.", ConsoleMessageType.System); _backupsVm?.Refresh(); }
             catch (Exception ex) { AppendLog($"[Backup] Pre-update backup failed: {ex.Message}", ConsoleMessageType.Warning); }
         }
 
@@ -1356,87 +1347,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         RconStatusText = "Disconnected";
         AppendLog("[RCON] " + Loc.RconDisconnectedMsg, ConsoleMessageType.System);
         AddActionLog("WebRCON disconnected");
-    }
-
-    // ── Backups ──────────────────────────────────────────────────────────────
-
-    [RelayCommand]
-    private async Task CreateBackupAsync()
-    {
-        try
-        {
-            AppendLog("[Backup] " + Loc.BackupCreating, ConsoleMessageType.System);
-            var entry = await _backup.CreateBackupAsync(Server);
-            AppendLog($"[Backup] {Loc.BackupDone}: {entry.SizeText}", ConsoleMessageType.System);
-            AddActionLog($"Backup created ({entry.SizeText})");
-            await _notifications.NotifyAsync($"💾 {Server.DisplayName} {Loc.BackupDone}", entry.SizeText, "#D29922");
-            RefreshBackups();
-        }
-        catch (Exception ex) { AppendLog("[ERR] " + ex.Message, ConsoleMessageType.Error); }
-    }
-
-    [RelayCommand]
-    private void CleanupBackupsNow()
-    {
-        var toDelete = _backup.GetBackupsToDelete(Server, Server.BackupRetention);
-        if (toDelete.Count == 0)
-        {
-            WpfMsgBox.Show("No backups currently match the retention/age limits — nothing to delete.",
-                "Clean up backups", WpfMsgBoxButton.OK, WpfMsgBoxImage.Information);
-            return;
-        }
-
-        var totalSize = toDelete.Sum(b => b.SizeBytes);
-        var sizeText  = totalSize >= 1024 * 1024 * 1024
-            ? $"{totalSize / (1024.0 * 1024 * 1024):F2} GB"
-            : $"{totalSize / (1024.0 * 1024):F1} MB";
-
-        var result = WpfMsgBox.Show(
-            $"This will permanently delete {toDelete.Count} backup(s) totaling {sizeText}, based on the current " +
-            $"\"Keep at most {Server.BackupRetention}\" / \"older than {Server.BackupMaxAgeDays} days\" settings.\n\n" +
-            "This cannot be undone. Continue?",
-            "Clean up backups", WpfMsgBoxButton.YesNo, WpfMsgBoxImage.Warning);
-        if (result != WpfMsgBoxResult.Yes) return;
-
-        foreach (var b in toDelete)
-            _backup.DeleteBackup(b.FilePath);
-
-        AppendLog($"[Backup] Cleaned up {toDelete.Count} old backup(s) ({sizeText}).", ConsoleMessageType.System);
-        RefreshBackups();
-    }
-
-    [RelayCommand]
-    private async Task RestoreBackupAsync(BackupEntry? entry)
-    {
-        if (entry == null) return;
-        if (IsRunning)
-        {
-            AppendLog("[ERR] " + Loc.RestoreStopFirst, ConsoleMessageType.Error);
-            return;
-        }
-        AppendLog($"[Restore] {Loc.RestoreStarting} {entry.CreatedAt:dd.MM.yyyy HH:mm}...", ConsoleMessageType.System);
-        await _backup.RestoreBackupAsync(Server, entry.FilePath);
-        AppendLog("[Restore] " + Loc.RestoreDone, ConsoleMessageType.System);
-        AddActionLog($"Backup restored: {Path.GetFileName(entry.FilePath)}");
-    }
-
-    [RelayCommand]
-    private void DeleteBackup(BackupEntry? entry)
-    {
-        if (entry == null) return;
-        _backup.DeleteBackup(entry.FilePath);
-        AddActionLog($"Backup deleted: {Path.GetFileName(entry.FilePath)}");
-        RefreshBackups();
-    }
-
-    public void RefreshBackups()
-    {
-        UiDispatcher.Post(() =>
-        {
-            Backups.Clear();
-            foreach (var b in _backup.GetBackupsForServer(Server))
-                Backups.Add(b);
-        });
     }
 
     // ── Port check ───────────────────────────────────────────────────────────
@@ -3808,7 +3718,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         });
     }
 
-    private void AppendLog(
+    internal void AppendLog(
         string text,
         ConsoleMessageType type = ConsoleMessageType.Info,
         string source = "HighPop")
@@ -3907,7 +3817,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         await SendRconOrConsole(command);
     }
 
-    private void AddActionLog(string action)
+    internal void AddActionLog(string action)
     {
         var safeAction = UiTextSanitizer.Normalize(action, 2_048);
         var entry = $"[{DateTime.Now:dd.MM HH:mm:ss}] {safeAction}";

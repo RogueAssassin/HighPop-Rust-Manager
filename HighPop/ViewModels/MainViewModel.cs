@@ -273,7 +273,7 @@ public partial class MainViewModel : BaseViewModel
         _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.Discord, "Discord stop request") : Task.CompletedTask; });
         _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.Discord, "Discord restart request") : Task.CompletedTask; });
         _bot.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)       : Task.CompletedTask; });
-        _bot.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.CreateBackupCommand.ExecuteAsync(null) : Task.CompletedTask; });
+        _bot.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.Backups.CreateBackupCommand.ExecuteAsync(null) : Task.CompletedTask; });
         _bot.SendCmd       = (id, cmd) => DispatchCommandAndWait(() =>
         {
             var vm = FindServer(id);
@@ -343,7 +343,7 @@ public partial class MainViewModel : BaseViewModel
         _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.WebApi, "Web API stop request") : Task.CompletedTask; });
         _webApi.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.WebApi, "Web API restart request") : Task.CompletedTask; });
         _webApi.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)        : Task.CompletedTask; });
-        _webApi.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.CreateBackupCommand.ExecuteAsync(null)  : Task.CompletedTask; });
+        _webApi.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.Backups.CreateBackupCommand.ExecuteAsync(null)  : Task.CompletedTask; });
         _webApi.SendCmd       = async (id, cmd) => await manager.SendCommandAsync(id, cmd);
         _webApi.GetMetrics    = () => metrics.Current;
         _webApi.GetNetwork    = () => (network.CurrentBytesInPerSec, network.CurrentBytesOutPerSec);
@@ -615,7 +615,7 @@ public partial class MainViewModel : BaseViewModel
     {
         var targets = Servers.Where(s => s.IsBatchSelected).ToList();
         foreach (var vm in targets)
-            await vm.CreateBackupCommand.ExecuteAsync(null);
+            await vm.Backups.CreateBackupCommand.ExecuteAsync(null);
     }
 
     private async Task CheckForUpdateAsync(bool promptOnDetection)
@@ -1208,7 +1208,7 @@ public partial class MainViewModel : BaseViewModel
     private async Task BackupAllAsync()
     {
         foreach (var vm in Servers)
-            await vm.CreateBackupCommand.ExecuteAsync(null);
+            await vm.Backups.CreateBackupCommand.ExecuteAsync(null);
     }
 
     [RelayCommand]
