@@ -110,17 +110,32 @@ public class WebApiService : IDisposable
         IsRunning   = true;
     }
 
-    private static void AddFirewallRule(int port)
+    private int _firewallPort;
+
+    private void AddFirewallRule(int port)
     {
         try
         {
-            var name = $"HighPop Web API port {port}";
-            // Remove old rule first (ignore errors), then add fresh
+            var name = FirewallRuleName(port);
+            // Remove old rule first (ignore errors), then add fresh. The API is plain HTTP with a
+            // bearer token, so the rule only admits the local network (master/slave on a LAN).
+            // Reaching it from the internet needs a deliberate rule, ideally behind a VPN or TLS proxy.
             RunNetsh($"advfirewall firewall delete rule name=\"{name}\"");
-            RunNetsh($"advfirewall firewall add rule name=\"{name}\" dir=in action=allow protocol=TCP localport={port}");
+            RunNetsh($"advfirewall firewall add rule name=\"{name}\" dir=in action=allow protocol=TCP localport={port} remoteip=LocalSubnet");
+            _firewallPort = port;
         }
         catch { }
     }
+
+    private void RemoveFirewallRule()
+    {
+        if (_firewallPort == 0) return;
+        try { RunNetsh($"advfirewall firewall delete rule name=\"{FirewallRuleName(_firewallPort)}\""); }
+        catch { }
+        _firewallPort = 0;
+    }
+
+    private static string FirewallRuleName(int port) => $"HighPop Web API port {port}";
 
     private static void RegisterUrlAcl(int port)
     {
@@ -152,7 +167,10 @@ public class WebApiService : IDisposable
     {
         _cts?.Cancel();
         try { _listener?.Stop(); } catch { }
+        try { _listener?.Close(); } catch { }
         _listener = null;
+        // Do not leave an allow rule behind for a port the API no longer listens on.
+        RemoveFirewallRule();
         IsRunning = false;
     }
 
@@ -168,6 +186,25 @@ public class WebApiService : IDisposable
                         TaskContinuationOptions.OnlyOnFaulted);
         }
     }
+
+    private const long MaxRequestBodyBytes = 64 * 1024;
+    private const int  MaxAuthFailures     = 10;
+    private static readonly TimeSpan AuthFailureWindow = TimeSpan.FromMinutes(10);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, DateTime FirstUtc)> _authFailures = new();
+
+    /// <summary>Counts a failed token for this address; true when the address is now locked out.</summary>
+    private bool RegisterAuthFailure(string remote)
+    {
+        var now = DateTime.UtcNow;
+        var entry = _authFailures.AddOrUpdate(remote, (1, now), (_, e) =>
+            now - e.FirstUtc > AuthFailureWindow ? (1, now) : (e.Count + 1, e.FirstUtc));
+        return entry.Count > MaxAuthFailures;
+    }
+
+    private bool IsAuthLocked(string remote)
+        => _authFailures.TryGetValue(remote, out var e)
+           && e.Count > MaxAuthFailures
+           && DateTime.UtcNow - e.FirstUtc <= AuthFailureWindow;
 
     private async Task HandleRequest(HttpListenerContext ctx)
     {
@@ -257,10 +294,30 @@ public class WebApiService : IDisposable
                 && TokensEqual(token, Token);
             bool isUserToken = !isApiToken && (Users?.ValidateToken(token, out authedUser) ?? false);
 
+            var remote = req.RemoteEndPoint?.Address?.ToString() ?? "?";
             if (!isApiToken && !isUserToken)
             {
-                resp.StatusCode = 401;
-                await SendJson(resp, new { error = "Unauthorized" });
+                // Slow down token guessing: every miss costs half a second, and an address with
+                // too many misses is refused for the rest of the window.
+                var locked = RegisterAuthFailure(remote);
+                await Task.Delay(500);
+                resp.StatusCode = locked ? 429 : 401;
+                await SendJson(resp, new { error = locked ? "Too many failed attempts. Try again later." : "Unauthorized" });
+                return;
+            }
+            if (IsAuthLocked(remote))
+            {
+                resp.StatusCode = 429;
+                await SendJson(resp, new { error = "Too many failed attempts. Try again later." });
+                return;
+            }
+            _authFailures.TryRemove(remote, out _);
+
+            // Bodies here are small JSON documents; refuse anything large or unsized.
+            if (req.HasEntityBody && (req.ContentLength64 < 0 || req.ContentLength64 > MaxRequestBodyBytes))
+            {
+                resp.StatusCode = 413;
+                await SendJson(resp, new { error = "Request body too large" });
                 return;
             }
             // isApiToken → authedUser == null → full access (no Viewer restriction)
@@ -308,6 +365,7 @@ public class WebApiService : IDisposable
             {
                 var serverId = logParts[2];
                 int.TryParse(req.QueryString["offset"], out var offset);
+                offset = Math.Max(0, offset);
                 var result = GetLog?.Invoke(serverId, offset) ?? (new List<string>(), new List<string>(), offset);
                 await SendJson(resp, new { lines = result.lines, types = result.types, nextOffset = result.nextOffset });
                 return;
@@ -320,6 +378,7 @@ public class WebApiService : IDisposable
                 var serverId = logParts[2];
                 int.TryParse(req.QueryString["minutes"], out var minutes);
                 if (minutes <= 0) minutes = 5;
+                minutes = Math.Min(minutes, 24 * 60);
                 var samples = GetPerfSamples?.Invoke(serverId, minutes) ?? [];
                 await SendJson(resp, samples.Select(s => new { t = s.time, cpu = Math.Round(s.cpu, 1), mem = s.memMb }));
                 return;
@@ -391,7 +450,8 @@ public class WebApiService : IDisposable
                 var bytes    = System.Text.Encoding.UTF8.GetBytes(text);
                 resp.ContentType     = "text/plain; charset=utf-8";
                 resp.ContentLength64 = bytes.Length;
-                resp.Headers["Content-Disposition"] = $"attachment; filename=\"{serverId}_console.log\"";
+                var safeName = new string(serverId.Select(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' ? ch : '_').ToArray());
+                resp.Headers["Content-Disposition"] = $"attachment; filename=\"{safeName}_console.log\"";
                 await resp.OutputStream.WriteAsync(bytes);
                 resp.Close();
                 return;
@@ -495,8 +555,10 @@ public class WebApiService : IDisposable
         }
         catch (Exception ex)
         {
+            // Details stay in the local log; callers only learn that the request failed.
+            System.Diagnostics.Trace.TraceError($"Web API {req.HttpMethod} {path} failed: {ex}");
             resp.StatusCode = 500;
-            try { await SendJson(resp, new { error = ex.Message }); } catch { }
+            try { await SendJson(resp, new { error = "Internal error" }); } catch { }
         }
         finally
         {

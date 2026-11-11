@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.15
+
+- **Discord bot now refuses actions when no admin user IDs are set.** Before, an empty "Admin User IDs" list let anyone in the channel press Start/Stop/Restart/Update or run `!cmd` RCON commands. Add your Discord user ID in Settings → Discord Bot to keep using the buttons and commands; Settings and the bot status show a warning until you do.
+- **Web API hardening.**
+  - The firewall rule HighPop adds for the Web API port now only admits the local network, and is removed when the API stops or changes port. To reach the API from the internet, open the port yourself, ideally behind a VPN or an HTTPS proxy.
+  - Repeated wrong tokens are slowed down, and an address is locked out for 10 minutes after 10 failures.
+  - Request bodies are limited to 64 KB, and error replies no longer include internal exception text.
+  - Restoring a backup through the API is refused while the server is running.
+- **No more silent loss of server profiles.** If `servers.json` cannot be read, HighPop keeps a copy (`servers.json.unreadable-<time>`) and does not replace it with an empty list. If saved passwords cannot be decrypted (for example after moving to another Windows account), a copy is kept as `servers.json.undecryptable-<time>`. `machines.json` gets the same protection.
+- **Log Watcher:** HighPop's own "[LogWatch] … triggered" lines no longer re-trigger the rule, which could loop forever with a 0-minute cooldown. Player chat can no longer trigger Stop or Restart rules. A rule fires once when two matching lines arrive at the same moment.
+- **Health checks:** only one check runs at a time, so a slow recovery restart is not interrupted by the next check. If the recovery restart fails, the console and Discord now say so instead of leaving the server down silently.
+- The auto-save, update-check and system-metrics timers can no longer crash the manager on an unexpected error.
+- Internal: split the server page's view-model into one view-model per page (Backups, Config, Mods, Players, Rust settings, Monitoring, Automation). Pages that are never opened no longer build their state.
+- Advanced metadata to v1.0.15.
+
 ## 1.0.14
 
 - Fixed "This PlotModel is already in use by some other PlotView control" errors after logging back in over RDP. When the server page was rebuilt, the old Charts page still held the server's charts, so the new one could not show them. The Charts page now takes the charts only while it is on screen and releases them when hidden.

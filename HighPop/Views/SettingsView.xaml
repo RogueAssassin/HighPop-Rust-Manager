@@ -291,7 +291,10 @@
                                      Text="{Binding BotPrefix, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
                         <StackPanel Grid.Column="2">
-                            <TextBlock Text="Admin User IDs (empty = everyone can use bot)" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Text="Admin User IDs (only these users can use buttons and commands)" Style="{StaticResource FieldLabel}"/>
+                            <TextBlock Text="⚠ No admins yet: the bot refuses every button and command until you add your Discord user ID."
+                                       FontSize="11" Foreground="{StaticResource AccentYellowBrush}" TextWrapping="Wrap" Margin="0,0,0,6"
+                                       Visibility="{Binding BotAdminList.Count, Converter={StaticResource ZeroToVis}, Mode=OneWay}"/>
                             <Border Background="#21262d" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                                     CornerRadius="4" MinHeight="80" MaxHeight="150" Margin="0,0,0,6">
                                 <ListBox ItemsSource="{Binding BotAdminList}"

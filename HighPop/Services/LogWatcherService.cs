@@ -20,22 +20,33 @@ public class LogWatcherService
     public void CheckLine(GameServer server, string line)
     {
         if (string.IsNullOrEmpty(line) || server.LogWatchRules.Count == 0) return;
+        // Our own "[LogWatch] ... keyword "X"" line contains the keyword: matching it would
+        // re-trigger the rule forever when its cooldown is 0.
+        if (line.StartsWith("[LogWatch]", StringComparison.Ordinal)) return;
+        // Players must not be able to stop or restart the server by typing a keyword in chat.
+        var trimmed = line.TrimStart();
+        var isChat = trimmed.StartsWith("[CHAT]", StringComparison.OrdinalIgnoreCase)
+                  || trimmed.StartsWith("[TEAM CHAT]", StringComparison.OrdinalIgnoreCase);
 
         var cooldowns = _lastFired.GetOrAdd(server.Id, _ => new());
         var now = DateTime.Now;
 
-        foreach (var rule in server.LogWatchRules)
+        // Snapshot: the Log Watcher page can add or remove rules while log lines arrive.
+        foreach (var rule in server.LogWatchRules.ToArray())
         {
             if (!rule.Enabled) continue;
             if (string.IsNullOrWhiteSpace(rule.Keyword)) continue;
+            if (isChat && rule.Action is LogWatchAction.Stop or LogWatchAction.Restart) continue;
             if (!line.Contains(rule.Keyword, StringComparison.OrdinalIgnoreCase)) continue;
 
             var key = rule.Keyword.ToLowerInvariant();
-            if (cooldowns.TryGetValue(key, out var last) &&
-                now - last < TimeSpan.FromMinutes(Math.Max(rule.CooldownMin, 0)))
-                continue;
-
-            cooldowns[key] = now;
+            var cooldown = TimeSpan.FromMinutes(Math.Max(rule.CooldownMin, 0));
+            // Claim the slot atomically so two lines arriving together fire the rule once.
+            if (cooldowns.TryGetValue(key, out var last))
+            {
+                if (now - last < cooldown || !cooldowns.TryUpdate(key, now, last)) continue;
+            }
+            else if (!cooldowns.TryAdd(key, now)) continue;
             _ = TriggerAsync(server, rule, line).ContinueWith(
                 t => _manager.InjectLogLine(server.Id,
                     $"[LogWatch] Action {rule.Action} failed: {t.Exception?.InnerException?.Message ?? t.Exception?.Message}",

@@ -164,6 +164,11 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     // Monitoring charts. Created when the Charts page first needs them.
     private ServerMonitoringViewModel? _monitoringVm;
     public ServerMonitoringViewModel Monitoring => _monitoringVm ??= new(this, _perfHistory);
+    /// <summary>Stops chart redraws without creating the charts for a server that never showed them.</summary>
+    internal void HideCharts()
+    {
+        if (_monitoringVm != null) _monitoringVm.ChartsVisible = false;
+    }
     internal void NotifyServerChanged() => OnPropertyChanged(nameof(Server));
 
     public bool HasPlayerCommands => Plugin?.GetPlayersCommand() != null

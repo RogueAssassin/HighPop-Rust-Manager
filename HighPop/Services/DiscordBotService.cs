@@ -156,7 +156,12 @@ public class DiscordBotService : IDisposable
             new AuthenticationHeaderValue("Bot", BotToken);
 
         if (IsEnabled && !string.IsNullOrWhiteSpace(BotToken) && !string.IsNullOrWhiteSpace(ChannelId))
+        {
             Start();
+            if (string.IsNullOrWhiteSpace(AllowedUserIds))
+                StatusChanged?.Invoke("⚠ No Discord admin user IDs are set. Buttons and commands are refused " +
+                                      "until you add your user ID in Settings → Discord Bot.");
+        }
     }
 
     // ── Poll loop ─────────────────────────────────────────────────────────────
@@ -611,10 +616,15 @@ public class DiscordBotService : IDisposable
     }
 
     private bool IsInteractionUserAllowed(JObject interaction)
+        => IsUserAllowed(interaction["member"]?["user"]?["id"]?.ToString() ?? interaction["user"]?["id"]?.ToString());
+
+    /// <summary>
+    /// Fails closed: with no allowed user IDs configured nobody may run server actions or
+    /// commands, so any member of the channel cannot stop the server or send RCON.
+    /// </summary>
+    public bool IsUserAllowed(string? userId)
     {
-        if (string.IsNullOrWhiteSpace(AllowedUserIds)) return true;
-        var userId = interaction["member"]?["user"]?["id"]?.ToString() ?? interaction["user"]?["id"]?.ToString();
-        if (string.IsNullOrEmpty(userId)) return false;
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrWhiteSpace(AllowedUserIds)) return false;
         var allowed = AllowedUserIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return allowed.Contains(userId);
     }
@@ -685,12 +695,8 @@ public class DiscordBotService : IDisposable
             if (isBot) continue;
             if (!content.StartsWith(CommandPrefix, StringComparison.OrdinalIgnoreCase)) continue;
 
-            // Authorization check
-            if (!string.IsNullOrWhiteSpace(AllowedUserIds))
-            {
-                var allowed = AllowedUserIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                if (!allowed.Contains(authorId)) continue;
-            }
+            // Authorization check (fails closed when no admin IDs are configured)
+            if (!IsUserAllowed(authorId)) continue;
 
             await HandleCommand(id, content, ct);
         }

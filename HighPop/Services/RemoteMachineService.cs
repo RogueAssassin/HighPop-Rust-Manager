@@ -70,7 +70,15 @@ public class RemoteMachineService : IDisposable
                 foreach (var m in list) RegisterLocked(m);
             if (needsMigration) Save();
         }
-        catch { }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException
+                                       or InvalidCastException or ArgumentException)
+        {
+            // The next add/remove rewrites machines.json from memory; keep the unreadable
+            // original so the admin's machine list and tokens are not lost.
+            try { File.Copy(_machinesFile, $"{_machinesFile}.unreadable-{DateTime.Now:yyyyMMdd-HHmmss}", false); }
+            catch (Exception copyEx) when (copyEx is IOException or UnauthorizedAccessException) { }
+            System.Diagnostics.Trace.TraceError($"machines.json could not be loaded: {ex.Message}");
+        }
     }
 
     private void Save()
@@ -144,7 +152,7 @@ public class RemoteMachineService : IDisposable
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, machine.Url + "/api/servers");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", machine.Token);
-            var resp = await _http.SendAsync(req);
+            using var resp = await _http.SendAsync(req);
             if (!resp.IsSuccessStatusCode) { SetOffline(machine.Id); return; }
 
             var json    = await resp.Content.ReadAsStringAsync();
@@ -175,7 +183,8 @@ public class RemoteMachineService : IDisposable
                 $"{machine.Url}/api/servers/{serverId}/{action}");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", machine.Token);
             req.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
-            return (await _http.SendAsync(req)).IsSuccessStatusCode;
+            using var resp = await _http.SendAsync(req);
+            return resp.IsSuccessStatusCode;
         }
         catch { return false; }
     }

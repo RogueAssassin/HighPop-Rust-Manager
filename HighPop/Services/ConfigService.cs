@@ -12,6 +12,7 @@ public class ConfigService
 {
     private readonly object _serversFileGate = new();
     private string? _lastServersSnapshotHash;
+    private bool _serversLoadFailed;
     private readonly string _legacyDefaultInstallRoot;
     private readonly string _portableDefaultInstallRoot;
     static readonly string ExeDir =
@@ -164,12 +165,14 @@ public class ConfigService
             try
             {
                 var array = JArray.Parse(File.ReadAllText(ServersFile));
+                var allDecrypted = true;
                 foreach (var server in array.OfType<JObject>())
                 {
-                    UnprotectProperty(server, nameof(GameServer.RconPassword));
-                    UnprotectProperty(server, nameof(GameServer.ServerPassword));
-                    UnprotectProperty(server, nameof(GameServer.DiscordWebhookUrl));
+                    allDecrypted &= UnprotectProperty(server, nameof(GameServer.RconPassword));
+                    allDecrypted &= UnprotectProperty(server, nameof(GameServer.ServerPassword));
+                    allDecrypted &= UnprotectProperty(server, nameof(GameServer.DiscordWebhookUrl));
                 }
+                if (!allDecrypted) PreserveServersFile("undecryptable");
                 var servers = array.ToObject<List<GameServer>>() ?? [];
                 var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var installPathMigrated = false;
@@ -219,7 +222,16 @@ public class ConfigService
                 }
                 return servers;
             }
-            catch { return []; }
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException
+                                           or InvalidCastException or ArgumentException)
+            {
+                // Start with no servers, but never let the next auto-save replace the only
+                // copy of the admin's profiles with an empty list.
+                PreserveServersFile("unreadable");
+                _serversLoadFailed = true;
+                System.Diagnostics.Trace.TraceError($"servers.json could not be loaded: {ex.Message}");
+                return [];
+            }
         }
     }
 
@@ -228,6 +240,9 @@ public class ConfigService
         lock (_serversFileGate)
         {
             var snapshot = servers.ToList();
+            // After a failed load, keep the unreadable file until the admin adds a server.
+            if (_serversLoadFailed && snapshot.Count == 0) return;
+            _serversLoadFailed = false;
             var snapshotHash = ComputeServersSnapshotHash(snapshot);
             if (string.Equals(snapshotHash, _lastServersSnapshotHash, StringComparison.Ordinal)) return;
 
@@ -317,8 +332,33 @@ public class ConfigService
     private static void ProtectProperty(JObject obj, string name)
         => obj[name] = Protect(obj[name]?.Value<string>());
 
-    private static void UnprotectProperty(JObject obj, string name)
-        => obj[name] = Unprotect(obj[name]?.Value<string>());
+    /// <summary>Decrypts one field in place. Returns false when an encrypted value could not be
+    /// decrypted (for example after moving to another Windows account) and was blanked.</summary>
+    private static bool UnprotectProperty(JObject obj, string name)
+    {
+        var stored = obj[name]?.Value<string>();
+        var plain  = Unprotect(stored);
+        obj[name]  = plain;
+        return !(plain.Length == 0 && stored is { Length: > 6 } && stored.StartsWith("dpapi:", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Keeps a copy of servers.json before the app can overwrite it with less data than the file
+    /// holds (unreadable JSON, or secrets this Windows account cannot decrypt).
+    /// </summary>
+    private void PreserveServersFile(string reason)
+    {
+        try
+        {
+            var copy = $"{ServersFile}.{reason}-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Copy(ServersFile, copy, overwrite: false);
+            System.Diagnostics.Trace.TraceWarning($"servers.json was {reason}; kept a copy at {copy}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not copy servers.json ({reason}): {ex.Message}");
+        }
+    }
 
     private static void AtomicWrite(string path, string content)
     {

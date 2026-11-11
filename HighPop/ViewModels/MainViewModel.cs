@@ -256,13 +256,24 @@ public partial class MainViewModel : BaseViewModel
         // Re-check for updates periodically — the startup-only check meant anyone leaving
         // HighPop running for days never saw the "update available" badge until next restart.
         _updateCheckTimer = new System.Timers.Timer(TimeSpan.FromHours(4).TotalMilliseconds) { AutoReset = true };
-        _updateCheckTimer.Elapsed += async (_, _) => await CheckForUpdateAsync(promptOnDetection: false);
+        _updateCheckTimer.Elapsed += async (_, _) =>
+        {
+            // async void timer handler: an escaped exception would end the process.
+            try { await CheckForUpdateAsync(promptOnDetection: false); }
+            catch (Exception ex) { System.Diagnostics.Trace.TraceError($"Update check failed: {ex.Message}"); }
+        };
         _updateCheckTimer.Start();
 
         // A 15-second interval avoids repeatedly serializing every profile while the user is
         // idle. Explicit lifecycle changes and application shutdown still save immediately.
         _autoSaveTimer = new System.Timers.Timer(15_000) { AutoReset = true };
-        _autoSaveTimer.Elapsed += (_, _) => Save();
+        // A locked file or a profile edited mid-serialisation must not take down the manager;
+        // the next tick saves again.
+        _autoSaveTimer.Elapsed += (_, _) =>
+        {
+            try { Save(); }
+            catch (Exception ex) { System.Diagnostics.Trace.TraceError($"Auto-save failed: {ex.Message}"); }
+        };
         _autoSaveTimer.Start();
 
         _healthCheck.StartMonitoring();
@@ -391,6 +402,8 @@ public partial class MainViewModel : BaseViewModel
             if (!zipPath.StartsWith(dir + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 return "Invalid backup path";
             if (!System.IO.File.Exists(zipPath)) return "Backup file not found";
+            // Same rule as the Backups page: restoring under a live RustDedicated corrupts the save.
+            if (srv.Status != ServerStatus.Stopped) return "Stop the server before restoring a backup";
             try { await _backup.RestoreBackupAsync(srv, zipPath); return null; }
             catch (Exception ex) { return ex.Message; }
         };

@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.14", "application and release metadata report v1.0.14");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.14", "1.0.13")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.14")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.14", "1.0.14")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.14"),
+Check(AppInfo.Version == "1.0.15", "application and release metadata report v1.0.15");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.15", "1.0.14")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.15")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.15", "1.0.15")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.15"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -1229,6 +1229,41 @@ try
             if (savedServersJson != null) File.WriteAllText(idConfig.ServersFile, savedServersJson);
             else File.Delete(idConfig.ServersFile);
         }
+    }
+
+    // An unreadable servers.json is copied aside and not replaced by the empty auto-save.
+    {
+        var brokenConfig = new ConfigService();
+        var savedServersJson = File.Exists(brokenConfig.ServersFile) ? File.ReadAllText(brokenConfig.ServersFile) : null;
+        var dataDir = Path.GetDirectoryName(brokenConfig.ServersFile)!;
+        var copiesBefore = Directory.GetFiles(dataDir, "servers.json.unreadable-*").ToHashSet();
+        try
+        {
+            const string broken = "[{\"Id\": \"truncated";
+            File.WriteAllText(brokenConfig.ServersFile, broken);
+            var loaded = brokenConfig.LoadServers();
+            brokenConfig.SaveServers([]);
+            var newCopies = Directory.GetFiles(dataDir, "servers.json.unreadable-*").Where(f => !copiesBefore.Contains(f)).ToList();
+            Check(loaded.Count == 0 && File.ReadAllText(brokenConfig.ServersFile) == broken
+                    && newCopies.Count == 1 && File.ReadAllText(newCopies[0]) == broken,
+                "unreadable servers.json is preserved instead of overwritten");
+            foreach (var copy in newCopies) File.Delete(copy);
+        }
+        finally
+        {
+            if (savedServersJson != null) File.WriteAllText(brokenConfig.ServersFile, savedServersJson);
+            else File.Delete(brokenConfig.ServersFile);
+        }
+    }
+
+    // Discord actions fail closed: no configured admin IDs means nobody may run them.
+    {
+        var bot = new DiscordBotService(new ConfigService());
+        bot.AllowedUserIds = string.Empty;
+        var emptyDenies = !bot.IsUserAllowed("123456789012345678");
+        bot.AllowedUserIds = "111, 222";
+        Check(emptyDenies && bot.IsUserAllowed("222") && !bot.IsUserAllowed("333") && !bot.IsUserAllowed(null),
+            "Discord bot refuses actions when no admin user IDs are configured");
     }
 
     var config = new ConfigService { BackupPath = Path.Combine(testRoot, "backups") };

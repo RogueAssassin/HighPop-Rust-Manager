@@ -43,7 +43,7 @@ public class ServerHealthService : IDisposable
         _timer?.Stop();
         _timer?.Dispose();
         _timer = new System.Timers.Timer(60_000); // check every 60 s
-        _timer.Elapsed  += (_, _) => _ = CheckAllAsync();
+        _timer.Elapsed  += (_, _) => _ = CheckAllGuardedAsync();
         _timer.AutoReset = true;
         _timer.Start();
     }
@@ -81,6 +81,20 @@ public class ServerHealthService : IDisposable
     }
 
     // ── Health check loop ─────────────────────────────────────────────────────
+
+    private int _checking;
+
+    /// <summary>
+    /// One pass at a time: a recovery restart can take longer than the 60 s tick, and a
+    /// second pass must not stop the server again while it is starting.
+    /// </summary>
+    private async Task CheckAllGuardedAsync()
+    {
+        if (Interlocked.Exchange(ref _checking, 1) != 0) return;
+        try { await CheckAllAsync(); }
+        catch (Exception ex) { System.Diagnostics.Trace.TraceError($"Health check failed: {ex.Message}"); }
+        finally { Volatile.Write(ref _checking, 0); }
+    }
 
     private async Task CheckAllAsync()
     {
@@ -127,7 +141,7 @@ public class ServerHealthService : IDisposable
             {
                 // A lightweight TCP connect verifies the Rust WebRCON listener is responsive.
                 using var tcp = new TcpClient();
-                var cts = new CancellationTokenSource(3000);
+                using var cts = new CancellationTokenSource(3000);
                 await tcp.ConnectAsync("127.0.0.1", server.RconPort, cts.Token);
                 return tcp.Connected;
             }
@@ -155,8 +169,21 @@ public class ServerHealthService : IDisposable
             if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
                 || server.DesiredState != ServerDesiredState.Stopped)
                 return;
-            await _manager.StartAsync(server, LifecycleInitiator.HealthCheck,
-                "Health check recovery restart");
+            try
+            {
+                await _manager.StartAsync(server, LifecycleInitiator.HealthCheck,
+                    "Health check recovery restart");
+            }
+            catch (Exception ex)
+            {
+                // The server is down now: tell the admin instead of failing silently.
+                _manager.InjectLogLine(server.Id,
+                    $"[HealthCheck] Recovery restart failed: {ex.Message}", ConsoleMessageType.Error);
+                await _notifications.NotifyAsync($"🚨 Health Check — {server.DisplayName}",
+                    $"Recovery restart of **{server.DisplayName}** failed: {ex.Message}. The server is stopped.",
+                    "#F85149");
+                return;
+            }
         }
         else
         {

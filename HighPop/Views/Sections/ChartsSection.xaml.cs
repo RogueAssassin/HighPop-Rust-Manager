@@ -18,11 +18,11 @@ public partial class ChartsSection : System.Windows.Controls.UserControl
         Unloaded += (_, _) =>
         {
             DetachPlots();
-            if (DataContext is ServerViewModel vm) vm.Monitoring.ChartsVisible = false;
+            if (DataContext is ServerViewModel vm) vm.HideCharts();
         };
         DataContextChanged += (_, e) =>
         {
-            if (e.OldValue is ServerViewModel old) old.Monitoring.ChartsVisible = false;
+            if (e.OldValue is ServerViewModel old) old.HideCharts();
             if (IsLoaded && e.NewValue is ServerViewModel now) now.Monitoring.ChartsVisible = true;
         };
     }

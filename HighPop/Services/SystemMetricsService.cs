@@ -106,7 +106,9 @@ public class SystemMetricsService : IDisposable
                 catch { }
             }
 
-            MetricsUpdated?.Invoke();
+            // Runs on a timer thread: a failing subscriber must not end the process.
+            try { MetricsUpdated?.Invoke(); }
+            catch (Exception ex) { System.Diagnostics.Trace.TraceError($"Metrics subscriber failed: {ex.Message}"); }
         }
         finally
         {
