@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
-    <Grid Background="{StaticResource BgDeepBrush}">
+    <!-- Bound to ServerViewModel.Monitoring (ServerMonitoringViewModel); the plots bind in code-behind. -->
+    <Grid Background="{StaticResource BgDeepBrush}" DataContext="{Binding Monitoring}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>

@@ -71,8 +71,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [ObservableProperty] private bool _isOxideInstalled;
     [ObservableProperty] private bool _isCarbonInstalled;
     [ObservableProperty] private bool _isWorkspaceActive;
-    /// <summary>Set by the Charts section while it is on screen; charts are not redrawn otherwise.</summary>
-    [ObservableProperty] private bool _chartsVisible;
 
     // Rogue Rust Reference — loaded on demand and shared across all server workspaces.
     private List<RustReferenceEntry> _allRustReferenceEntries = [];
@@ -115,26 +113,10 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private System.Timers.Timer? _playerRefreshTimer;
     private readonly SemaphoreSlim _playerRefreshGate = new(1, 1);
 
-    // Performance history
-    [ObservableProperty] private OxyPlot.PlotModel _perfPlot = CreateEmptyPlot();
-    [ObservableProperty] private OxyPlot.PlotModel _operationsPlot = CreateEmptyPlot();
-    private OxyPlot.PlotModel?          _perfModel;
-    private OxyPlot.PlotModel?          _operationsModel;
-    private OxyPlot.Series.LineSeries?  _cpuSeries;
-    private OxyPlot.Series.LineSeries?  _memSeries;
-    private OxyPlot.Series.LineSeries?  _netInSeries;
-    private OxyPlot.Series.LineSeries?  _netOutSeries;
-    private OxyPlot.Series.LineSeries?  _playersSeries;
-    [ObservableProperty] private string _chartSummary = "No samples yet";
-    [ObservableProperty] private int _perfRangeMinutes = 15;
-    partial void OnPerfRangeMinutesChanged(int _) => UpdatePerfChart();
-    public IReadOnlyList<int> PerfRangeOptions { get; } = [5, 15, 30, 60];
-
     public IReadOnlyList<string> RustServerProfileOptions { get; } =
         ["Community (Vanilla)", "Modded", "Development"];
     public IReadOnlyList<string> RustSteamBranchOptions { get; } =
         ["public", "staging", "aux01"];
-    public ObservableCollection<RustBrowserTagOption> RustBrowserTags { get; } = [];
     public string EffectiveLogDirectory => IsRust
         ? RustPlugin.GetEffectiveLogDirectory(Server)
         : Server.LogDirectory;
@@ -144,19 +126,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     public string TelemetryDirectory => IsRust
         ? _telemetry.GetServerDirectory(Server)
         : string.Empty;
-    [ObservableProperty] private string _rustVariableStatus = "server.cfg has not been read yet.";
-    [ObservableProperty] private int _rustVariablePendingCount;
-    [ObservableProperty] private string _rustVariableFilter = string.Empty;
-    public IEnumerable<RustServerVariable> FilteredRustServerVariables =>
-        string.IsNullOrWhiteSpace(RustVariableFilter)
-            ? Server.RustServerVariables
-            : Server.RustServerVariables.Where(variable =>
-                variable.Name.Contains(RustVariableFilter, StringComparison.OrdinalIgnoreCase)
-                || variable.Description.Contains(RustVariableFilter, StringComparison.OrdinalIgnoreCase));
-    partial void OnRustVariableFilterChanged(string value) =>
-        OnPropertyChanged(nameof(FilteredRustServerVariables));
-    private readonly HashSet<RustServerVariable> _trackedRustVariables = [];
-    private bool _syncingRustTags;
+    // Status of the server.cfg read at start-up; the Rust page shows it until it has its own.
+    private string _rustVariableLoadStatus = "server.cfg has not been read yet.";
 
     // Scheduled tasks
     [ObservableProperty] private List<Services.ScheduledTask> _scheduledTasks = [];
@@ -184,6 +155,14 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     // Players page admin actions: moderation and player tools. Created on first use.
     private ServerPlayersViewModel? _playersVm;
     public ServerPlayersViewModel Players => _playersVm ??= new(this, _manager, _moderation, _groupBans);
+
+    // Rust page: server.cfg variable editor and browser tags. Created on first use.
+    private ServerRustSettingsViewModel? _rustSettingsVm;
+    public ServerRustSettingsViewModel RustSettings => _rustSettingsVm ??= new(this, _manager, _rustVariableLoadStatus);
+
+    // Monitoring charts. Created when the Charts page first needs them.
+    private ServerMonitoringViewModel? _monitoringVm;
+    public ServerMonitoringViewModel Monitoring => _monitoringVm ??= new(this, _perfHistory);
     internal void NotifyServerChanged() => OnPropertyChanged(nameof(Server));
 
     public bool HasPlayerCommands => Plugin?.GetPlayersCommand() != null
@@ -191,9 +170,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     public FileBrowserViewModel FileBrowser { get; } = new();
     private System.Timers.Timer? _perfTimer;
-    private int _perfChartRenderPending;
     private int _networkUiUpdatePending;
-    private long _nextPerfChartRefreshUtcTicks;
 
     public bool HasModSupport       => Plugin?.SupportsOxide == true;
     public bool IsRust              => Plugin?.GameId == "rust";
@@ -201,12 +178,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     partial void OnIsWorkspaceActiveChanged(bool value)
     {
-        if (value && ChartsVisible) UpdatePerfChart();
-    }
-
-    partial void OnChartsVisibleChanged(bool value)
-    {
-        if (value) UpdatePerfChart();
+        if (value) _monitoringVm?.OnWorkspaceActivated();
     }
 
     public List<CpuCoreItem> CpuCores { get; }
@@ -536,23 +508,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         _rustReference = rustReference;
         _pluginCatalog = pluginCatalog;
         Server.RustServerVariables ??= RustServerVariable.CreateDefaults();
-        Server.RustServerVariables.CollectionChanged += (_, _) => TrackRustVariableChanges();
         if (IsRust)
         {
             try
             {
                 var count = RustPlugin.LoadServerConfigVariables(Server);
-                RustVariableStatus = File.Exists(RustPlugin.GetServerConfigPath(Server))
+                _rustVariableLoadStatus = File.Exists(RustPlugin.GetServerConfigPath(Server))
                     ? $"Loaded {count} active variable(s) from server.cfg."
                     : "server.cfg does not exist yet. Save to create it.";
             }
             catch (Exception ex)
             {
-                RustVariableStatus = $"Could not read server.cfg: {ex.Message}";
+                _rustVariableLoadStatus = $"Could not read server.cfg: {ex.Message}";
             }
         }
-        TrackRustVariableChanges();
-        InitializeRustBrowserTags();
 
         _network.ServerStatsUpdated += OnServerStatsUpdated;
         FileBrowser.Initialize(server.InstallPath);
@@ -598,7 +567,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 if (f.Key != "identity") return;
                 OnPropertyChanged(nameof(EffectiveLogDirectory));
                 OnPropertyChanged(nameof(ServerConfigPath));
-                RustVariableStatus = "Identity changed. Reload server.cfg from the new identity path.";
+                const string identityStatus = "Identity changed. Reload server.cfg from the new identity path.";
+                if (_rustSettingsVm != null) _rustSettingsVm.NotifyIdentityChanged(identityStatus);
+                else _rustVariableLoadStatus = identityStatus;
             }))
             .ToList() ?? [];
 
@@ -621,78 +592,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         {
             _playerStats.CloseOpenSessions(Server.Id);
         }
-    }
-
-    private void InitializeRustBrowserTags()
-    {
-        if (!IsRust) return;
-        var definitions = new (string Value, string Label, string Group)[]
-        {
-            ("monthly", "Monthly", "wipe"),
-            ("biweekly", "Biweekly", "wipe"),
-            ("weekly", "Weekly", "wipe"),
-            ("vanilla", "Vanilla", "difficulty"),
-            ("hardcore", "Hardcore", "difficulty"),
-            ("softcore", "Softcore", "difficulty"),
-            ("pve", "PvE", ""),
-            ("roleplay", "Roleplay", ""),
-            ("creative", "Creative", ""),
-            ("minigame", "Minigame", ""),
-            ("training", "Combat Training", ""),
-            ("battlefield", "Battlefield", ""),
-            ("broyale", "Battle Royale", ""),
-            ("builds", "Build Server", ""),
-            ("tut", "Tutorial", ""),
-            ("premium", "Premium", ""),
-            ("NA", "North America", "region"),
-            ("SA", "South America", "region"),
-            ("EU", "Europe", "region"),
-            ("WA", "West Asia", "region"),
-            ("EA", "East Asia", "region"),
-            ("OC", "Oceania", "region"),
-            ("AF", "Africa", "region"),
-        };
-        var selected = Server.GameSpecificSettings
-            .GetValueOrDefault("tags", "monthly,vanilla")
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        _syncingRustTags = true;
-        foreach (var (value, label, group) in definitions)
-        {
-            var option = new RustBrowserTagOption(value, label, group)
-            {
-                IsSelected = selected.Contains(value),
-            };
-            option.SelectionChanged += OnRustBrowserTagChanged;
-            RustBrowserTags.Add(option);
-        }
-        _syncingRustTags = false;
-    }
-
-    private void OnRustBrowserTagChanged(RustBrowserTagOption changed)
-    {
-        if (_syncingRustTags) return;
-        _syncingRustTags = true;
-        try
-        {
-            if (changed.IsSelected && !string.IsNullOrEmpty(changed.Group))
-            {
-                foreach (var option in RustBrowserTags.Where(o =>
-                    o != changed && o.Group.Equals(changed.Group, StringComparison.Ordinal)))
-                    option.IsSelected = false;
-            }
-            if (changed.IsSelected && RustBrowserTags.Count(o => o.IsSelected) > 4)
-            {
-                changed.IsSelected = false;
-                AppendLog("[Rust] Rust displays at most four browser tags. Deselect one before adding another.",
-                    ConsoleMessageType.Warning);
-            }
-            Server.GameSpecificSettings["tags"] = string.Join(",",
-                RustBrowserTags.Where(o => o.IsSelected).Select(o => o.Value));
-            AddActionLog($"Rust browser tags changed to {Server.GameSpecificSettings["tags"]}");
-        }
-        finally { _syncingRustTags = false; }
     }
 
     // ── Start / Stop / Restart ──────────────────────────────────────────────
@@ -1378,141 +1277,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             new System.Diagnostics.ProcessStartInfo("notepad.exe", path) { UseShellExecute = true });
     }
 
-    [RelayCommand]
-    private void ReloadServerConfigVariables()
-    {
-        try
-        {
-            var count = RustPlugin.LoadServerConfigVariables(Server);
-            TrackRustVariableChanges();
-            OnPropertyChanged(nameof(Server));
-            RustVariableStatus = File.Exists(ServerConfigPath)
-                ? $"Reloaded {count} active variable(s) from server.cfg."
-                : "server.cfg does not exist yet. Save to create it.";
-            AddActionLog($"Reloaded {count} Rust variable(s) from server.cfg");
-        }
-        catch (Exception ex)
-        {
-            RustVariableStatus = $"Could not read server.cfg: {ex.Message}";
-            AppendLog($"[Rust config] {RustVariableStatus}", ConsoleMessageType.Error);
-        }
-    }
-
-    [RelayCommand]
-    private void SaveServerConfigVariables() => TrySaveServerConfigVariables();
-
-    private bool TrySaveServerConfigVariables()
-    {
-        var validation = RustPlugin.ValidateServerVariables(Server);
-        if (validation != null)
-        {
-            RustVariableStatus = validation;
-            WpfMsgBox.Show(validation, "Invalid server.cfg variable",
-                WpfMsgBoxButton.OK, WpfMsgBoxImage.Warning);
-            return false;
-        }
-
-        try
-        {
-            var migrated = RustPlugin.WriteManagedServerConfig(Server);
-            TrackRustVariableChanges();
-            OnPropertyChanged(nameof(Server));
-            RustVariableStatus = migrated > 0
-                ? $"Saved server.cfg and migrated {migrated} legacy variable(s) from serverauto.cfg."
-                : "Saved active variables to server.cfg. Changes apply on the next Rust start.";
-            AddActionLog(migrated > 0
-                ? $"Saved server.cfg and migrated {migrated} legacy serverauto.cfg variable(s)"
-                : "Saved Rust custom variables to server.cfg");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            RustVariableStatus = $"Could not save server.cfg: {ex.Message}";
-            WpfMsgBox.Show(RustVariableStatus, "server.cfg save failed",
-                WpfMsgBoxButton.OK, WpfMsgBoxImage.Error);
-            return false;
-        }
-    }
-
-    [RelayCommand]
-    private void AddRustServerVariable()
-    {
-        Server.RustServerVariables.Add(new RustServerVariable
-        {
-            Enabled = false,
-            Name = string.Empty,
-            Value = string.Empty,
-            Description = "Custom Rust console variable",
-        });
-        OnPropertyChanged(nameof(Server));
-        RustVariableStatus = "Unsaved variable row added.";
-        AddActionLog("Added a server.cfg variable row");
-    }
-
-    [RelayCommand]
-    private async Task ApplyRustVariablesLiveAsync()
-    {
-        var validation = RustPlugin.ValidateServerVariables(Server);
-        if (validation != null)
-        {
-            RustVariableStatus = validation;
-            return;
-        }
-
-        var changed = Server.RustServerVariables
-            .Where(variable => variable.Enabled && variable.HasUnsavedChanges)
-            .Select(variable => (variable.Name, variable.Value))
-            .ToList();
-        if (!TrySaveServerConfigVariables()) return;
-        if (!IsRunning)
-        {
-            RustVariableStatus += " Rust is stopped, so the saved values will apply at next start.";
-            return;
-        }
-
-        foreach (var (name, value) in changed)
-            await _manager.SendCommandAsync(Server.Id, $"{name} \"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"");
-
-        RustVariableStatus = changed.Count == 0
-            ? "server.cfg is already synchronized; there were no live changes to send."
-            : $"Saved server.cfg and applied {changed.Count} changed value(s) to the running Rust console.";
-        AddActionLog($"Applied {changed.Count} server.cfg variable change(s) live");
-    }
-
-    private void TrackRustVariableChanges()
-    {
-        foreach (var variable in Server.RustServerVariables.Where(v => _trackedRustVariables.Add(v)))
-            variable.PropertyChanged += (_, _) => RefreshRustVariableState();
-        RefreshRustVariableState();
-        OnPropertyChanged(nameof(FilteredRustServerVariables));
-    }
-
-    private void RefreshRustVariableState()
-    {
-        RustVariablePendingCount = Server.RustServerVariables.Count(variable => variable.HasUnsavedChanges);
-        OnPropertyChanged(nameof(FilteredRustServerVariables));
-    }
-
-    [RelayCommand]
-    private void RemoveRustServerVariable(RustServerVariable? variable)
-    {
-        if (variable == null) return;
-        if (variable.LoadedFromServerConfig)
-        {
-            variable.Enabled = false;
-            try { RustPlugin.WriteManagedServerConfig(Server); }
-            catch (Exception ex)
-            {
-                RustVariableStatus = $"Could not remove {variable.Name} from server.cfg: {ex.Message}";
-                return;
-            }
-        }
-        Server.RustServerVariables.Remove(variable);
-        OnPropertyChanged(nameof(Server));
-        RustVariableStatus = $"Removed {variable.Name}.";
-        AddActionLog($"Removed server.cfg variable: {variable.Name}");
-    }
-
     // ── Auto Update timer ────────────────────────────────────────────────────
 
     private void StartUpdateTimer()
@@ -1951,141 +1715,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             UiDispatcher.Post(() => ServerInfo = info);
     }
 
-    // ── Performance history ──────────────────────────────────────────────────
-
-    private void EnsurePerfModel()
-    {
-        if (_perfModel != null) return;
-        _cpuSeries = new OxyPlot.Series.LineSeries
-        {
-            Title = "CPU %", Color = OxyPlot.OxyColor.Parse("#A855F7"),
-            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
-        };
-        _memSeries = new OxyPlot.Series.LineSeries
-        {
-            Title = "RAM MB", Color = OxyPlot.OxyColor.Parse("#3FB950"),
-            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None, YAxisKey = "mem",
-        };
-        _perfModel = new OxyPlot.PlotModel
-        {
-            Background          = OxyPlot.OxyColor.FromArgb(0, 0, 0, 0),
-            PlotAreaBorderColor = OxyPlot.OxyColor.Parse("#30363d"),
-            TextColor           = OxyPlot.OxyColor.Parse("#8b949e"),
-        };
-        _perfModel.Axes.Add(new OxyPlot.Axes.DateTimeAxis
-        {
-            Position = OxyPlot.Axes.AxisPosition.Bottom, StringFormat = "HH:mm:ss",
-            AxislineColor = OxyPlot.OxyColor.Parse("#30363d"), TicklineColor = OxyPlot.OxyColor.Parse("#30363d"),
-            MajorGridlineColor = OxyPlot.OxyColor.Parse("#21262d"), MajorGridlineStyle = OxyPlot.LineStyle.Solid,
-        });
-        _perfModel.Axes.Add(new OxyPlot.Axes.LinearAxis
-        {
-            Position = OxyPlot.Axes.AxisPosition.Left, Title = "CPU %", Minimum = 0, Maximum = 100,
-            MajorGridlineColor = OxyPlot.OxyColor.Parse("#21262d"), MajorGridlineStyle = OxyPlot.LineStyle.Solid,
-        });
-        _perfModel.Axes.Add(new OxyPlot.Axes.LinearAxis
-        {
-            Key = "mem", Position = OxyPlot.Axes.AxisPosition.Right, Title = "RAM MB", Minimum = 0,
-            MaximumPadding = 0.15, // headroom so peak usage doesn't look pinned to the top edge
-        });
-        _perfModel.Series.Add(_cpuSeries);
-        _perfModel.Series.Add(_memSeries);
-
-        _netInSeries = new OxyPlot.Series.LineSeries
-        {
-            Title = "Download KB/s", Color = OxyPlot.OxyColor.Parse("#38C976"),
-            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
-        };
-        _netOutSeries = new OxyPlot.Series.LineSeries
-        {
-            Title = "Upload KB/s", Color = OxyPlot.OxyColor.Parse("#A855F7"),
-            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None,
-        };
-        _playersSeries = new OxyPlot.Series.LineSeries
-        {
-            Title = "Players", Color = OxyPlot.OxyColor.Parse("#FFB020"),
-            StrokeThickness = 2, MarkerType = OxyPlot.MarkerType.None, YAxisKey = "players",
-        };
-        _operationsModel = new OxyPlot.PlotModel
-        {
-            Background = OxyPlot.OxyColor.FromArgb(0, 0, 0, 0),
-            PlotAreaBorderColor = OxyPlot.OxyColor.Parse("#30363d"),
-            TextColor = OxyPlot.OxyColor.Parse("#8b949e"),
-        };
-        _operationsModel.Axes.Add(new OxyPlot.Axes.DateTimeAxis
-        {
-            Position = OxyPlot.Axes.AxisPosition.Bottom, StringFormat = "HH:mm:ss",
-            AxislineColor = OxyPlot.OxyColor.Parse("#30363d"), TicklineColor = OxyPlot.OxyColor.Parse("#30363d"),
-            MajorGridlineColor = OxyPlot.OxyColor.Parse("#21262d"), MajorGridlineStyle = OxyPlot.LineStyle.Solid,
-        });
-        _operationsModel.Axes.Add(new OxyPlot.Axes.LinearAxis
-        {
-            Position = OxyPlot.Axes.AxisPosition.Left, Title = "Network KB/s", Minimum = 0,
-            MajorGridlineColor = OxyPlot.OxyColor.Parse("#21262d"), MajorGridlineStyle = OxyPlot.LineStyle.Solid,
-        });
-        _operationsModel.Axes.Add(new OxyPlot.Axes.LinearAxis
-        {
-            Key = "players", Position = OxyPlot.Axes.AxisPosition.Right, Title = "Players", Minimum = 0,
-            MinimumMajorStep = 1, MajorStep = 10,
-        });
-        _operationsModel.Series.Add(_netInSeries);
-        _operationsModel.Series.Add(_netOutSeries);
-        _operationsModel.Series.Add(_playersSeries);
-
-        UiDispatcher.Post(() =>
-        {
-            PerfPlot = _perfModel;
-            OperationsPlot = _operationsModel;
-        });
-    }
-
-    private void UpdatePerfChart()
-    {
-        var cutoff  = DateTime.Now.AddMinutes(-PerfRangeMinutes);
-        var samples = _perfHistory.Get(Server.Id).Where(s => s.Time >= cutoff).ToList();
-        EnsurePerfModel();
-
-        // Coalesce timer requests and mutate series only on the UI thread. A busy Rust process
-        // can otherwise make the sampler synchronously wait behind expensive chart renders.
-        if (Interlocked.Exchange(ref _perfChartRenderPending, 1) == 1) return;
-        WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
-        {
-            try
-            {
-                _cpuSeries!.Points.Clear();
-                _memSeries!.Points.Clear();
-                _netInSeries!.Points.Clear();
-                _netOutSeries!.Points.Clear();
-                _playersSeries!.Points.Clear();
-                foreach (var s in samples)
-                {
-                    var x = OxyPlot.Axes.DateTimeAxis.ToDouble(s.Time);
-                    _cpuSeries.Points.Add(new OxyPlot.DataPoint(x, s.Cpu));
-                    _memSeries.Points.Add(new OxyPlot.DataPoint(x, s.MemMb));
-                    _netInSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkInKbps));
-                    _netOutSeries.Points.Add(new OxyPlot.DataPoint(x, s.NetworkOutKbps));
-                    _playersSeries.Points.Add(new OxyPlot.DataPoint(x, s.Players));
-                }
-                _perfModel!.InvalidatePlot(true);
-                _operationsModel!.InvalidatePlot(true);
-                ChartSummary = samples.Count == 0
-                    ? "No samples in this range."
-                    : $"Peak CPU {samples.Max(s => s.Cpu):F1}%  •  Peak RAM {samples.Max(s => s.MemMb):N0} MB  •  " +
-                      $"Peak players {samples.Max(s => s.Players)}  •  Peak network " +
-                      $"{samples.Max(s => s.NetworkInKbps + s.NetworkOutKbps):F1} KB/s";
-            }
-            finally { Interlocked.Exchange(ref _perfChartRenderPending, 0); }
-        });
-    }
-
-    private static OxyPlot.PlotModel CreateEmptyPlot()
-    {
-        var m = new OxyPlot.PlotModel { Background = OxyPlot.OxyColor.FromArgb(0, 0, 0, 0) };
-        m.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Left });
-        m.Axes.Add(new OxyPlot.Axes.LinearAxis { Position = OxyPlot.Axes.AxisPosition.Bottom });
-        return m;
-    }
-
     // ── Direct Connect ────────────────────────────────────────────────────────
 
     [RelayCommand]
@@ -2434,17 +2063,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                     (network?.BytesInPerSec ?? 0) / 1024.0,
                     (network?.BytesOutPerSec ?? 0) / 1024.0,
                     Server.CurrentPlayers);
-                if (IsWorkspaceActive && ChartsVisible)
-                {
-                    var nowTicks = DateTime.UtcNow.Ticks;
-                    var dueTicks = Interlocked.Read(ref _nextPerfChartRefreshUtcTicks);
-                    if (nowTicks >= dueTicks
-                        && Interlocked.CompareExchange(
-                            ref _nextPerfChartRefreshUtcTicks,
-                            DateTime.UtcNow.AddSeconds(5).Ticks,
-                            dueTicks) == dueTicks)
-                        UpdatePerfChart();
-                }
+                _monitoringVm?.OnSampleRecorded();
                 WpfApplication.Current?.Dispatcher?.BeginInvoke(() =>
                 {
                     CpuPercent = Math.Round(m.CurrentCpu, 1);
@@ -2476,7 +2095,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             CpuPercent = 0;
             MemoryMb = 0;
         });
-        UpdatePerfChart();
+        _monitoringVm?.UpdatePerfChart();
     }
 
     // ── Events ───────────────────────────────────────────────────────────────

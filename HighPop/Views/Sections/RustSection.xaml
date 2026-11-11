@@ -94,7 +94,8 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+            <!-- Browser tags and server.cfg variables bind to ServerViewModel.RustSettings. -->
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16" DataContext="{Binding RustSettings}">
                 <StackPanel>
                     <TextBlock Text="Server browser tags" FontSize="14" FontWeight="SemiBold"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -116,7 +117,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+            <Border Style="{StaticResource Card}" Margin="0,0,0,16" DataContext="{Binding RustSettings}">
                 <StackPanel>
                     <TextBlock Text="Server custom variables" FontSize="14" FontWeight="SemiBold"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -180,7 +181,7 @@
                                                    VerticalAlignment="Center"/>
                                         <Button Grid.Column="4" Content="✕" Style="{StaticResource DangerButton}"
                                                 Width="30" Padding="0" Margin="8,0,0,0"
-                                                Command="{Binding DataContext.RemoveRustServerVariableCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                Command="{Binding DataContext.RemoveRustServerVariableCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                 CommandParameter="{Binding}"/>
                                     </Grid>
                                 </Border>
@@ -198,7 +199,7 @@
                         <Button Content="↻ Reload from file" Style="{StaticResource GhostButton}"
                                 Command="{Binding ReloadServerConfigVariablesCommand}" Margin="0,0,8,0"/>
                         <Button Content="📝 Open server.cfg" Style="{StaticResource GhostButton}"
-                                Command="{Binding OpenServerConfigCommand}"/>
+                                Command="{Binding DataContext.OpenServerConfigCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>

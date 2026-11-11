@@ -13,17 +13,17 @@ public partial class ChartsSection : System.Windows.Controls.UserControl
         Loaded += (_, _) =>
         {
             AttachPlots();
-            if (DataContext is ServerViewModel vm) vm.ChartsVisible = true;
+            if (DataContext is ServerViewModel vm) vm.Monitoring.ChartsVisible = true;
         };
         Unloaded += (_, _) =>
         {
             DetachPlots();
-            if (DataContext is ServerViewModel vm) vm.ChartsVisible = false;
+            if (DataContext is ServerViewModel vm) vm.Monitoring.ChartsVisible = false;
         };
         DataContextChanged += (_, e) =>
         {
-            if (e.OldValue is ServerViewModel old) old.ChartsVisible = false;
-            if (IsLoaded && e.NewValue is ServerViewModel now) now.ChartsVisible = true;
+            if (e.OldValue is ServerViewModel old) old.Monitoring.ChartsVisible = false;
+            if (IsLoaded && e.NewValue is ServerViewModel now) now.Monitoring.ChartsVisible = true;
         };
     }
 
@@ -33,8 +33,8 @@ public partial class ChartsSection : System.Windows.Controls.UserControl
     // binds them throws "This PlotModel is already in use".
     private void AttachPlots()
     {
-        PerfView.SetBinding(PlotViewBase.ModelProperty, new Binding(nameof(ServerViewModel.PerfPlot)));
-        OperationsView.SetBinding(PlotViewBase.ModelProperty, new Binding(nameof(ServerViewModel.OperationsPlot)));
+        PerfView.SetBinding(PlotViewBase.ModelProperty, new Binding(nameof(ServerMonitoringViewModel.PerfPlot)));
+        OperationsView.SetBinding(PlotViewBase.ModelProperty, new Binding(nameof(ServerMonitoringViewModel.OperationsPlot)));
     }
 
     private void DetachPlots()
