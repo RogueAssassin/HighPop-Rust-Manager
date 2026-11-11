@@ -117,15 +117,15 @@ Actions that need input open over the workspace, so you never lose your place.
 | Component | Support |
 |---|---|
 | Rust Dedicated Server | Steam `public` and `staging` branches through SteamCMD |
-| Carbon | Latest released Carbon framework |
-| Oxide/uMod | Latest public Rust build from uMod |
+| Carbon | Latest Carbon production build from its GitHub releases, checked against the SHA-256 GitHub publishes |
+| Oxide/uMod | Latest public Oxide.Rust build from its GitHub releases (the same file uMod serves), checked against the SHA-256 GitHub publishes |
 | RogueRust | Stable or Testing channel, chosen per server |
 
 HighPop follows each release channel instead of pinning a build number, so it keeps working as Rust, Carbon and Oxide update.
 
 ## Privacy
 
-HighPop runs on your machine and needs no account. It goes online only for the features you use: Steam (SteamCMD), GitHub (HighPop, Carbon and RogueRust downloads), uMod, Discord, Cloudflare DNS and ipify (join-domain check), and the Rogue Gaming hosts `api.roguegaming.com.au` (command reference) and `plugins.roguegaming.com.au` (plugin catalog). Passwords and tokens are encrypted with Windows DPAPI; keep `assets/data` private all the same.
+HighPop runs on your machine and needs no account. It goes online only for the features you use: Steam (SteamCMD), GitHub (HighPop, Oxide, Carbon and RogueRust downloads), Discord, Cloudflare DNS and ipify (join-domain check), and the Rogue Gaming hosts `api.roguegaming.com.au` (command reference) and `plugins.roguegaming.com.au` (plugin catalog). Passwords and tokens are encrypted with Windows DPAPI; keep `assets/data` private all the same.
 
 ---
 

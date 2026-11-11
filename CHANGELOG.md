@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Verified Oxide and Carbon downloads.** Both frameworks now come from their official GitHub releases (`OxideMod/Oxide.Rust` and `CarbonCommunity/Carbon`) and are checked against the size and SHA-256 that GitHub publishes for the file before anything is extracted. A download from another address, a mismatched file or a release with no published SHA-256 is refused and the server folder is left untouched. uMod's public download pointed to the same Oxide file, so the installed build does not change.
+- The Carbon archive is now checked for `Carbon.dll` and its `winhttp.dll` loader before extraction, as the Oxide archive already was.
+
 ## 1.0.15
 
 - **Discord bot now refuses actions when no admin user IDs are set.** Before, an empty "Admin User IDs" list let anyone in the channel press Start/Stop/Restart/Update or run `!cmd` RCON commands. Add your Discord user ID in Settings → Discord Remote Control Bot to keep using the buttons and commands; Settings and the bot status show a warning until you do.

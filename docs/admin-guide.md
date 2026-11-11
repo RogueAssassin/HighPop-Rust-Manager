@@ -6,6 +6,7 @@ Detailed reference for server operators. For an overview and screenshots, see th
 - [Rust command reference](#rust-command-reference)
 - [Players](#players)
 - [server.cfg and map size](#servercfg-and-map-size)
+- [Oxide and Carbon downloads](#oxide-and-carbon-downloads)
 - [RogueRust release channels](#roguerust-release-channels)
 - [RogueRust plugin catalog](#roguerust-plugin-catalog)
 - [Rogue Gaming endpoints](#rogue-gaming-endpoints)
@@ -75,6 +76,29 @@ population lines to `server.cfg`; any you set yourself are still loaded and edit
 When reading `server.cfg`, a trailing `# comment` or `// comment` is never part of a value, and values
 an older tool quoted twice (`"\"1\""`) read as `1`. On save, active lines are written as `name "value"`
 and an inline comment is moved to its own line just above.
+
+## Oxide and Carbon downloads
+
+**Install / Update Oxide** and **Install / Update Carbon** in **Server → Configure → Mods** always take
+the latest public build:
+
+| Framework | Source | File |
+|---|---|---|
+| Oxide/uMod | [OxideMod/Oxide.Rust](https://github.com/OxideMod/Oxide.Rust/releases) latest release (uMod's public download redirects to the same file) | `Oxide.Rust.zip` |
+| Carbon | [CarbonCommunity/Carbon](https://github.com/CarbonCommunity/Carbon/releases) latest production build | `Carbon.Windows.Release.zip` |
+
+Before anything is extracted, HighPop checks that:
+
+- the file comes from that project's own release downloads on `github.com` over HTTPS,
+- its size and SHA-256 match the values GitHub publishes for the release asset, and
+- the archive contains the framework's required files (`Oxide.Core.dll` and `Oxide.Rust.dll`, or
+  `carbon/managed/Carbon.dll` and the `winhttp.dll` loader).
+
+If any check fails, or GitHub publishes no SHA-256 for the file, the server folder is not touched and
+the Mods page shows why. The hash protects against a corrupted or swapped download on the way to you;
+it cannot tell whether a release the project itself published is safe, so keep backups before updating.
+GitHub allows 60 release lookups per hour from one network address, so very frequent installs can
+briefly hit that limit.
 
 ## RogueRust release channels
 

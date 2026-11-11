@@ -265,9 +265,97 @@ Check(server.RconAutoConnectDelaySeconds == 60
 Check(server.KeepOnline && server.AutoRestart && !server.ShutDownWhenEmpty,
     "production profiles default to always-on recovery without empty-player shutdown");
 
-Check(ModManagerService.OxidePublicDownloadUrl
-          == "https://umod.org/games/rust/download?tag=public",
-    "Oxide updater uses the official latest public Rust download channel");
+Check(ModManagerService.OxideReleaseRepo == "OxideMod/Oxide.Rust"
+      && ModManagerService.OxideWindowsAsset == "Oxide.Rust.zip"
+      && ModManagerService.CarbonReleaseRepo == "CarbonCommunity/Carbon"
+      && ModManagerService.CarbonWindowsAsset == "Carbon.Windows.Release.zip",
+    "Oxide and Carbon install from their official GitHub releases");
+
+// Framework downloads must match the SHA-256 digest GitHub publishes for the release asset.
+{
+    var frameworkBytes = System.Text.Encoding.UTF8.GetBytes("framework archive bytes");
+    var frameworkSha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(frameworkBytes)).ToLowerInvariant();
+    string Release(string url, string? digest, long size) =>
+        $$"""{"name":"2.0.7900","assets":[{"name":"Oxide.Rust-linux.zip","browser_download_url":"https://github.com/OxideMod/Oxide.Rust/releases/download/2.0.7900/Oxide.Rust-linux.zip","digest":"sha256:{{new string('0', 64)}}","size":1},{"name":"Oxide.Rust.zip","browser_download_url":"{{url}}",{{(digest == null ? "" : $"\"digest\":\"{digest}\",")}}"size":{{size}}}]}""";
+    const string goodUrl = "https://github.com/OxideMod/Oxide.Rust/releases/download/2.0.7900/Oxide.Rust.zip";
+
+    var parsed = ModManagerService.ParseLatestReleaseAsset(
+        Release(goodUrl, "sha256:" + frameworkSha, frameworkBytes.Length), "OxideMod/Oxide.Rust", "Oxide.Rust.zip");
+    ModManagerService.VerifyReleaseAsset(frameworkBytes, parsed);
+    Check(parsed.Sha256 == frameworkSha && parsed.DownloadUrl == goodUrl && parsed.Release == "2.0.7900",
+        "framework release asset is resolved with its published SHA-256");
+
+    bool Rejects(Action action) { try { action(); return false; } catch (InvalidDataException) { return true; } }
+    var tampered = (byte[])frameworkBytes.Clone(); tampered[0] ^= 0xFF;
+    Check(Rejects(() => ModManagerService.VerifyReleaseAsset(tampered, parsed))
+          && Rejects(() => ModManagerService.VerifyReleaseAsset(frameworkBytes[..^1], parsed)),
+        "framework download with wrong bytes or size is refused");
+    Check(Rejects(() => ModManagerService.ParseLatestReleaseAsset(
+              Release(goodUrl, null, frameworkBytes.Length), "OxideMod/Oxide.Rust", "Oxide.Rust.zip"))
+          && Rejects(() => ModManagerService.ParseLatestReleaseAsset(
+              Release(goodUrl, "md5:abc", frameworkBytes.Length), "OxideMod/Oxide.Rust", "Oxide.Rust.zip")),
+        "framework release without a SHA-256 digest is refused");
+    Check(Rejects(() => ModManagerService.ParseLatestReleaseAsset(
+              Release("https://evil.example/OxideMod/Oxide.Rust/releases/download/1/Oxide.Rust.zip", "sha256:" + frameworkSha, frameworkBytes.Length),
+              "OxideMod/Oxide.Rust", "Oxide.Rust.zip"))
+          && Rejects(() => ModManagerService.ParseLatestReleaseAsset(
+              Release("https://github.com/Someone/Fork/releases/download/1/Oxide.Rust.zip", "sha256:" + frameworkSha, frameworkBytes.Length),
+              "OxideMod/Oxide.Rust", "Oxide.Rust.zip"))
+          && Rejects(() => ModManagerService.ParseLatestReleaseAsset(
+              Release(goodUrl.Replace("https:", "http:"), "sha256:" + frameworkSha, frameworkBytes.Length),
+              "OxideMod/Oxide.Rust", "Oxide.Rust.zip")),
+        "framework downloads from another host, repository or plain HTTP are refused");
+}
+
+// Opt-in (HIGHPOP_NETWORK_TESTS=1): install the real latest Oxide and Carbon releases into a
+// throwaway folder, so the GitHub digest verification is exercised end to end. CI stays offline.
+if (Environment.GetEnvironmentVariable("HIGHPOP_NETWORK_TESTS") == "1")
+{
+    var netRoot = Path.Combine(Path.GetTempPath(), "highpop-net-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var oxideDir  = Path.Combine(netRoot, "oxide");
+        var carbonDir = Path.Combine(netRoot, "carbon");
+        foreach (var dir in new[] { oxideDir, carbonDir })
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "RustDedicated.exe"), string.Empty);
+        }
+        var mods = new ModManagerService();
+        var messages = new List<string>();
+        var log = new Progress<(int pct, string msg)>(p => { lock (messages) messages.Add(p.msg); });
+        await mods.InstallOxideAsync(rust, oxideDir, log);
+        await mods.InstallCarbonAsync(carbonDir, log);
+        Check(File.Exists(Path.Combine(oxideDir, "RustDedicated_Data", "Managed", "Oxide.Rust.dll"))
+              && File.Exists(Path.Combine(carbonDir, "carbon", "managed", "Carbon.dll")),
+            "network: latest Oxide and Carbon releases install after SHA-256 verification");
+        await Task.Delay(200);
+        lock (messages) foreach (var m in messages.Where(m => m.Contains("verified", StringComparison.OrdinalIgnoreCase)))
+            Console.WriteLine("  " + m);
+    }
+    finally
+    {
+        try { Directory.Delete(netRoot, recursive: true); } catch { }
+    }
+}
+
+using (var carbonArchiveBytes = new MemoryStream())
+{
+    using (var carbonArchive = new ZipArchive(carbonArchiveBytes, ZipArchiveMode.Create, leaveOpen: true))
+    {
+        carbonArchive.CreateEntry("winhttp.dll");
+        carbonArchive.CreateEntry("carbon/managed/Carbon.dll");
+    }
+    ModManagerService.ValidateCarbonArchive(carbonArchiveBytes.ToArray());
+    var carbonMissingRejected = false;
+    using (var incomplete = new MemoryStream())
+    {
+        using (var zip = new ZipArchive(incomplete, ZipArchiveMode.Create, leaveOpen: true)) zip.CreateEntry("winhttp.dll");
+        try { ModManagerService.ValidateCarbonArchive(incomplete.ToArray()); }
+        catch (InvalidDataException) { carbonMissingRejected = true; }
+    }
+    Check(carbonMissingRejected, "Carbon updater validates Carbon.dll and its loader before extraction");
+}
 
 using (var oxideArchiveBytes = new MemoryStream())
 {

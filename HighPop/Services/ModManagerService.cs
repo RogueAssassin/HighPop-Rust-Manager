@@ -35,10 +35,13 @@ public sealed record ModFrameworkPaths(
 public sealed class ModManagerService
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
-    internal const string OxidePublicDownloadUrl =
-        "https://umod.org/games/rust/download?tag=public";
-    private const string CarbonLatestReleaseApi =
-        "https://api.github.com/repos/CarbonCommunity/Carbon/releases/latest";
+    // Both frameworks are installed from their GitHub releases, where GitHub publishes a SHA-256
+    // digest for every asset. uMod's public Rust download redirects to the same Oxide.Rust.zip.
+    internal const string OxideReleaseRepo   = "OxideMod/Oxide.Rust";
+    internal const string OxideWindowsAsset  = "Oxide.Rust.zip";
+    internal const string CarbonReleaseRepo  = "CarbonCommunity/Carbon";
+    internal const string CarbonWindowsAsset = "Carbon.Windows.Release.zip";
+    private const long MaxFrameworkArchiveBytes = 200L * 1024 * 1024;
     internal const string RogueRustStableManifestUrl =
         "https://raw.githubusercontent.com/RogueAssassin/Oxide.Ext.RogueRust/main/update-manifest.json";
     internal const string RogueRustTestingManifestUrl =
@@ -53,18 +56,103 @@ public sealed class ModManagerService
             throw new InvalidOperationException("HighPop only installs Oxide for Rust.");
         EnsureRustInstalled(installPath);
 
-        Report(progress, 0, "Downloading the latest public Oxide/uMod build for Rust...");
-        using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, OxidePublicDownloadUrl);
-        downloadRequest.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
-        using var downloadResponse = await Http.SendAsync(downloadRequest);
-        downloadResponse.EnsureSuccessStatusCode();
-        var bytes = await downloadResponse.Content.ReadAsByteArrayAsync();
+        Report(progress, 0, "Resolving the latest public Oxide/uMod build for Rust...");
+        var (asset, bytes) = await DownloadVerifiedReleaseAssetAsync(
+            OxideReleaseRepo, OxideWindowsAsset, progress, 10);
+        Report(progress, 55, $"SHA-256 verified for {asset.Name} ({asset.Release}).");
         ValidateOxideArchive(bytes);
         await ExtractArchiveAsync(bytes, installPath, "oxide", progress);
         var installedVersion = GetInstalledOxideVersion(installPath)
             ?? throw new InvalidDataException("Oxide extraction completed but Oxide.Rust.dll was not installed.");
         Report(progress, 100,
-            $"Oxide/uMod Rust {installedVersion} installed from the public channel. Restart Rust to load it.");
+            $"Oxide/uMod Rust {installedVersion} installed and verified. Restart Rust to load it.");
+    }
+
+    /// <summary>One GitHub release asset with the SHA-256 digest GitHub published for it.</summary>
+    internal sealed record VerifiedReleaseAsset(string Release, string Name, string DownloadUrl, string Sha256, long Size);
+
+    /// <summary>
+    /// Picks <paramref name="assetName"/> from a GitHub "latest release" response. The asset must be
+    /// served from that repository's release downloads on github.com and must carry a SHA-256
+    /// digest; otherwise nothing is installed.
+    /// </summary>
+    internal static VerifiedReleaseAsset ParseLatestReleaseAsset(string releaseJson, string repo, string assetName)
+    {
+        using var document = JsonDocument.Parse(releaseJson);
+        var root = document.RootElement;
+        var release = root.TryGetProperty("name", out var nameElement) && nameElement.GetString() is { Length: > 0 } name
+            ? name
+            : root.TryGetProperty("tag_name", out var tag) ? tag.GetString() ?? "latest" : "latest";
+
+        foreach (var item in root.GetProperty("assets").EnumerateArray())
+        {
+            if (!string.Equals(item.GetProperty("name").GetString(), assetName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var url = item.GetProperty("browser_download_url").GetString();
+            if (!IsTrustedReleaseDownloadUrl(url, repo, assetName))
+                throw new InvalidDataException($"The {repo} release lists {assetName} at an untrusted address; nothing was installed.");
+
+            var digest = item.TryGetProperty("digest", out var digestElement) ? digestElement.GetString() : null;
+            var sha256 = digest is not null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
+                ? digest[7..]
+                : null;
+            if (sha256 is not { Length: 64 } || !sha256.All(char.IsAsciiHexDigit))
+                throw new InvalidDataException(
+                    $"GitHub did not publish a SHA-256 digest for {assetName}, so HighPop will not install it unverified.");
+
+            var size = item.TryGetProperty("size", out var sizeElement) ? sizeElement.GetInt64() : 0;
+            if (size <= 0 || size > MaxFrameworkArchiveBytes)
+                throw new InvalidDataException($"{assetName} has an unexpected size ({size} bytes); nothing was installed.");
+
+            return new VerifiedReleaseAsset(release, assetName, url!, sha256.ToLowerInvariant(), size);
+        }
+        throw new InvalidOperationException($"The latest {repo} release has no {assetName}.");
+    }
+
+    internal static bool IsTrustedReleaseDownloadUrl(string? value, string repo, string assetName) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)
+        && uri.AbsolutePath.StartsWith($"/{repo}/releases/download/", StringComparison.OrdinalIgnoreCase)
+        && uri.AbsolutePath.EndsWith($"/{assetName}", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Throws unless the downloaded bytes are exactly the published asset.</summary>
+    internal static void VerifyReleaseAsset(byte[] bytes, VerifiedReleaseAsset asset)
+    {
+        if (bytes.LongLength != asset.Size)
+            throw new InvalidDataException(
+                $"{asset.Name} downloaded as {bytes.LongLength} bytes but GitHub lists {asset.Size}; nothing was installed.");
+        var actual = Convert.ToHexString(SHA256.HashData(bytes));
+        if (!actual.Equals(asset.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(
+                $"{asset.Name} failed SHA-256 verification (expected {asset.Sha256}, got {actual.ToLowerInvariant()}); nothing was installed.");
+    }
+
+    private static async Task<(VerifiedReleaseAsset Asset, byte[] Bytes)> DownloadVerifiedReleaseAssetAsync(
+        string repo, string assetName, IProgress<(int pct, string msg)>? progress, int progressPct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repo}/releases/latest");
+        request.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
+        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+        using var response = await Http.SendAsync(request);
+        if (response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.TooManyRequests)
+            throw new InvalidOperationException(
+                "GitHub's API limit for this network was reached (60 requests per hour). Try again later.");
+        response.EnsureSuccessStatusCode();
+        var asset = ParseLatestReleaseAsset(await response.Content.ReadAsStringAsync(), repo, assetName);
+
+        Report(progress, progressPct, $"Downloading {asset.Name} ({asset.Release})...");
+        using var download = new HttpRequestMessage(HttpMethod.Get, asset.DownloadUrl);
+        download.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
+        using var downloadResponse = await Http.SendAsync(download, HttpCompletionOption.ResponseHeadersRead);
+        downloadResponse.EnsureSuccessStatusCode();
+        if (downloadResponse.Content.Headers.ContentLength is long length && length != asset.Size)
+            throw new InvalidDataException(
+                $"{asset.Name} is {length} bytes on the server but GitHub lists {asset.Size}; nothing was installed.");
+        var bytes = await downloadResponse.Content.ReadAsByteArrayAsync();
+        VerifyReleaseAsset(bytes, asset);
+        return (asset, bytes);
     }
 
     internal static void ValidateOxideArchive(byte[] bytes)
@@ -93,30 +181,31 @@ public sealed class ModManagerService
     {
         EnsureRustInstalled(installPath);
         Report(progress, 0, "Resolving the latest stable Carbon release...");
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, CarbonLatestReleaseApi);
-        request.Headers.UserAgent.ParseAdd($"HighPop-Rust-Manager/{AppInfo.Version}");
-        using var response = await Http.SendAsync(request);
-        response.EnsureSuccessStatusCode();
-
-        using var release = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var asset = release.RootElement.GetProperty("assets").EnumerateArray()
-            .Select(item => new
-            {
-                Name = item.GetProperty("name").GetString() ?? string.Empty,
-                Url = item.GetProperty("browser_download_url").GetString() ?? string.Empty,
-            })
-            .FirstOrDefault(item =>
-                item.Name.EndsWith("Carbon.Windows.Release.zip", StringComparison.OrdinalIgnoreCase)
-                || (item.Name.Contains("Windows", StringComparison.OrdinalIgnoreCase)
-                    && item.Name.Contains("Release", StringComparison.OrdinalIgnoreCase)
-                    && item.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)))
-            ?? throw new InvalidOperationException("The latest Carbon release has no Windows release archive.");
-
-        Report(progress, 15, $"Downloading {asset.Name}...");
-        var bytes = await Http.GetByteArrayAsync(asset.Url);
+        var (asset, bytes) = await DownloadVerifiedReleaseAssetAsync(
+            CarbonReleaseRepo, CarbonWindowsAsset, progress, 15);
+        Report(progress, 55, $"SHA-256 verified for {asset.Name} ({asset.Release}).");
+        ValidateCarbonArchive(bytes);
         await ExtractArchiveAsync(bytes, installPath, "carbon", progress);
-        Report(progress, 100, "Carbon installed. Restart Rust to load the framework.");
+        Report(progress, 100, $"Carbon installed and verified ({asset.Release}). Restart Rust to load the framework.");
+    }
+
+    internal static void ValidateCarbonArchive(byte[] bytes)
+    {
+        try
+        {
+            using var archive = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+            var paths = archive.Entries
+                .Select(entry => entry.FullName.Replace('\\', '/'))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!paths.Contains("carbon/managed/Carbon.dll") || !paths.Contains("winhttp.dll"))
+                throw new InvalidDataException(
+                    "The downloaded Carbon archive is missing Carbon.dll or its winhttp.dll loader.");
+        }
+        catch (InvalidDataException) { throw; }
+        catch (Exception ex) when (ex is IOException or NotSupportedException)
+        {
+            throw new InvalidDataException("The downloaded Carbon Windows archive is invalid.", ex);
+        }
     }
 
     public async Task<string> InstallRogueRustAsync(

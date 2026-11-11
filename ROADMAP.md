@@ -47,7 +47,6 @@ For what has already shipped, see the [changelog](CHANGELOG.md).
 ## Backlog
 
 - Web API: a CORS allow-list instead of `*`, logging of failed sign-ins, optional built-in HTTPS, and separate public status and control endpoints.
-- Verify Carbon and Oxide downloads against a pinned host and a published hash, as RogueRust downloads already are.
 - Time-zone and daylight-saving aware schedules, catch-up after downtime, overlap prevention and persistent countdowns.
 - Alert deduplication, severity routing, quiet hours and escalation for persistent faults.
 - Benchmarks for backup compression, log ingestion, database growth and multi-server startup.
