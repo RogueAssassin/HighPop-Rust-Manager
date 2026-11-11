@@ -129,8 +129,9 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     // Status of the server.cfg read at start-up; the Rust page shows it until it has its own.
     private string _rustVariableLoadStatus = "server.cfg has not been read yet.";
 
-    // Scheduled tasks
-    [ObservableProperty] private List<Services.ScheduledTask> _scheduledTasks = [];
+    // Log Watcher rules and scheduled tasks (Log Watcher and Schedule pages)
+    private ServerAutomationViewModel? _automationVm;
+    public ServerAutomationViewModel Automation => _automationVm ??= new(this, _scheduler);
 
     // Resource limits
     [ObservableProperty] private long _maxRamMb;
@@ -557,7 +558,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
         _maxRamMb = Server.MaxRamMb; // initialize without triggering OnMaxRamMbChanged
         foreach (var qc in Server.QuickCommands) QuickCommands.Add(qc);
-        foreach (var r in Server.LogWatchRules)  LogWatchRules.Add(r);
 
         PluginFields = Plugin?.GetConfigFields()
             .Where(f => f.Key is not ("serverName" or "maxPlayers" or "serverPass"
@@ -576,7 +576,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         RefreshStatus();
         RefreshModerationProfiles();
         RefreshInstalledPlugins();
-        RefreshScheduledTasks();
 
         // If the server was already running when this ViewModel was created (e.g. reattached
         // to a process that survived a HighPop restart), the StatusChanged(Running) event already
@@ -1001,43 +1000,6 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     partial void OnIsConsolePausedChanged(bool value)
     {
         if (!value) RebuildFilteredLog();
-    }
-
-    // ── Log Watcher rules ────────────────────────────────────────────────────
-
-    [ObservableProperty] private string _newWatchKeyword    = string.Empty;
-    [ObservableProperty] private Models.LogWatchAction _newWatchAction = Models.LogWatchAction.Notify;
-    [ObservableProperty] private string _newWatchRcon       = string.Empty;
-    [ObservableProperty] private int    _newWatchCooldown   = 5;
-
-    public Models.LogWatchAction[] LogWatchActions { get; } = Enum.GetValues<Models.LogWatchAction>();
-    public ObservableCollection<Models.LogWatchRule> LogWatchRules { get; } = [];
-
-    [RelayCommand]
-    private void AddLogWatchRule()
-    {
-        if (string.IsNullOrWhiteSpace(NewWatchKeyword)) return;
-        var rule = new Models.LogWatchRule
-        {
-            Keyword     = NewWatchKeyword,
-            Action      = NewWatchAction,
-            RconCommand = NewWatchRcon,
-            CooldownMin = Math.Max(0, NewWatchCooldown),
-            Enabled     = true
-        };
-        LogWatchRules.Add(rule);
-        Server.LogWatchRules.Add(rule);
-        NewWatchKeyword  = string.Empty;
-        NewWatchRcon     = string.Empty;
-        NewWatchCooldown = 5;
-    }
-
-    [RelayCommand]
-    private void RemoveLogWatchRule(Models.LogWatchRule? rule)
-    {
-        if (rule == null) return;
-        LogWatchRules.Remove(rule);
-        Server.LogWatchRules.Remove(rule);
     }
 
     // ── RCON ─────────────────────────────────────────────────────────────────
@@ -2003,36 +1965,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     // ── Scheduled tasks ──────────────────────────────────────────────────────
 
-    [RelayCommand]
-    private void RefreshScheduledTasks()
-        => ScheduledTasks = _scheduler.Tasks.Where(t => t.ServerId == Server.Id).ToList();
-
-    [RelayCommand]
-    private void AddScheduledTask(Services.ScheduledTask? task)
-    {
-        if (task == null) return;
-        task.ServerId   = Server.Id;
-        task.ServerName = Server.DisplayName;
-        _scheduler.AddTask(task);
-        RefreshScheduledTasks();
-    }
-
-    [RelayCommand]
-    private void RemoveScheduledTask(Services.ScheduledTask? task)
-    {
-        if (task == null) return;
-        _scheduler.RemoveTask(task.Id);
-        RefreshScheduledTasks();
-    }
-
-    [RelayCommand]
-    private async Task RunScheduledTaskNowAsync(Services.ScheduledTask? task)
-    {
-        if (task == null || task.IsRunning) return;
-        AddActionLog($"Scheduled {task.ActionText} started manually");
-        await _scheduler.ExecuteNowAsync(task.Id);
-        RefreshScheduledTasks();
-    }
+    /// <summary>Refreshes the Schedule page if it has been opened for this server.</summary>
+    public void RefreshScheduledTasks() => _automationVm?.RefreshScheduledTasks();
 
     // ── Performance monitoring ───────────────────────────────────────────────
 

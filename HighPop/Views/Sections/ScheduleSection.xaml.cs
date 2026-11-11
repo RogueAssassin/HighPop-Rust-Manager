@@ -14,6 +14,6 @@ public partial class ScheduleSection : System.Windows.Controls.UserControl
         var dlg = new AddScheduleTaskDialog(vm.Server.QuickCommands) { Owner = Window.GetWindow(this) };
         if (dlg.ShowDialog() != true || dlg.Result == null) return;
 
-        vm.AddScheduledTaskCommand.Execute(dlg.Result);
+        vm.Automation.AddScheduledTaskCommand.Execute(dlg.Result);
     }
 }

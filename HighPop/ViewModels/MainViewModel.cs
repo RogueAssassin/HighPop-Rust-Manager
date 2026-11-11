@@ -303,7 +303,7 @@ public partial class MainViewModel : BaseViewModel
                 var vm = FindServer(task.ServerId);
                 if (vm == null) return;
                 vm.RecordAction($"Scheduled {task.Action}: {result}");
-                vm.RefreshScheduledTasksCommand.Execute(null);
+                vm.RefreshScheduledTasks();
                 if (task.Action is ScheduledActionType.Backup or ScheduledActionType.Restart or ScheduledActionType.Stop)
                     vm.RefreshBackups();
             });

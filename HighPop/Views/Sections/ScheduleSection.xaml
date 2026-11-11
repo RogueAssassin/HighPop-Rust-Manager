@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:oxy="clr-namespace:OxyPlot.Wpf;assembly=OxyPlot.Wpf">
-    <Grid Background="{StaticResource BgDeepBrush}">
+    <!-- Bound to ServerViewModel.Automation (ServerAutomationViewModel), not the whole server. -->
+    <Grid Background="{StaticResource BgDeepBrush}" DataContext="{Binding Automation}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -63,12 +64,12 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                         <Button Content="▶ Run now" Style="{StaticResource GhostButton}" Margin="0,0,8,0"
-                                                Command="{Binding DataContext.RunScheduledTaskNowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                Command="{Binding DataContext.RunScheduledTaskNowCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                 CommandParameter="{Binding}"
                                                 IsEnabled="{Binding IsRunning, Converter={StaticResource InvBool}}"/>
                                         <Button Content="✕" Style="{StaticResource DangerButton}"
                                                 Width="32" Padding="0"
-                                                Command="{Binding DataContext.RemoveScheduledTaskCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                Command="{Binding DataContext.RemoveScheduledTaskCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                 CommandParameter="{Binding}"/>
                                     </StackPanel>
                                 </Grid>
