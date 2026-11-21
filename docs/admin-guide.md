@@ -118,6 +118,8 @@ The selected manifest is also passed to the Rust process, keeping RogueRust self
 and the version installed on that server (read from the plugin's `[Info]` header). **Install**,
 **Update**, and **Reinstall** download the single `.cs` file into the active framework's plugins folder
 (`oxide/plugins` or `carbon/plugins`). Oxide/Carbon hot-load it, so a running server needs no restart.
+**Update all (N)** at the top of the card updates every installed plugin that has a newer version, one
+after another. It never installs plugins you do not have, and one failure does not stop the others.
 
 Downloads are accepted only from `https://plugins.roguegaming.com.au/plugins/<Name>.cs`, are size-capped,
 must be an Oxide/Carbon plugin whose `[Info]` name matches the file, and are swapped in atomically. The
@@ -200,7 +202,10 @@ HPRM/
 
 Before each start or restart, HighPop writes the completed Rust, Oxide, and Carbon logs to a
 dated ZIP under `assets/logsbackup/<server>/`. It removes the source logs only after the ZIP is
-successfully closed and retains exactly the latest two archives for troubleshooting.
+successfully closed and retains exactly the latest two archives for troubleshooting. A log
+larger than 64 MB is stored as its last 64 MB only (`<name>.last-64MB.log`). While a server
+runs, HighPop warns once in the console and in notifications if its log folders pass 1 GB, and
+names the largest file; that almost always means a plugin is printing in a loop.
 
 Official presets are embedded in `HighPop.exe` as well as included in the portable ZIP. HighPop
 restores missing preset files at startup, updates unchanged built-in presets when their bundled

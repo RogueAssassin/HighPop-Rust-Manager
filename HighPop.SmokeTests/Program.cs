@@ -13,11 +13,11 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.0.16", "application and release metadata report v1.0.16");
-Check(UpdateCheckerService.IsNewerVersion("v1.0.16", "1.0.15")
-      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.16")
-      && !UpdateCheckerService.IsNewerVersion("v1.0.16", "1.0.16")
-      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.16"),
+Check(AppInfo.Version == "1.0.17", "application and release metadata report v1.0.17");
+Check(UpdateCheckerService.IsNewerVersion("v1.0.17", "1.0.16")
+      && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.17")
+      && !UpdateCheckerService.IsNewerVersion("v1.0.17", "1.0.17")
+      && !UpdateCheckerService.IsNewerVersion("invalid", "1.0.17"),
     "application update version comparison handles tags, equality, and invalid releases");
 
 using (var disconnectedRcon = new RconService())
@@ -841,6 +841,42 @@ try
               == ServerHygieneService.RetainedLogArchives
           && !Directory.EnumerateFiles(archiveDirectory, "*.tmp").Any(),
         "a failed log archive never deletes the only diagnostic copy");
+
+    // A runaway Carbon log: only its newest MaxArchivedBytesPerLog bytes may go into the archive.
+    var runawayLogPath = Path.Combine(carbonLogRoot, "runaway.log");
+    var runawayMarker = "newest runaway line"u8.ToArray();
+    using (var runaway = new FileStream(runawayLogPath, FileMode.Create))
+    {
+        runaway.SetLength(ServerHygieneService.MaxArchivedBytesPerLog + 4096);
+        runaway.Seek(-runawayMarker.Length, SeekOrigin.End);
+        runaway.Write(runawayMarker);
+    }
+    var measured = ServerHygieneService.MeasureLogs(server);
+    var runawayArchive = logArchiveService.ArchiveLogsForStart(
+        server, new DateTimeOffset(2026, 9, 28, 11, 0, 0, TimeSpan.FromHours(10)));
+    long runawayEntryLength = -1;
+    var runawayEndsWithMarker = false;
+    if (runawayArchive.ArchivePath != null)
+    {
+        using var zip = ZipFile.OpenRead(runawayArchive.ArchivePath);
+        var entry = zip.GetEntry("carbon/runaway.last-64MB.log");
+        if (entry != null)
+        {
+            runawayEntryLength = entry.Length;
+            using var entryStream = entry.Open();
+            using var copy = new MemoryStream();
+            entryStream.CopyTo(copy);
+            runawayEndsWithMarker = copy.ToArray().AsSpan().EndsWith(runawayMarker);
+        }
+    }
+    Check(measured.LargestFile == Path.GetFullPath(runawayLogPath)
+          && measured.TotalBytes > ServerHygieneService.MaxArchivedBytesPerLog
+          && runawayArchive.Succeeded
+          && runawayArchive.TruncatedFiles == 1
+          && runawayEntryLength == ServerHygieneService.MaxArchivedBytesPerLog
+          && runawayEndsWithMarker
+          && !File.Exists(runawayLogPath),
+        "a runaway log is archived as its newest 64 MB only and then removed");
 
     var oxideManaged = Path.Combine(server.InstallPath, "RustDedicated_Data", "Managed");
     Directory.CreateDirectory(oxideManaged);

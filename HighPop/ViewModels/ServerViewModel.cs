@@ -874,7 +874,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     [RelayCommand]
     private void ClearConsole()
     {
-        while (_pendingConsoleMessages.TryDequeue(out _)) { }
+        ClearPendingConsole();
         Log.Clear();
         FilteredLog.Clear();
     }
@@ -1985,6 +1985,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         {
             _perfTimer?.Stop();
             _perfTimer?.Dispose();
+            _perfTicks = 0;
+            Volatile.Write(ref _runawayLogWarned, 0);
             _perfTimer = new System.Timers.Timer(2000);
             _perfTimer.Elapsed += (_, _) =>
             {
@@ -1992,6 +1994,8 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
                 {
                     if (_perfTimer == null) return; // stopped between fire and lock
                 }
+                // About once a minute (and on the first tick), look for a log that is filling the disk.
+                if (IsRust && Interlocked.Increment(ref _perfTicks) % 30 == 1) CheckForRunawayLogs();
                 var m = _perfMonitor.Get(Server.Id);
                 if (m == null) return;
                 var network = _network.GetServerStats(Server.Id);
@@ -2012,6 +2016,29 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             };
             _perfTimer.Start();
         }
+    }
+
+    private int _perfTicks;
+    private int _runawayLogWarned; // 0/1; timer callbacks can overlap, so it is set atomically
+
+    /// <summary>
+    /// Warns once per run when the Rust, Oxide or Carbon logs pass
+    /// <see cref="ServerHygieneService.RunawayLogWarningBytes"/>. HighPop cannot stop a plugin
+    /// from writing, but it can say which file is growing before the disk fills.
+    /// </summary>
+    private void CheckForRunawayLogs()
+    {
+        if (Volatile.Read(ref _runawayLogWarned) != 0) return;
+        var (largest, largestBytes, totalBytes) = ServerHygieneService.MeasureLogs(Server);
+        if (totalBytes < ServerHygieneService.RunawayLogWarningBytes) return;
+        if (Interlocked.Exchange(ref _runawayLogWarned, 1) != 0) return;
+
+        var text = $"[HighPop] ⚠ This server's logs are {totalBytes / (1024.0 * 1024 * 1024):F1} GB. " +
+                   $"Largest: {largest} ({largestBytes / (1024.0 * 1024 * 1024):F1} GB). " +
+                   "Something is printing in a loop, usually a plugin; read the end of that file to find it. " +
+                   "On the next start HighPop keeps only the last 64 MB of each oversized log.";
+        EnqueueConsoleMessage(new ConsoleMessage { Text = text, Type = ConsoleMessageType.Warning, Source = "HighPop" });
+        _ = _notifications.NotifyAsync($"⚠ {Server.DisplayName}: log files are growing fast", text, "#D29922");
     }
 
     /// <summary>
@@ -2175,10 +2202,32 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
             });
     }
 
+    private int _pendingConsoleCount;
+    private long _skippedConsoleLines;
+
     private void EnqueueConsoleMessage(ConsoleMessage message)
     {
         _pendingConsoleMessages.Enqueue(message);
+        // Only the newest MaxConsoleLines lines can ever be shown. When a server floods its
+        // console faster than the UI drains it, drop the oldest waiting lines here instead of
+        // letting the queue (and memory, and UI work) grow without limit.
+        if (Interlocked.Increment(ref _pendingConsoleCount) > MaxConsoleLines
+            && TryDequeuePendingConsole(out _))
+            Interlocked.Increment(ref _skippedConsoleLines);
         ScheduleConsoleFlush();
+    }
+
+    private bool TryDequeuePendingConsole(out ConsoleMessage message)
+    {
+        if (!_pendingConsoleMessages.TryDequeue(out message!)) return false;
+        Interlocked.Decrement(ref _pendingConsoleCount);
+        return true;
+    }
+
+    private void ClearPendingConsole()
+    {
+        while (TryDequeuePendingConsole(out _)) { }
+        Interlocked.Exchange(ref _skippedConsoleLines, 0);
     }
 
     private void ScheduleConsoleFlush()
@@ -2192,7 +2241,20 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     private void FlushConsoleMessages()
     {
         var added = 0;
-        while (added < 250 && _pendingConsoleMessages.TryDequeue(out var message))
+        var skipped = Interlocked.Exchange(ref _skippedConsoleLines, 0);
+        if (skipped > 0)
+        {
+            var notice = new ConsoleMessage
+            {
+                Text = $"[HighPop] The server is printing faster than the console can show; skipped {skipped:N0} line(s). " +
+                       "The full output is in the server's own log files.",
+                Type = ConsoleMessageType.Warning,
+                Source = "HighPop",
+            };
+            Log.Add(notice);
+            if (!IsConsolePaused && MatchesConsoleFilter(notice)) FilteredLog.Add(notice);
+        }
+        while (added < 250 && TryDequeuePendingConsole(out var message))
         {
             Log.Add(message);
             if (!IsConsolePaused && MatchesConsoleFilter(message)) FilteredLog.Add(message);
@@ -2277,7 +2339,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
 
     public void ResetUiTextAfterRenderFailure()
     {
-        while (_pendingConsoleMessages.TryDequeue(out _)) { }
+        ClearPendingConsole();
         Log.Clear();
         FilteredLog.Clear();
         ActionLog.Clear();

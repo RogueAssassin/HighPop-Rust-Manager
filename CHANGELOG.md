@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.17
+
+- **Update all plugins in one click.** The RogueRust plugin catalog has an "⬆ Update all (N)" button that updates every installed plugin with a newer version, one after another, instead of pressing Update on each. Plugins you have not installed are never added and up-to-date ones are not reinstalled. If one fails, the rest still update and the status line names the failure. Each update keeps the same checks and backups as a single install.
+- **No more lag or memory growth when a server floods its console.** When Rust, Oxide, Carbon or a plugin prints faster than the console can show, HighPop now keeps only the newest 2,000 waiting lines (the most the console displays) and adds one line saying how many it skipped. Before, every line waited in memory, so a flood made HighPop use more and more RAM and stop responding. The full output is still in the server's own log files.
+- **Runaway logs no longer stall the start.** Before each start, a log larger than 64 MB goes into the start archive as its last 64 MB only (named `….last-64MB.log`), and the start message says which logs were cut. Before, HighPop zipped the whole file, so a 26 GB Carbon log held the start for a long time.
+- **Warning when a running server's logs pass 1 GB.** HighPop checks the Rust, Oxide and Carbon log folders about once a minute and, once per run, names the largest file in the console and in your notifications. A log that size almost always means a plugin is printing in a loop.
+- Advanced metadata to v1.0.17.
+
 ## 1.0.16
 
 - **Verified Oxide and Carbon downloads.** Both frameworks now come from their official GitHub releases (`OxideMod/Oxide.Rust` and `CarbonCommunity/Carbon`) and are checked against the size and SHA-256 that GitHub publishes for the file before anything is extracted. A download from another address, a mismatched file or a release with no published SHA-256 is refused and the server folder is left untouched. uMod's public download pointed to the same Oxide file, so the installed build does not change.

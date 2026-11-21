@@ -53,6 +53,7 @@ public partial class ServerModsViewModel : BaseViewModel
     {
         OnPropertyChanged(nameof(CanInstallOxide));
         OnPropertyChanged(nameof(CanInstallCarbon));
+        RaiseCatalogUpdateChanged();
     }
 
     public string RogueRustChannel
@@ -292,6 +293,79 @@ public partial class ServerModsViewModel : BaseViewModel
             ModStatusText = $"❌ {ex.Message}";
         }
         finally { ModBusy = false; }
+    }
+
+    /// <summary>Catalog plugins that are installed and have a newer published version.</summary>
+    public int CatalogUpdateCount => CatalogPlugins.Count(plugin => plugin.UpdateAvailable);
+    public bool CanUpdateAllCatalogPlugins => CatalogUpdateCount > 0 && !ModBusy;
+    public string UpdateAllCatalogText => CatalogUpdateCount > 0
+        ? $"⬆ Update all ({CatalogUpdateCount})"
+        : "✓ All up to date";
+
+    partial void OnCatalogPluginsChanged(List<RogueRustCatalogPlugin> value) => RaiseCatalogUpdateChanged();
+    private void RaiseCatalogUpdateChanged()
+    {
+        OnPropertyChanged(nameof(CatalogUpdateCount));
+        OnPropertyChanged(nameof(CanUpdateAllCatalogPlugins));
+        OnPropertyChanged(nameof(UpdateAllCatalogText));
+    }
+
+    /// <summary>
+    /// Updates every installed catalog plugin that has a newer version, one after another.
+    /// A plugin that fails does not stop the rest; the summary names what failed. Plugins that
+    /// are not installed are never added, and up-to-date ones are not reinstalled.
+    /// </summary>
+    [RelayCommand]
+    private async Task UpdateAllCatalogPluginsAsync()
+    {
+        if (Plugin?.GameId != "rust" || ModBusy) return;
+        var pending = CatalogPlugins.Where(plugin => plugin.UpdateAvailable).ToList();
+        if (pending.Count == 0)
+        {
+            ModStatusText = "All installed RogueRust plugins are already up to date.";
+            return;
+        }
+        var paths = ModManagerService.GetActiveFrameworkPaths(Server.InstallPath);
+        if (paths == null)
+        {
+            ModStatusText = "Install exactly one mod framework (Oxide/uMod or Carbon) before updating RogueRust plugins.";
+            return;
+        }
+
+        ModBusy = true;
+        var updated = new List<string>();
+        var failed = new List<string>();
+        try
+        {
+            for (var i = 0; i < pending.Count; i++)
+            {
+                var plugin = pending[i];
+                ModStatusText = $"Updating {plugin.Name} ({i + 1} of {pending.Count})…";
+                try
+                {
+                    var version = await _pluginCatalog.InstallAsync(plugin, Server.InstallPath);
+                    updated.Add($"{plugin.Name} v{version}");
+                    AppendLog($"[Mods] ✅ {plugin.FileName} updated to v{version}.", ConsoleMessageType.System);
+                }
+                catch (Exception ex)
+                {
+                    failed.Add(plugin.Name);
+                    AppendLog($"[Mods] ❌ {plugin.FileName}: {ex.Message}", ConsoleMessageType.Error);
+                }
+            }
+
+            if (updated.Count > 0)
+                AddActionLog($"RogueRust plugins updated: {string.Join(", ", updated)}");
+            ModStatusText = (failed.Count == 0 ? "✅ " : "⚠ ") +
+                            $"Updated {updated.Count} of {pending.Count} plugin(s)." +
+                            (failed.Count > 0 ? $" Failed: {string.Join(", ", failed)} (see the console)." : string.Empty) +
+                            (updated.Count > 0 && IsRunning ? " The framework hot-loads them; no restart is needed." : string.Empty);
+        }
+        finally
+        {
+            ModBusy = false;
+            RefreshInstalledPlugins();
+        }
     }
 
     [RelayCommand]

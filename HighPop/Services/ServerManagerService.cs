@@ -532,6 +532,14 @@ public class ServerManagerService
                     ? ConsoleMessageType.System
                     : ConsoleMessageType.Warning,
             };
+            if (logArchive.TruncatedFiles > 0)
+            {
+                archived.Text += $" {logArchive.TruncatedFiles} log(s) were larger than " +
+                                 $"{FormatByteCount(ServerHygieneService.MaxArchivedBytesPerLog)}, so only their last " +
+                                 $"{FormatByteCount(ServerHygieneService.MaxArchivedBytesPerLog)} were kept. " +
+                                 "A log that big usually means a plugin is printing in a loop; check the end of that log.";
+                archived.Type = ConsoleMessageType.Warning;
+            }
             if (logArchive.DeleteFailures > 0)
                 archived.Text += $" {logArchive.DeleteFailures} source file(s) could not be removed and will be retried next start.";
             inst0.AddToLog(archived);

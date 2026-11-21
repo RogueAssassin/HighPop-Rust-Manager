@@ -21,7 +21,8 @@ public sealed record LogArchiveResult(
     int ArchivedFiles,
     long ArchivedBytes,
     int DeleteFailures,
-    string? Error)
+    string? Error,
+    int TruncatedFiles = 0)
 {
     public bool Succeeded => Error == null;
 }
@@ -34,6 +35,12 @@ public sealed record LogArchiveResult(
 public class ServerHygieneService
 {
     internal const int RetainedLogArchives = 2;
+    /// <summary>
+    /// A runaway log (a plugin printing in a loop) can reach tens of gigabytes. Zipping all of
+    /// it would stall the start for many minutes and fill the disk, so only the newest part of
+    /// each oversized file is kept; that is the part that explains what went wrong.
+    /// </summary>
+    internal const long MaxArchivedBytesPerLog = 64L * 1024 * 1024;
     private readonly string _logBackupRoot;
 
     public ServerHygieneService(ConfigService config)
@@ -52,14 +59,43 @@ public class ServerHygieneService
     public LogArchiveResult ArchiveLogsForStart(GameServer server)
         => ArchiveLogsForStart(server, DateTimeOffset.Now);
 
+    /// <summary>Size at which a running server's logs are reported as a likely runaway.</summary>
+    public const long RunawayLogWarningBytes = 1024L * 1024 * 1024;
+
+    private static (string Label, string Path)[] GetLogRoots(GameServer server) =>
+    [
+        ("server", RustPlugin.GetEffectiveLogDirectory(server)),
+        ("oxide", Path.Combine(server.InstallPath, "oxide", "logs")),
+        ("carbon", Path.Combine(server.InstallPath, "carbon", "logs")),
+    ];
+
+    /// <summary>
+    /// Returns the largest file in the Rust, Oxide and Carbon log folders and the folders'
+    /// total size. Unreadable folders are skipped; this only feeds a warning.
+    /// </summary>
+    public static (string? LargestFile, long LargestBytes, long TotalBytes) MeasureLogs(GameServer server)
+    {
+        string? largest = null;
+        long largestBytes = 0, total = 0;
+        foreach (var root in GetLogRoots(server))
+        {
+            try
+            {
+                if (!Directory.Exists(root.Path)) continue;
+                foreach (var file in new DirectoryInfo(root.Path).EnumerateFiles("*", SearchOption.AllDirectories))
+                {
+                    total += file.Length;
+                    if (file.Length > largestBytes) { largestBytes = file.Length; largest = file.FullName; }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        return (largest, largestBytes, total);
+    }
+
     internal LogArchiveResult ArchiveLogsForStart(GameServer server, DateTimeOffset timestamp)
     {
-        var roots = new (string Label, string Path)[]
-        {
-            ("server", RustPlugin.GetEffectiveLogDirectory(server)),
-            ("oxide", Path.Combine(server.InstallPath, "oxide", "logs")),
-            ("carbon", Path.Combine(server.InstallPath, "carbon", "logs")),
-        };
+        var roots = GetLogRoots(server);
         var candidates = new List<(string FullPath, string EntryName, long Length)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -104,7 +140,12 @@ public class ServerHygieneService
             using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
             {
                 foreach (var candidate in candidates)
-                    archive.CreateEntryFromFile(candidate.FullPath, candidate.EntryName, CompressionLevel.Fastest);
+                {
+                    if (candidate.Length > MaxArchivedBytesPerLog)
+                        AddLogTail(archive, candidate.FullPath, candidate.EntryName);
+                    else
+                        archive.CreateEntryFromFile(candidate.FullPath, candidate.EntryName, CompressionLevel.Fastest);
+                }
             }
 
             File.Move(temporaryPath, finalPath);
@@ -134,7 +175,21 @@ public class ServerHygieneService
             candidates.Count,
             candidates.Sum(candidate => candidate.Length),
             deleteFailures,
-            null);
+            null,
+            candidates.Count(candidate => candidate.Length > MaxArchivedBytesPerLog));
+    }
+
+    /// <summary>Stores only the last <see cref="MaxArchivedBytesPerLog"/> bytes of a runaway log.</summary>
+    private static void AddLogTail(ZipArchive archive, string fullPath, string entryName)
+    {
+        var extension = Path.GetExtension(entryName);
+        var tailName = entryName[..^extension.Length]
+                       + $".last-{MaxArchivedBytesPerLog / (1024 * 1024)}MB" + extension;
+        var entry = archive.CreateEntry(tailName, CompressionLevel.Fastest);
+        using var source = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        source.Seek(Math.Max(0, source.Length - MaxArchivedBytesPerLog), SeekOrigin.Begin);
+        using var target = entry.Open();
+        source.CopyTo(target);
     }
 
     private static string BuildProfileDirectoryName(GameServer server)

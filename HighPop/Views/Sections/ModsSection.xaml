@@ -187,6 +187,10 @@
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <Button Content="🌐 Open site" Style="{StaticResource GhostButton}" Margin="0,0,8,0"
                                     Command="{Binding OpenPluginCatalogSiteCommand}"/>
+                            <Button Content="{Binding UpdateAllCatalogText, Mode=OneWay}"
+                                    Style="{StaticResource PrimaryButton}" Margin="0,0,8,0"
+                                    IsEnabled="{Binding CanUpdateAllCatalogPlugins, Mode=OneWay}"
+                                    Command="{Binding UpdateAllCatalogPluginsCommand}"/>
                             <Button Content="↻ Load catalog" Style="{StaticResource GhostButton}"
                                     IsEnabled="{Binding PluginCatalogLoading, Converter={StaticResource InvBool}}"
                                     Command="{Binding RefreshPluginCatalogCommand}"/>
