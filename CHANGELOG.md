@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.18
+
+- **Fix: a server could refuse to start after HighPop reloaded its profile.** Loading, importing or cloning a profile added the saved server.cfg variables on top of the four defaults, so after a reload every variable appeared twice and start validation stopped Rust with "Each server.cfg variable may appear only once". Loading now replaces the defaults, and profiles already saved with doubled variables are repaired the next time HighPop opens them (the last copy, which holds your saved value, is kept).
+- Advanced metadata to v1.0.18.
+
 ## 1.0.17
 
 - **Update all plugins in one click.** The RogueRust plugin catalog has an "⬆ Update all (N)" button that updates every installed plugin with a newer version, one after another, instead of pressing Update on each. Plugins you have not installed are never added and up-to-date ones are not reinstalled. If one fails, the rest still update and the status line names the failure. Each update keeps the same checks and backups as a single install.

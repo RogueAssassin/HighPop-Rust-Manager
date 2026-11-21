@@ -1327,6 +1327,38 @@ try
     catch (InvalidDataException) { traversalRejected = true; }
     Check(traversalRejected, "preset path traversal rejected");
 
+    // Saved profiles must not merge into the default server.cfg variables: that duplicated every
+    // variable after a reload and made start validation refuse the server.
+    {
+        var varConfig = new ConfigService();
+        var savedServersJson = File.Exists(varConfig.ServersFile) ? File.ReadAllText(varConfig.ServersFile) : null;
+        try
+        {
+            var fresh = new GameServer { GameId = "rust", DisplayName = "Variables" };
+            var defaultCount = fresh.RustServerVariables.Count;
+            varConfig.SaveServers([fresh]);
+            var reloaded = new ConfigService().LoadServers().Single();
+            Check(reloaded.RustServerVariables.Count == defaultCount
+                  && RustPlugin.ValidateServerVariables(reloaded) == null,
+                "a saved profile reloads without duplicating its server.cfg variables");
+            var doubled = new GameServer { GameId = "rust", DisplayName = "Doubled" };
+            foreach (var copy in RustServerVariable.CreateDefaults()) doubled.RustServerVariables.Add(copy);
+            File.WriteAllText(varConfig.ServersFile, Newtonsoft.Json.JsonConvert.SerializeObject(new[] { doubled }));
+            var repaired = new ConfigService().LoadServers().Single();
+            Check(repaired.RustServerVariables.Count == defaultCount
+                  && RustPlugin.ValidateServerVariables(repaired) == null,
+                "profiles saved with doubled server.cfg variables are repaired on load");
+            var cloned = ServerProfileTransferService.CloneForTests(reloaded);
+            Check(cloned.RustServerVariables.Count == defaultCount,
+                "a cloned profile keeps its own server.cfg variables");
+        }
+        finally
+        {
+            if (savedServersJson != null) File.WriteAllText(varConfig.ServersFile, savedServersJson);
+            else if (File.Exists(varConfig.ServersFile)) File.Delete(varConfig.ServersFile);
+        }
+    }
+
     // Invalid or duplicate server Ids are repaired on load and written back, so loading again
     // (and lifecycle saves that look servers up by Id) never multiplies the server list.
     {

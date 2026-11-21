@@ -173,7 +173,7 @@ public class ConfigService
                     allDecrypted &= UnprotectProperty(server, nameof(GameServer.DiscordWebhookUrl));
                 }
                 if (!allDecrypted) PreserveServersFile("undecryptable");
-                var servers = array.ToObject<List<GameServer>>() ?? [];
+                var servers = array.ToObject<List<GameServer>>(ProfileJson.Serializer) ?? [];
                 var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var installPathMigrated = false;
                 var idsRepaired = false;
@@ -191,7 +191,7 @@ public class ConfigService
                     server.LogWatchRules ??= [];
                     server.LifecycleOperationHistory ??= [];
                     server.RustServerVariables ??= RustServerVariable.CreateDefaults();
-                    var resolvedInstallPath = PortableLayoutService.ResolveInstallPath(
+                    ProfileJson.RepairDuplicateVariables(server);                    var resolvedInstallPath = PortableLayoutService.ResolveInstallPath(
                         server.InstallPath,
                         _legacyDefaultInstallRoot,
                         _portableDefaultInstallRoot);

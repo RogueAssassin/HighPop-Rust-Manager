@@ -63,7 +63,7 @@ public sealed class ServerProfileTransferService
         if (schemaVersion != CurrentSchemaVersion)
             throw new InvalidDataException($"HPRM server profile schema {schemaVersion} is not supported.");
 
-        var server = root["Server"]?.ToObject<GameServer>()
+        var server = root["Server"]?.ToObject<GameServer>(ProfileJson.Serializer)
             ?? throw new InvalidDataException("The HPRM server profile does not contain server settings.");
         if (!string.Equals(server.GameId, "rust", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Only Rust server profiles can be imported.");
@@ -93,8 +93,10 @@ public sealed class ServerProfileTransferService
         return server;
     }
 
+    internal static GameServer CloneForTests(GameServer server) => Clone(server);
+
     private static GameServer Clone(GameServer server) =>
-        JsonConvert.DeserializeObject<GameServer>(JsonConvert.SerializeObject(server))
+        ProfileJson.Clone(server)
         ?? throw new InvalidDataException("The server profile could not be copied.");
 
     private static void RemoveSecrets(GameServer server)
