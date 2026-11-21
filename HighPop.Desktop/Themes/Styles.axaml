@@ -1,0 +1,262 @@
+<!-- Control styles that mirror HighPop/Themes/Styles.xaml. Classes use the Windows style names, lower-cased:
+     Button.primary / success / danger / ghost, Border.card / pill, TextBlock.section / label / note / muted. -->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctl="using:HighPop.Desktop.Controls">
+
+  <Style Selector="Window">
+    <Setter Property="Background" Value="{DynamicResource BgDeepBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- Buttons: every plain button is the quiet "ghost" look; classes add the accent variants. -->
+  <Style Selector="Button">
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="14,7" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Background" Value="{DynamicResource BgSurface3Brush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+  </Style>
+  <!-- Hover and pressed states of the accent variants (the plain button states come from the Button* resources). -->
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BrandGradientBrush}" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="Opacity" Value="0.9" />
+  </Style>
+  <Style Selector="Button.success:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.success:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SuccessBgBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource SuccessFgBrush}" />
+    <Setter Property="Opacity" Value="0.9" />
+  </Style>
+  <Style Selector="Button.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.danger:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource DangerBgBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource DangerFgBrush}" />
+    <Setter Property="Opacity" Value="0.9" />
+  </Style>
+
+  <Style Selector="Button.primary">
+    <Setter Property="Background" Value="{DynamicResource BrandGradientBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentVioletBrush}" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.success">
+    <Setter Property="Background" Value="{DynamicResource SuccessBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentGreenBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource SuccessFgBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.danger">
+    <Setter Property="Background" Value="{DynamicResource DangerBgBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentRedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource DangerFgBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- Toggle buttons: the checked state is the blue tint from GhostToggleButton. -->
+  <Style Selector="ToggleButton">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="ToggleButton:checked /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="#173246" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}" />
+  </Style>
+
+  <Style Selector="TextBox">
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CaretBrush" Value="{DynamicResource AccentBlueBrush}" />
+    <Setter Property="MinHeight" Value="42" />
+    <Setter Property="Padding" Value="22,10" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="ComboBox">
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <Style Selector="ListBoxItem">
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BgSurface2Brush}" />
+  </Style>
+  <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource BgSurface3Brush}" />
+  </Style>
+  <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ComboBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource SelectionActiveBrush}" />
+  </Style>
+
+  <!-- Cards and pills -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource BgSurface2Brush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="18" />
+    <Setter Property="Margin" Value="0,0,0,14" />
+  </Style>
+  <Style Selector="Border.pill">
+    <Setter Property="Background" Value="{DynamicResource BgSurface3Brush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="10,5" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+
+  <!-- Text -->
+  <Style Selector="TextBlock.section">
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Margin" Value="0,0,0,12" />
+  </Style>
+  <Style Selector="TextBlock.title">
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.label">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+  </Style>
+  <Style Selector="TextBlock.note">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+  </Style>
+
+  <!-- Pages inside a group: a quiet underline strip (SubTabItem). -->
+  <Style Selector="TabItem">
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+  </Style>
+  <Style Selector="TabItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+  <Style Selector="TabItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+  <Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
+    <Setter Property="Background" Value="{DynamicResource AccentBlueBrush}" />
+  </Style>
+
+  <Style Selector="ProgressBar">
+    <Setter Property="Foreground" Value="{DynamicResource AccentBlueBrush}" />
+    <Setter Property="Background" Value="{DynamicResource BgSurface3Brush}" />
+  </Style>
+  <Style Selector="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+
+  <!-- Server workspace sidebar: one entry per group, icon in Tag, accent bar on the selected one. -->
+  <Style Selector="TabControl.nav">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="172,*">
+          <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                  BorderThickness="0,0,1,0" Padding="10,14">
+            <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+          </Border>
+          <ContentPresenter Name="PART_SelectedContentHost" Grid.Column="1"
+                            Content="{TemplateBinding SelectedContent}"
+                            ContentTemplate="{TemplateBinding SelectedContentTemplate}" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+    <Setter Property="ItemsPanel">
+      <ItemsPanelTemplate><StackPanel /></ItemsPanelTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="TabControl.nav > TabItem">
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="bd" Background="Transparent" CornerRadius="8" Margin="0,1" Padding="10,9">
+          <Grid ColumnDefinitions="30,*">
+            <Border Name="bar" Background="{DynamicResource AccentBlueBrush}" CornerRadius="2" Width="3"
+                    HorizontalAlignment="Left" Margin="-6,2,0,2" IsVisible="False" />
+            <ctl:StrokeIcon Data="{TemplateBinding Tag}" Foreground="{TemplateBinding Foreground}" Width="17" Height="17"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <ContentPresenter Grid.Column="1" Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}"
+                              VerticalAlignment="Center" Margin="4,0,0,0" />
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="TabControl.nav > TabItem:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+  <Style Selector="TabControl.nav > TabItem:pointerover /template/ Border#bd">
+    <Setter Property="Background" Value="{DynamicResource BgSurface2Brush}" />
+  </Style>
+  <Style Selector="TabControl.nav > TabItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TabControl.nav > TabItem:selected /template/ Border#bd">
+    <Setter Property="Background" Value="{DynamicResource BgSurface3Brush}" />
+  </Style>
+  <Style Selector="TabControl.nav > TabItem:selected /template/ Border#bar">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+
+  <!-- Pages inside a group: a quiet underline strip. -->
+  <Style Selector="TabControl.subtabs">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <DockPanel Background="{DynamicResource BgDeepBrush}">
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="14,4,14,0">
+            <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+          </Border>
+          <ContentPresenter Name="PART_SelectedContentHost"
+                            Content="{TemplateBinding SelectedContent}"
+                            ContentTemplate="{TemplateBinding SelectedContentTemplate}" />
+        </DockPanel>
+      </ControlTemplate>
+    </Setter>
+    <Setter Property="ItemsPanel">
+      <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="TabControl.subtabs > TabItem">
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="0,0,0,2"
+                Padding="14,10" Margin="0,0,4,-1">
+          <ContentPresenter Content="{TemplateBinding Header}" Foreground="{TemplateBinding Foreground}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="TabControl.subtabs > TabItem:pointerover">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+  <Style Selector="TabControl.subtabs > TabItem:selected">
+    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+  </Style>
+  <Style Selector="TabControl.subtabs > TabItem:selected /template/ Border#bd">
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentBlueBrush}" />
+  </Style>
+
+  <!-- Server list rows. -->
+  <Style Selector="ListBox.servers ListBoxItem">
+    <Setter Property="Padding" Value="12,10" />
+    <Setter Property="Margin" Value="4,2" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+</Styles>

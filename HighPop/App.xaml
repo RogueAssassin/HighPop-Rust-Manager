@@ -1,7 +1,7 @@
 <Application x:Class="HighPop.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:svc="clr-namespace:HighPop.Services"
+             xmlns:svc="clr-namespace:HighPop.Services;assembly=HighPop.Core"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <ResourceDictionary>

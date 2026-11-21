@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             x:Class="HighPop.Desktop.Views.FilesTab"
+             x:DataType="vm:ServerViewModel">
+  <Grid Background="{DynamicResource BgDeepBrush}" RowDefinitions="Auto,*">
+    <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,8">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <Button Content="↑" Width="36" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Up"
+                  Command="{Binding FileBrowser.GoUpCommand}" IsEnabled="{Binding FileBrowser.CanGoUp}" />
+          <Button Content="↻" Width="36" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Refresh" Command="{Binding FileBrowser.RefreshCommand}" />
+          <Button Command="{Binding FileBrowser.CreateFolderCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconFolder}" Width="13" Height="13" /><TextBlock Text="New folder" /></StackPanel></Button>
+          <Button Margin="0,0,8,0" Command="{Binding FileBrowser.OpenInExplorerCommand}"><TextBlock Text="Open in file manager" /></Button>
+          <TextBlock Text="{Binding FileBrowser.StatusText}" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBox Grid.Column="1" Width="200" Text="{Binding FileBrowser.SearchQuery}" PlaceholderText="Search by filename" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" RowDefinitions="Auto,Auto,*">
+      <ItemsControl ItemsSource="{Binding FileBrowser.Breadcrumb}" Margin="12,6,12,4">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="x:String">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="›" Foreground="{DynamicResource TextMutedBrush}" Margin="4,0" />
+              <TextBlock Text="{Binding}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <Border Grid.Row="1" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Padding="12,6"
+              IsVisible="{Binding FileBrowser.ShowRenameBox}">
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBlock Text="New name:" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" />
+          <TextBox Width="300" Text="{Binding FileBrowser.NewName}">
+            <TextBox.KeyBindings>
+              <KeyBinding Gesture="Enter" Command="{Binding FileBrowser.ConfirmRenameCommand}" />
+              <KeyBinding Gesture="Escape" Command="{Binding FileBrowser.CancelRenameCommand}" />
+            </TextBox.KeyBindings>
+          </TextBox>
+          <Button Content="✓" Classes="primary" Width="36" Padding="0" HorizontalContentAlignment="Center" Command="{Binding FileBrowser.ConfirmRenameCommand}" />
+          <Button Content="✕" Classes="danger" Width="36" Padding="0" HorizontalContentAlignment="Center" Command="{Binding FileBrowser.CancelRenameCommand}" />
+        </StackPanel>
+      </Border>
+
+      <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+        <DockPanel>
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,90,150" Margin="16,6" >
+            <TextBlock Text="Name" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBlock Grid.Column="1" Text="Size" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBlock Grid.Column="2" Text="Modified" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+          </Grid>
+          <ListBox x:Name="FileList" ItemsSource="{Binding FileBrowser.Items}" SelectedItem="{Binding FileBrowser.SelectedItem}"
+                   Background="{DynamicResource BgDeepBrush}" BorderThickness="0" DoubleTapped="FileList_DoubleTapped">
+            <ListBox.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Open / Navigate" Command="{Binding FileBrowser.OpenCommand}" CommandParameter="{Binding FileBrowser.SelectedItem}" />
+                <MenuItem Header="Edit as text" Command="{Binding FileBrowser.EditSelectedItemCommand}" />
+                <MenuItem Header="Download" Command="{Binding FileBrowser.DownloadFileCommand}" CommandParameter="{Binding FileBrowser.SelectedItem}" />
+                <Separator />
+                <MenuItem Header="Rename" Command="{Binding FileBrowser.RenameItemCommand}" CommandParameter="{Binding FileBrowser.SelectedItem}" />
+                <Separator />
+                <MenuItem Header="Delete" Command="{Binding FileBrowser.DeleteItemCommand}" CommandParameter="{Binding FileBrowser.SelectedItem}" />
+              </ContextMenu>
+            </ListBox.ContextMenu>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:FileItem">
+                <Grid ColumnDefinitions="*,90,150">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="{Binding Icon}" />
+                    <TextBlock Text="{Binding Name}" FontSize="12" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Text="{Binding SizeText}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+                  <TextBlock Grid.Column="2" Text="{Binding Modified}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+
+        <Border Grid.Column="1" Width="480" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0"
+                IsVisible="{Binding FileBrowser.IsEditing}">
+          <DockPanel>
+            <Border DockPanel.Dock="Top" Background="{DynamicResource BgSurface2Brush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="10,6">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                  <TextBlock Text="{Binding FileBrowser.EditingFileName}" FontSize="12" FontWeight="SemiBold" />
+                  <TextBlock Text="•" FontSize="12" Foreground="{DynamicResource AccentYellowBrush}" IsVisible="{Binding FileBrowser.EditorDirty}" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="✕" Width="32" Padding="0" HorizontalContentAlignment="Center" Command="{Binding FileBrowser.CloseEditorCommand}" />
+              </Grid>
+            </Border>
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource BgSurface2Brush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="10,6">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="primary" Command="{Binding FileBrowser.SaveEditCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconSave}" Width="13" Height="13" /><TextBlock Text="Save" /></StackPanel></Button>
+                <Button Content="Close" Command="{Binding FileBrowser.CloseEditorCommand}" />
+                <TextBlock Margin="4,0,0,0" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" Text="{Binding FileBrowser.StatusText}" />
+              </StackPanel>
+            </Border>
+            <TextBox Text="{Binding FileBrowser.EditorContent}" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                     FontFamily="Cascadia Code,Consolas,Menlo,monospace" FontSize="12" Background="#0D1117" Foreground="#C9D1D9" BorderThickness="0" Padding="10" />
+          </DockPanel>
+        </Border>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -1,0 +1,167 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:models="using:HighPop.Models"
+             x:Class="HighPop.Desktop.Views.RustTab"
+             x:DataType="vm:ServerViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.title"><Setter Property="FontSize" Value="14" /><Setter Property="FontWeight" Value="SemiBold" /><Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" /></Style>
+    
+    <Style Selector="TextBlock.note"><Setter Property="FontSize" Value="11" /><Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  </UserControl.Styles>
+
+  <ScrollViewer Background="{DynamicResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24">
+      <TextBlock Classes="section" Text="Rust Settings" Margin="0,0,0,12" />
+
+      <!-- Custom join domain -->
+      <Border Classes="card"><StackPanel Spacing="8">
+        <TextBlock Text="Custom join domain" Classes="title" />
+        <TextBlock Classes="note"
+                   Text="Players can join with client.connect your.domain once it has an A record (DNS only, not proxied) to your public IP and a _rust._udp SRV record with the game port." />
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <TextBox Text="{Binding DomainCheckHostname}" PlaceholderText="rust.example.com (blank = Public join domain)" />
+          <Button Grid.Column="1" Content="Check DNS" Command="{Binding CheckCustomDomainCommand}"
+                  IsEnabled="{Binding !DomainChecking}" />
+          <Button Grid.Column="2" Content="Setup guide" Command="{Binding OpenCustomDomainGuideCommand}" />
+        </Grid>
+        <TextBlock Text="{Binding DomainCheckSummary}" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <ItemsControl ItemsSource="{Binding DomainCheckItems}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="svc:DomainCheckItem">
+              <Border Background="{DynamicResource BgDeepBrush}" CornerRadius="5" Padding="10,7" Margin="0,0,0,5">
+                <Grid ColumnDefinitions="26,*">
+                  <TextBlock Text="{Binding Icon}" />
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Orientation="Horizontal" Spacing="8"
+                    IsVisible="{Binding DomainConnectCommand, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+          <TextBlock Text="Players type in F1:" VerticalAlignment="Center" Opacity="0.75" />
+          <TextBlock Text="{Binding DomainConnectCommand}" FontFamily="Consolas,Menlo,monospace"
+                     Foreground="{DynamicResource AccentBlueBrush}" VerticalAlignment="Center" />
+          <Button Content="Copy" Command="{Binding CopyDomainConnectCommandCommand}" />
+        </StackPanel>
+      </StackPanel></Border>
+
+      <!-- Profile / branch -->
+      <Border Classes="card"><StackPanel Spacing="8">
+        <TextBlock Text="HighPop operations profile" Classes="title" />
+        <TextBlock Classes="note"
+                   Text="Installing Carbon or Oxide automatically changes a vanilla profile to Modded." />
+        <ComboBox ItemsSource="{Binding RustServerProfileOptions}" SelectedItem="{Binding RustServerProfile}" Width="260" />
+        <TextBlock Text="SteamCMD branch" Classes="label" Margin="0,6,0,0" />
+        <ComboBox ItemsSource="{Binding RustSteamBranchOptions}" Text="{Binding RustSteamBranch}"
+                  IsEditable="True" Width="260" />
+        <TextBlock Classes="note"
+                   Text="Use public for a normal live server. staging and aux branches are test builds and may make the server appear as development." />
+        <Border Background="#2A1D0C" BorderBrush="{DynamicResource AccentYellowBrush}" BorderThickness="1" CornerRadius="5" Padding="10">
+          <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AccentYellowBrush}"
+                     Text="Official status is assigned by Facepunch. A community server cannot become Official through a launch argument or manager setting." />
+        </Border>
+      </StackPanel></Border>
+
+      <!-- Browser tags -->
+      <Border Classes="card"><StackPanel Spacing="8">
+        <TextBlock Text="Server browser tags" Classes="title" />
+        <TextBlock Classes="note"
+                   Text="Wipe schedule, difficulty and region groups allow one selection each; Rust displays up to four tags at once." />
+        <ItemsControl ItemsSource="{Binding RustSettings.RustBrowserTags}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:RustBrowserTagOption">
+              <CheckBox Content="{Binding Label}" IsChecked="{Binding IsSelected}" Width="170" Margin="0,0,8,6" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel></Border>
+
+      <!-- server.cfg variables -->
+      <Border Classes="card"><StackPanel Spacing="8">
+        <TextBlock Text="Server custom variables" Classes="title" />
+        <TextBlock Classes="note"
+                   Text="HighPop reads active variables from the identity's cfg/server.cfg. Save updates changed rows and adds new enabled rows without touching your comments. Rust applies server.cfg at startup and it overrides matching command-line defaults." />
+        <TextBlock Text="{Binding RustSettings.ServerConfigPath}" FontSize="11"
+                   FontFamily="Consolas,Menlo,monospace" Opacity="0.65" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding RustSettings.RustVariableStatus}" FontSize="11" Foreground="{DynamicResource AccentYellowBrush}" TextWrapping="Wrap" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <TextBox Text="{Binding RustSettings.RustVariableFilter}" PlaceholderText="Filter by variable name or purpose" />
+          <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentYellowBrush}">
+            <Run Text="{Binding RustSettings.RustVariablePendingCount}" /><Run Text=" pending" />
+          </TextBlock>
+        </Grid>
+        <ItemsControl ItemsSource="{Binding RustSettings.FilteredRustServerVariables}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:RustServerVariable">
+              <Border Background="{DynamicResource BgDeepBrush}" CornerRadius="5" Padding="10,7" Margin="0,0,0,5">
+                <Grid ColumnDefinitions="Auto,210,140,*,Auto" ColumnSpacing="8">
+                  <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" />
+                  <TextBox Grid.Column="1" Text="{Binding Name}" FontFamily="Consolas,Menlo,monospace" />
+                  <TextBox Grid.Column="2" Text="{Binding Value}" FontFamily="Consolas,Menlo,monospace" />
+                  <TextBlock Grid.Column="3" Text="{Binding Description}" FontSize="11" Opacity="0.65"
+                             TextWrapping="Wrap" VerticalAlignment="Center" />
+                  <Button Grid.Column="4" Content="✕" CommandParameter="{Binding}"
+                          Command="{ReflectionBinding $parent[UserControl].DataContext.RustSettings.RemoveRustServerVariableCommand}" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <WrapPanel>
+          <Button Content="+ Add variable" Command="{Binding RustSettings.AddRustServerVariableCommand}" Margin="0,0,8,8" />
+          <Button Content="Save to server.cfg" Command="{Binding RustSettings.SaveServerConfigVariablesCommand}" Margin="0,0,8,8" />
+          <Button Content="Save + apply live" Command="{Binding RustSettings.ApplyRustVariablesLiveCommand}" Margin="0,0,8,8"
+                  ToolTip.Tip="Writes server.cfg, then sends changed enabled values to the running Rust console." />
+          <Button Content="Reload from file" Command="{Binding RustSettings.ReloadServerConfigVariablesCommand}" Margin="0,0,8,8" />
+          <Button Content="Open server.cfg" Command="{Binding OpenServerConfigCommand}" Margin="0,0,8,8" />
+        </WrapPanel>
+      </StackPanel></Border>
+
+      <!-- Log directory -->
+      <Border Classes="card"><StackPanel Spacing="8">
+        <TextBlock Text="Rust log directory" Classes="title" />
+        <TextBlock Classes="note"
+                   Text="Leave the custom location empty to use server/&lt;identity&gt;/logs under the Rust installation." />
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <TextBox Text="{Binding CustomLogDirectory}" PlaceholderText="Custom location (optional, absolute path)" />
+          <Button Grid.Column="1" Content="Browse" Command="{Binding BrowseLogDirectoryCommand}" />
+          <Button Grid.Column="2" Content="Use default" Command="{Binding ResetLogDirectoryCommand}" />
+        </Grid>
+        <TextBlock Text="Effective directory" Classes="label" />
+        <TextBlock Text="{Binding EffectiveLogDirectory}" FontFamily="Consolas,Menlo,monospace" FontSize="11" TextWrapping="Wrap" />
+        <Button Content="Open log directory" Command="{Binding OpenLogDirectoryCommand}" HorizontalAlignment="Left" />
+      </StackPanel></Border>
+
+      <!-- Telemetry -->
+      <Border Classes="card"><StackPanel Spacing="8">
+        <TextBlock Text="Local telemetry" Classes="title" />
+        <TextBlock Classes="note"
+                   Text="Opt in to HighPop's versioned local JSONL event stream of lifecycle, operator-action and player-count events." />
+        <CheckBox Content="Record local Rust telemetry for this server" IsChecked="{Binding Server.RustTelemetryEnabled}" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+          <StackPanel Spacing="4">
+            <TextBlock Text="Retention (days)" Classes="label" />
+            <NumericUpDown Value="{Binding Server.RustTelemetryRetentionDays}" Minimum="1" FormatString="0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="4">
+            <TextBlock Text="Maximum storage (MB)" Classes="label" />
+            <NumericUpDown Value="{Binding Server.RustTelemetryMaxMegabytes}" Minimum="1" FormatString="0" />
+          </StackPanel>
+        </Grid>
+        <TextBlock Text="{Binding TelemetryDirectory}" FontFamily="Consolas,Menlo,monospace" FontSize="11"
+                   Opacity="0.65" TextWrapping="Wrap" />
+        <Button Content="Open telemetry directory" Command="{Binding OpenTelemetryDirectoryCommand}" HorizontalAlignment="Left" />
+      </StackPanel></Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

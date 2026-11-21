@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>HighPop</RootNamespace>
+    <AssemblyName>HighPop.Core</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- CS8826: partial method parameter name mismatch with CommunityToolkit.Mvvm source generator (cosmetic only) -->
+    <NoWarn>CS8826</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HighPop" />
+    <InternalsVisibleTo Include="HighPop.SmokeTests" />
+    <InternalsVisibleTo Include="HighPop.LinuxCheck" />
+    <InternalsVisibleTo Include="HighPop.UI" />
+    <InternalsVisibleTo Include="HighPop.Desktop" />
+    <InternalsVisibleTo Include="HighPop.Server" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../HighPop/assets/brand/highpop.ico" LogicalName="HighPop.assets.brand.highpop.ico" />
+    <EmbeddedResource Include="../HighPop/assets/presets/**/*.json" LogicalName="HighPop.assets.presets.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Override vulnerable transitive dependency from Microsoft.Data.Sqlite -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Windows-only: throws PlatformNotSupportedException on Linux, guarded at the call site. -->
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.14" />
+  </ItemGroup>
+</Project>

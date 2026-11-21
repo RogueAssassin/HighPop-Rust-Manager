@@ -1,0 +1,22 @@
+# Install: copy HighPop.Server and its files to /opt/highpop, then
+#   sudo cp highpop-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now highpop-server
+# Replace "rust" below with the account that owns the servers.
+[Unit]
+Description=HighPop headless Rust server manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rust
+WorkingDirectory=/opt/highpop
+ExecStart=/opt/highpop/HighPop.Server run
+Restart=on-failure
+RestartSec=5
+# Rust servers keep running if the host stops; only the host process is stopped.
+KillMode=process
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

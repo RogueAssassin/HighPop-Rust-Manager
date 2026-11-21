@@ -1,0 +1,207 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:HighPop.ViewModels"
+        xmlns:views="using:HighPop.Desktop.Views"
+        x:Class="HighPop.Desktop.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="HighPop settings" Width="820" Height="780" MinWidth="640" MinHeight="480">
+  <Window.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource BgSurface2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="16" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+    <Style Selector="TextBlock.title"><Setter Property="FontSize" Value="15" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+    <Style Selector="TextBlock.label"><Setter Property="FontSize" Value="12" /><Setter Property="Opacity" Value="0.7" /></Style>
+    <Style Selector="TextBlock.note"><Setter Property="FontSize" Value="12" /><Setter Property="Opacity" Value="0.6" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  </Window.Styles>
+
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Background="{DynamicResource BgSurface2Brush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,10">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock Text="{Binding SettingsStatus}" VerticalAlignment="Center" Opacity="0.75" TextWrapping="Wrap" />
+        <Button Classes="primary" Grid.Column="1" Content="Save all" Command="{Binding SaveSettingsCommand}" Margin="0,0,8,0" />
+        <Button Grid.Column="2" Content="Close" Click="Close_Click" />
+      </Grid>
+    </Border>
+
+    <ScrollViewer>
+      <StackPanel Margin="20">
+
+        <!-- Storage -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Storage and runtime" Classes="title" />
+          <TextBlock Text="Default install directory" Classes="label" />
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding DefaultInstallRoot}" />
+            <Button Grid.Column="1" Content="Browse" Command="{Binding BrowseDefaultInstallRootCommand}" />
+            <Button Grid.Column="2" Content="Open" Command="{Binding OpenDefaultInstallRootCommand}" />
+          </Grid>
+          <TextBlock Text="New profiles are installed beneath this folder. Existing servers keep their paths." Classes="note" />
+          <TextBlock Text="Backup folder" Classes="label" />
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding BackupPath}" />
+            <Button Grid.Column="1" Content="Browse" Command="{Binding BrowseBackupPathCommand}" />
+            <Button Grid.Column="2" Content="Open" Command="{Binding OpenBackupPathCommand}" />
+          </Grid>
+          <TextBlock Text="SteamCMD directory" Classes="label" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding SteamCmdPath}" IsReadOnly="True" />
+            <Button Grid.Column="1" Content="Open" Command="{Binding OpenSteamCmdPathCommand}" />
+          </Grid>
+          <TextBlock Text="Shared by every managed server." Classes="note" />
+        </StackPanel></Border>
+
+        <!-- Health check -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Freeze detection (health check)" Classes="title" />
+          <CheckBox Content="Enable server freeze detection" IsChecked="{Binding HealthCheckEnabled}" />
+          <TextBlock Classes="note"
+                     Text="Checks every 60 seconds whether a running server answers queries. If it stops, the action below runs." />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="After" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding HealthCheckFailThreshold}" Minimum="1" Maximum="60" FormatString="0" Width="110" />
+            <TextBlock Text="failed checks, run" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding HealthCheckActions}" SelectedItem="{Binding HealthCheckAction}" Width="180" />
+          </StackPanel>
+        </StackPanel></Border>
+
+        <!-- Steam -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Steam login" Classes="title" />
+          <TextBlock Classes="note" Text="Leave blank to use anonymous login (enough for Rust)." />
+          <TextBlock Text="Steam username" Classes="label" />
+          <TextBox Text="{Binding SteamLogin}" />
+          <TextBlock Text="Steam password" Classes="label" />
+          <TextBox Text="{Binding SteamPassword}" PasswordChar="●" />
+        </StackPanel></Border>
+
+        <!-- Discord webhook -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Discord notifications" Classes="title" />
+          <CheckBox Content="Enable Discord notifications" IsChecked="{Binding DiscordEnabled}" />
+          <TextBlock Text="Webhook URL" Classes="label" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding DiscordWebhookUrl}" PasswordChar="●" />
+            <Button Grid.Column="1" Content="Test" Command="{Binding TestDiscordCommand}" />
+          </Grid>
+          <WrapPanel>
+            <CheckBox Content="Start" IsChecked="{Binding NotifyOnStart}" Margin="0,0,16,0" />
+            <CheckBox Content="Stop" IsChecked="{Binding NotifyOnStop}" Margin="0,0,16,0" />
+            <CheckBox Content="Crash" IsChecked="{Binding NotifyOnCrash}" Margin="0,0,16,0" />
+            <CheckBox Content="Update" IsChecked="{Binding NotifyOnUpdate}" Margin="0,0,16,0" />
+            <CheckBox Content="Player joined" IsChecked="{Binding NotifyOnPlayerJoin}" Margin="0,0,16,0" />
+            <CheckBox Content="Player left" IsChecked="{Binding NotifyOnPlayerLeave}" />
+          </WrapPanel>
+        </StackPanel></Border>
+
+        <!-- Email -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Email notifications (SMTP)" Classes="title" />
+          <CheckBox Content="Enable email notifications" IsChecked="{Binding EmailEnabled}" />
+          <Grid ColumnDefinitions="*,110,Auto" ColumnSpacing="10">
+            <StackPanel Spacing="4"><TextBlock Text="SMTP host" Classes="label" /><TextBox Text="{Binding SmtpHost}" /></StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="Port" Classes="label" /><NumericUpDown Value="{Binding SmtpPort}" Minimum="1" Maximum="65535" FormatString="0" /></StackPanel>
+            <CheckBox Grid.Column="2" Content="SSL/TLS" IsChecked="{Binding SmtpSsl}" VerticalAlignment="Bottom" />
+          </Grid>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <StackPanel Spacing="4"><TextBlock Text="Username" Classes="label" /><TextBox Text="{Binding SmtpUser}" /></StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="Password" Classes="label" /><TextBox Text="{Binding SmtpPassword}" PasswordChar="●" /></StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <StackPanel Spacing="4"><TextBlock Text="From address" Classes="label" /><TextBox Text="{Binding EmailFrom}" /></StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="To address(es)" Classes="label" /><TextBox Text="{Binding EmailTo}" /></StackPanel>
+          </Grid>
+          <Button Content="Save and send test email" Command="{Binding TestEmailCommand}" HorizontalAlignment="Left" />
+        </StackPanel></Border>
+
+        <!-- Crash prediction -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Crash prediction" Classes="title" />
+          <CheckBox Content="Send crash predictions to Discord" IsChecked="{Binding CrashPredictionDiscord}" />
+          <CheckBox Content="Only warn when system RAM is critically low" IsChecked="{Binding CrashPredictionLowMemOnly}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Warn when free RAM drops below" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding CrashPredictionLowMemPercent}" Minimum="1" Maximum="100" FormatString="0.#" Width="110" />
+            <TextBlock Text="%" VerticalAlignment="Center" />
+          </StackPanel>
+          <CheckBox Content="Also warn when system CPU is critically high" IsChecked="{Binding CrashPredictionHighCpuOnly}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Warn when total CPU rises above" VerticalAlignment="Center" />
+            <NumericUpDown Value="{Binding CrashPredictionHighCpuPercent}" Minimum="1" Maximum="100" FormatString="0.#" Width="110" />
+            <TextBlock Text="%" VerticalAlignment="Center" />
+          </StackPanel>
+        </StackPanel></Border>
+
+        <!-- Discord bot -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Discord remote control bot" Classes="title" />
+          <CheckBox Content="Enable Discord bot" IsChecked="{Binding BotEnabled}" />
+          <Grid ColumnDefinitions="*,*,110" ColumnSpacing="10">
+            <StackPanel Spacing="4"><TextBlock Text="Bot token" Classes="label" /><TextBox Text="{Binding BotToken}" PasswordChar="●" /></StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="Control channel ID" Classes="label" /><TextBox Text="{Binding BotChannelId}" /></StackPanel>
+            <StackPanel Grid.Column="2" Spacing="4"><TextBlock Text="Prefix" Classes="label" /><TextBox Text="{Binding BotPrefix}" /></StackPanel>
+          </Grid>
+          <TextBlock Text="Admin user IDs (only these users can use buttons and commands)" Classes="label" />
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding NewBotAdminId}" PlaceholderText="Discord user ID" />
+            <Button Grid.Column="1" Content="Add" Command="{Binding AddBotAdminCommand}" />
+            <Button Grid.Column="2" Content="Remove selected" Command="{Binding RemoveBotAdminCommand}" />
+          </Grid>
+          <ListBox ItemsSource="{Binding BotAdminList}" SelectedItem="{Binding SelectedBotAdmin}" MaxHeight="120" />
+          <CheckBox Content="Keep a live status message updated instead of posting new ones" IsChecked="{Binding BotStatusEnabled}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Status channel ID (blank = control channel)" VerticalAlignment="Center" />
+            <TextBox Text="{Binding BotStatusChannelId}" Width="220" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Status:" Opacity="0.7" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding BotStatus}" VerticalAlignment="Center" />
+            <Button Content="Test connection" Command="{Binding TestBotCommand}" />
+          </StackPanel>
+        </StackPanel></Border>
+
+        <!-- Web API -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Web remote control (HTTP API)" Classes="title" />
+          <CheckBox Content="Enable Web API" IsChecked="{Binding WebApiEnabled}" />
+          <Grid ColumnDefinitions="110,*" ColumnSpacing="10">
+            <StackPanel Spacing="4"><TextBlock Text="Port" Classes="label" /><NumericUpDown Value="{Binding WebApiPort}" Minimum="1" Maximum="65535" FormatString="0" /></StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="Access token (blank = generate on save)" Classes="label" /><TextBox Text="{Binding WebApiToken}" PasswordChar="●" /></StackPanel>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Text="Status:" Opacity="0.7" />
+            <TextBlock Text="{Binding WebApiStatus}" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel></Border>
+
+        <!-- Slave -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="Remote control: slave setup" Classes="title" />
+          <CheckBox Content="Run as slave (remote-controllable from another HighPop)" IsChecked="{Binding SlaveMode}" />
+          <TextBlock Text="Machine name (shown on the master)" Classes="label" />
+          <TextBox Text="{Binding SlaveName}" />
+          <TextBlock Text="{Binding SlaveConnectionUrl}" FontFamily="Consolas,Menlo,monospace" />
+          <Button Content="Copy connection info" Command="{Binding CopySlaveInfoCommand}" HorizontalAlignment="Left" />
+        </StackPanel></Border>
+
+        <!-- UPnP -->
+        <Border Classes="card"><StackPanel Spacing="8">
+          <TextBlock Text="UPnP port forwarding" Classes="title" />
+          <TextBlock Classes="note"
+                     Text="UPnP asks your router to open ports automatically. Only enable it on a network you trust." />
+          <CheckBox Content="Enable UPnP automatic port forwarding" IsChecked="{Binding EnableUPnP}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Test UPnP" Command="{Binding TestUPnPCommand}" />
+            <TextBlock Text="{Binding UpnpStatus}" VerticalAlignment="Center" />
+          </StackPanel>
+        </StackPanel></Border>
+
+        <views:UsersPanel x:Name="UsersSection" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>

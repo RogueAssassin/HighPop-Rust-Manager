@@ -3,7 +3,7 @@ using System.Windows.Forms;
 
 namespace HighPop.Services;
 
-public class TrayService : IDisposable
+public class TrayService : IDisposable, ITrayStatus
 {
     private NotifyIcon? _tray;
     private readonly ServerManagerService _manager;

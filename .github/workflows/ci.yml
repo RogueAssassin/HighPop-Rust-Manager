@@ -58,7 +58,7 @@ jobs:
       - name: Assemble and verify HPRM portable package
         shell: pwsh
         run: |
-          $version = ([xml](Get-Content HighPop/HighPop.csproj)).Project.PropertyGroup.Version | Select-Object -First 1
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version | Select-Object -First 1
           ./scripts/Build-PortablePackage.ps1 `
             -PublishDirectory publish_out `
             -OutputDirectory package_out `
@@ -99,4 +99,53 @@ jobs:
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: package_out/HighPop-v*-win-x64*
+          if-no-files-found: error
+
+  linux:
+    # The Linux Desktop app and the headless host. The smoke tests target Windows, so they run in the
+    # job above; here the Linux projects are built, checked on a real Linux host and packaged.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build Linux projects
+        run: |
+          dotnet build HighPop.Desktop/HighPop.Desktop.csproj -c Release
+          dotnet build HighPop.Server/HighPop.Server.csproj -c Release
+          dotnet build HighPop.LinuxCheck/HighPop.LinuxCheck.csproj -c Release
+
+      - name: Linux host checks
+        run: dotnet run --project HighPop.LinuxCheck/HighPop.LinuxCheck.csproj -c Release --no-build
+
+      - name: Publish desktop app and headless host
+        run: |
+          dotnet publish HighPop.Desktop/HighPop.Desktop.csproj -c Release -r linux-x64 --self-contained true -o publish_desktop
+          dotnet publish HighPop.Server/HighPop.Server.csproj -c Release -r linux-x64 --self-contained true -o publish_server
+
+      - name: Package and verify tarballs
+        run: |
+          version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
+          scripts/build-linux-package.sh publish_desktop package_out "$version" desktop "$GITHUB_SHA"
+          scripts/build-linux-package.sh publish_server package_out "$version" server "$GITHUB_SHA"
+          (cd package_out && sha256sum --check ./*.sha256)
+
+      - name: Compute artifact name
+        id: artifact
+        run: |
+          # Branch names like agent/foo or PR refs (123/merge) contain '/', which artifact names reject.
+          safe="$(printf '%s' '${{ github.ref_name }}' | tr '\/:*?"<>|' '-')"
+          echo "name=HighPop-${safe}-linux-x64" >> "$GITHUB_OUTPUT"
+
+      - name: Upload testing packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: package_out/HighPop-v*-linux-*
           if-no-files-found: error

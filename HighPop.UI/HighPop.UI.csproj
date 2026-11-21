@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>HighPop</RootNamespace>
+    <AssemblyName>HighPop.UI</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- CS8826: partial method parameter name mismatch with the CommunityToolkit.Mvvm generator (cosmetic only) -->
+    <NoWarn>CS8826</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="OxyPlot.Core" Version="2.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HighPop.Core\HighPop.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="HighPop" />
+    <InternalsVisibleTo Include="HighPop.Desktop" />
+    <InternalsVisibleTo Include="HighPop.SmokeTests" />
+  </ItemGroup>
+</Project>

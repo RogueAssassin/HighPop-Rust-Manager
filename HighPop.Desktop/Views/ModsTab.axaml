@@ -1,0 +1,197 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             x:Class="HighPop.Desktop.Views.ModsTab"
+             x:DataType="vm:ServerViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.note">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer Background="{DynamicResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24">
+      <TextBlock Classes="section" Text="Mod Manager" Margin="0,0,0,12" />
+
+      <!-- Detected framework -->
+      <Border Classes="card">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel>
+            <TextBlock Text="Detected framework" Classes="note" />
+            <TextBlock Text="{Binding DetectedModFramework}" FontWeight="SemiBold" Foreground="{DynamicResource AccentGreenBrush}" />
+          </StackPanel>
+          <Button Grid.Column="1" Content="Rescan" Command="{Binding RefreshInstalledPluginsCommand}"
+                  VerticalAlignment="Center" />
+        </Grid>
+      </Border>
+
+      <!-- Folder shortcuts -->
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Folder shortcuts" Classes="title" />
+          <TextBlock Classes="note"
+                     Text="Open this server's folders. Framework shortcuts appear only when exactly one framework is installed." />
+          <WrapPanel>
+            <Button Content="Server files" Command="{Binding OpenInstallFolderCommand}" Margin="0,0,8,8" />
+            <Button Content="Rust config" Command="{Binding OpenServerConfigDirectoryCommand}" Margin="0,0,8,8" />
+            <Button Content="Rust logs" Command="{Binding OpenLogDirectoryCommand}" Margin="0,0,8,8" />
+            <Button Content="Framework root" Command="{Binding Mods.OpenActiveFrameworkFolderCommand}"
+                    IsVisible="{Binding HasSingleModFramework}" Margin="0,0,8,8" />
+            <Button Content="Active plugins" Command="{Binding Mods.OpenActivePluginFolderCommand}"
+                    IsVisible="{Binding HasSingleModFramework}" Margin="0,0,8,8" />
+            <Button Content="Plugin configs" Command="{Binding Mods.OpenActiveModConfigFolderCommand}"
+                    IsVisible="{Binding HasSingleModFramework}" Margin="0,0,8,8" />
+            <Button Content="Extensions" Command="{Binding Mods.OpenActiveExtensionFolderCommand}"
+                    IsVisible="{Binding HasSingleModFramework}" Margin="0,0,8,8" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Status -->
+      <Border Classes="card" IsVisible="{Binding Mods.ModStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+        <TextBlock Text="{Binding Mods.ModStatusText}" Foreground="{DynamicResource AccentBlueBrush}" TextWrapping="Wrap" />
+      </Border>
+
+      <!-- Oxide -->
+      <Border Classes="card" IsVisible="{Binding HasModSupport}">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Oxide / uMod" Classes="title" />
+          <TextBlock Classes="note"
+                     Text="Downloads and installs the latest Oxide framework into the server folder. Stop Rust first and do not combine Oxide with Carbon. Plugins go in oxide/plugins/." />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Install / Update Oxide" Command="{Binding Mods.InstallOxideCommand}"
+                    IsEnabled="{Binding Mods.CanInstallOxide}" />
+            <Button Content="Open plugins folder" Command="{Binding Mods.OpenPluginFolderCommand}"
+                    IsVisible="{Binding IsOxideInstalled}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Carbon -->
+      <Border Classes="card" IsVisible="{Binding IsRust}">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Carbon" Classes="title" />
+          <TextBlock Classes="note"
+                     Text="Installs the latest stable official Carbon release. Stop Rust first and do not combine Carbon with Oxide. Plugins and configuration are preserved on update. Carbon is not available on Linux yet." />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Install / Update Carbon" Command="{Binding Mods.InstallCarbonCommand}"
+                    IsEnabled="{Binding Mods.CanInstallCarbon}" />
+            <Button Content="Open Carbon plugins" Command="{Binding Mods.OpenCarbonPluginFolderCommand}"
+                    IsVisible="{Binding IsCarbonInstalled}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- RogueRust extension -->
+      <Border Classes="card" IsVisible="{Binding IsRust}">
+        <StackPanel Spacing="10">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel>
+              <TextBlock Text="RogueRust Extension" Classes="title" />
+              <TextBlock Text="RogueAssassin/Oxide.Ext.RogueRust" Classes="note" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Text="{Binding Mods.RogueRustStatus}" Foreground="{DynamicResource AccentGreenBrush}"
+                       VerticalAlignment="Center" />
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="Release channel" VerticalAlignment="Center" />
+            <ComboBox ItemsSource="{Binding Mods.RogueRustChannelOptions}"
+                      SelectedItem="{Binding Mods.RogueRustChannel}"
+                      IsEnabled="{Binding IsStopped}" Width="160" />
+          </StackPanel>
+          <TextBlock Classes="note"
+                     Text="Stable is recommended for production. Every download is SHA-256 verified, and any failed update is rolled back." />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Install / Update RogueRust" Command="{Binding Mods.InstallRogueRustCommand}"
+                    IsEnabled="{Binding !Mods.ModBusy}" />
+            <Button Content="Run diagnostics" Command="{Binding Mods.CheckRogueRustHealthCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Plugin catalog -->
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel>
+              <TextBlock Text="RogueRust plugin catalog" Classes="title" />
+              <TextBlock Text="plugins.roguegaming.com.au" Classes="note" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <Button Content="Open site" Command="{Binding Mods.OpenPluginCatalogSiteCommand}" />
+              <Button Content="{Binding Mods.UpdateAllCatalogText}" Command="{Binding Mods.UpdateAllCatalogPluginsCommand}"
+                      IsEnabled="{Binding Mods.CanUpdateAllCatalogPlugins}" />
+              <Button Content="Load catalog" Command="{Binding Mods.RefreshPluginCatalogCommand}"
+                      IsEnabled="{Binding !Mods.PluginCatalogLoading}" />
+            </StackPanel>
+          </Grid>
+          <TextBlock Text="{Binding Mods.PluginCatalogStatus}" TextWrapping="Wrap" Opacity="0.8" />
+          <ItemsControl ItemsSource="{Binding Mods.CatalogPlugins}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="svc:RogueRustCatalogPlugin">
+                <Border Background="{DynamicResource BgDeepBrush}" CornerRadius="5" Padding="10,7" Margin="0,0,0,5">
+                  <Grid ColumnDefinitions="*,220,Auto">
+                    <StackPanel Margin="0,0,10,0">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding VersionText}" Foreground="{DynamicResource AccentBlueBrush}" />
+                        <TextBlock Text="{Binding Category}" FontSize="11" Opacity="0.6" VerticalAlignment="Center" />
+                      </StackPanel>
+                      <TextBlock Text="{Binding Description}" FontSize="11" Opacity="0.8" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding StatusText}" FontSize="11" Foreground="{DynamicResource AccentGreenBrush}"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                      <Button Content="Docs" CommandParameter="{Binding}"
+                              Command="{ReflectionBinding $parent[UserControl].DataContext.Mods.OpenCatalogPluginDocsCommand}" />
+                      <Button Content="{Binding ActionText}" CommandParameter="{Binding}"
+                              Command="{ReflectionBinding $parent[UserControl].DataContext.Mods.InstallCatalogPluginCommand}" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+      <!-- Installed plugins -->
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Installed plugins" Classes="title" />
+          <TextBlock Classes="note"
+                     Text="HighPop scans the Oxide and Carbon plugin folders. Disabled .off and .disabled files stay visible." />
+          <TextBlock Text="No plugins were found." Opacity="0.6"
+                     IsVisible="{Binding !InstalledPlugins.Count}" />
+          <ItemsControl ItemsSource="{Binding InstalledPlugins}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="svc:InstalledModPlugin">
+                <Border Background="{DynamicResource BgDeepBrush}" CornerRadius="5" Padding="10,7" Margin="0,0,0,5">
+                  <Grid ColumnDefinitions="*,100,100,150">
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding FileName}" FontFamily="Consolas,Menlo,monospace" FontSize="10" Opacity="0.6" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding Framework}" VerticalAlignment="Center" Opacity="0.8" />
+                    <TextBlock Grid.Column="2" Text="{Binding StateText}" VerticalAlignment="Center" Foreground="{DynamicResource AccentGreenBrush}" />
+                    <TextBlock Grid.Column="3" Text="{Binding LastModified, StringFormat='{}{0:g}'}"
+                               VerticalAlignment="Center" FontSize="11" Opacity="0.6" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

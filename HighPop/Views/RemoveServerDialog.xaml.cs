@@ -1,6 +1,6 @@
-namespace HighPop.Views;
+using HighPop.Services;
 
-public enum RemoveServerResult { Cancel, RemoveOnly, RemoveWithFiles }
+namespace HighPop.Views;
 
 public partial class RemoveServerDialog : System.Windows.Window
 {

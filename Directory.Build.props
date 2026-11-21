@@ -1,0 +1,10 @@
+<Project>
+  <!-- Single source of the HighPop version for every project (Core, Windows app, Linux host).
+       Release automation reads <Version> from this file. -->
+  <PropertyGroup>
+    <Version>1.0.18</Version>
+    <AssemblyVersion>1.0.18.0</AssemblyVersion>
+    <FileVersion>1.0.18.0</FileVersion>
+    <InformationalVersion>1.0.18</InformationalVersion>
+  </PropertyGroup>
+</Project>

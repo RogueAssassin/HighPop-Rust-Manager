@@ -1,0 +1,25 @@
+<!-- Line icons on a 24x24 grid, drawn by StrokeIcon. Shapes follow the MIT-licensed Feather set. -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StreamGeometry x:Key="IconTerminal">M4,17 L10,11 L4,5 M12,19 L20,19</StreamGeometry>
+  <StreamGeometry x:Key="IconUsers">M17,21 v-2 a4,4 0 0 0 -4,-4 H5 a4,4 0 0 0 -4,4 v2 M5,7 a4,4 0 1,1 8,0 a4,4 0 1,1 -8,0 M23,21 v-2 a4,4 0 0 0 -3,-3.87 M16,3.13 a4,4 0 0 1 0,7.75</StreamGeometry>
+  <StreamGeometry x:Key="IconSliders">M4,21 V14 M4,10 V3 M12,21 V12 M12,8 V3 M20,21 V16 M20,12 V3 M1,14 H7 M9,8 H15 M17,16 H23</StreamGeometry>
+  <StreamGeometry x:Key="IconClock">M2,12 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 M12,6 V12 L16,14</StreamGeometry>
+  <StreamGeometry x:Key="IconActivity">M22,12 H18 L15,21 L9,3 L6,12 H2</StreamGeometry>
+  <StreamGeometry x:Key="IconFolder">M22,19 a2,2 0 0 1 -2,2 H4 a2,2 0 0 1 -2,-2 V5 a2,2 0 0 1 2,-2 h5 l2,3 h9 a2,2 0 0 1 2,2 z</StreamGeometry>
+  <StreamGeometry x:Key="IconChart">M18,20 V10 M12,20 V4 M6,20 V14</StreamGeometry>
+  <StreamGeometry x:Key="IconServer">M4,2 H20 a2,2 0 0 1 2,2 V8 a2,2 0 0 1 -2,2 H4 a2,2 0 0 1 -2,-2 V4 a2,2 0 0 1 2,-2 z M4,14 H20 a2,2 0 0 1 2,2 V20 a2,2 0 0 1 -2,2 H4 a2,2 0 0 1 -2,-2 V16 a2,2 0 0 1 2,-2 z M6,6 H6.01 M6,18 H6.01</StreamGeometry>
+  <StreamGeometry x:Key="IconSave">M19,21 H5 a2,2 0 0 1 -2,-2 V5 a2,2 0 0 1 2,-2 h11 l5,5 v11 a2,2 0 0 1 -2,2 z M17,21 V13 H7 V21 M7,3 V8 H15</StreamGeometry>
+  <StreamGeometry x:Key="IconGear">M9,12 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 M19.4,15 a1.65,1.65 0 0 0 0.33,1.82 l0.06,0.06 a2,2 0 0 1 0,2.83 2,2 0 0 1 -2.83,0 l-0.06,-0.06 a1.65,1.65 0 0 0 -1.82,-0.33 1.65,1.65 0 0 0 -1,1.51 V21 a2,2 0 0 1 -2,2 2,2 0 0 1 -2,-2 v-0.09 A1.65,1.65 0 0 0 9,19.4 a1.65,1.65 0 0 0 -1.82,0.33 l-0.06,0.06 a2,2 0 0 1 -2.83,0 2,2 0 0 1 0,-2.83 l0.06,-0.06 a1.65,1.65 0 0 0 0.33,-1.82 1.65,1.65 0 0 0 -1.51,-1 H3 a2,2 0 0 1 -2,-2 2,2 0 0 1 2,-2 h0.09 A1.65,1.65 0 0 0 4.6,9 a1.65,1.65 0 0 0 -0.33,-1.82 l-0.06,-0.06 a2,2 0 0 1 0,-2.83 2,2 0 0 1 2.83,0 l0.06,0.06 a1.65,1.65 0 0 0 1.82,0.33 H9 a1.65,1.65 0 0 0 1,-1.51 V3 a2,2 0 0 1 2,-2 2,2 0 0 1 2,2 v0.09 a1.65,1.65 0 0 0 1,1.51 1.65,1.65 0 0 0 1.82,-0.33 l0.06,-0.06 a2,2 0 0 1 2.83,0 2,2 0 0 1 0,2.83 l-0.06,0.06 a1.65,1.65 0 0 0 -0.33,1.82 V9 a1.65,1.65 0 0 0 1.51,1 H21 a2,2 0 0 1 2,2 2,2 0 0 1 -2,2 h-0.09 a1.65,1.65 0 0 0 -1.51,1 z</StreamGeometry>
+  <StreamGeometry x:Key="IconInfo">M2,12 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 M12,16 V12 M12,8 H12.01</StreamGeometry>
+  <StreamGeometry x:Key="IconLink">M10,13 a5,5 0 0 0 7.54,0.54 l3,-3 a5,5 0 0 0 -7.07,-7.07 l-1.72,1.71 M14,11 a5,5 0 0 0 -7.54,-0.54 l-3,3 a5,5 0 0 0 7.07,7.07 l1.71,-1.71</StreamGeometry>
+  <StreamGeometry x:Key="IconCopy">M11,9 H20 a2,2 0 0 1 2,2 V20 a2,2 0 0 1 -2,2 H11 a2,2 0 0 1 -2,-2 V11 a2,2 0 0 1 2,-2 z M5,15 H4 a2,2 0 0 1 -2,-2 V4 a2,2 0 0 1 2,-2 h9 a2,2 0 0 1 2,2 v1</StreamGeometry>
+  <StreamGeometry x:Key="IconUpload">M21,15 v4 a2,2 0 0 1 -2,2 H5 a2,2 0 0 1 -2,-2 v-4 M17,8 L12,3 L7,8 M12,3 V15</StreamGeometry>
+  <StreamGeometry x:Key="IconTrash">M3,6 H21 M19,6 l-1,14 a2,2 0 0 1 -2,2 H8 a2,2 0 0 1 -2,-2 L5,6 M10,11 V17 M14,11 V17 M9,6 V4 a1,1 0 0 1 1,-1 h4 a1,1 0 0 1 1,1 V6</StreamGeometry>
+  <StreamGeometry x:Key="IconJoin">M15,3 h4 a2,2 0 0 1 2,2 v14 a2,2 0 0 1 -2,2 h-4 M10,17 L15,12 L10,7 M15,12 H3</StreamGeometry>
+  <StreamGeometry x:Key="IconSearch">M3,11 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0 M21,21 L16.65,16.65</StreamGeometry>
+  <StreamGeometry x:Key="IconPause">M6,4 H10 V20 H6 z M14,4 H18 V20 H14 z</StreamGeometry>
+  <StreamGeometry x:Key="IconArrowDown">M12,5 V19 M19,12 L12,19 L5,12</StreamGeometry>
+  <StreamGeometry x:Key="IconCheckSquare">M9,11 L12,14 L22,4 M21,12 v7 a2,2 0 0 1 -2,2 H5 a2,2 0 0 1 -2,-2 V5 a2,2 0 0 1 2,-2 h11</StreamGeometry>
+  <StreamGeometry x:Key="IconChat">M21,15 a2,2 0 0 1 -2,2 H7 l-4,4 V5 a2,2 0 0 1 2,-2 h14 a2,2 0 0 1 2,2 z</StreamGeometry>
+</ResourceDictionary>

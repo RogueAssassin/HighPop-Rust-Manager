@@ -1,0 +1,462 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:HighPop.ViewModels"
+        xmlns:views="using:HighPop.Desktop.Views"
+        xmlns:conv="using:HighPop.Desktop.Converters"
+        xmlns:ctl="using:HighPop.Desktop.Controls"
+        x:Class="HighPop.Desktop.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="HighPop Rust Manager"
+        Width="1280" Height="800" MinWidth="900" MinHeight="600">
+
+  <Grid RowDefinitions="48,*" ColumnDefinitions="260,*">
+
+    <!-- ══ TITLE BAR ══ (the desktop keeps its own window buttons; this is the brand strip under them) -->
+    <Border Grid.ColumnSpan="2" Background="{DynamicResource BrandHeaderBrush}"
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+      <Grid>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0" Spacing="8">
+          <Image Source="avares://HighPop.Desktop/Assets/highpop.png" Height="36" RenderOptions.BitmapInterpolationMode="HighQuality" />
+          <TextBlock Text="{x:Static views:MainWindow.VersionText}" FontSize="11"
+                     Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+          <Border IsVisible="{Binding UpdateAvailable}" Background="{DynamicResource SuccessBgBrush}"
+                  BorderBrush="{DynamicResource AccentGreenBrush}" BorderThickness="1" CornerRadius="4"
+                  Padding="7,2" VerticalAlignment="Center">
+            <Panel>
+              <TextBlock Text="{Binding LatestVersion, StringFormat='⬆ {0} available'}" FontSize="11" FontWeight="SemiBold"
+                         Foreground="{DynamicResource AccentGreenBrush}" IsVisible="{Binding !UpdateDownloading}" />
+              <TextBlock Text="{Binding UpdateStatusText}" FontSize="11" FontWeight="SemiBold"
+                         Foreground="{DynamicResource AccentGreenBrush}" IsVisible="{Binding UpdateDownloading}" />
+            </Panel>
+          </Border>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0" Spacing="8">
+          <Border Background="{DynamicResource BgSurface2Brush}" CornerRadius="4" Padding="10,4">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Ellipse Width="8" Height="8" Fill="{DynamicResource AccentGreenBrush}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding RunningCount}" FontSize="12" />
+              <TextBlock Text="{Binding Loc.Running}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </StackPanel>
+          </Border>
+          <Border Background="{DynamicResource BgSurface2Brush}" CornerRadius="4" Padding="10,4">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{Binding TotalServers}" FontSize="12" />
+              <TextBlock Text="{Binding Loc.Total}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- ══ SIDEBAR ══ -->
+    <Border Grid.Row="1" Background="{DynamicResource BrandHeaderBrush}"
+            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
+      <DockPanel>
+        <!-- Bottom buttons -->
+        <Border DockPanel.Dock="Bottom" Padding="10,10,10,12"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+          <StackPanel Spacing="8">
+            <Border IsVisible="{Binding UpdateAvailable}" Background="{DynamicResource SuccessBgBrush}"
+                    BorderBrush="{DynamicResource AccentGreenBrush}" BorderThickness="1" CornerRadius="6" Padding="10">
+              <StackPanel Spacing="6">
+                <TextBlock Text="{Binding LatestVersion, StringFormat='HighPop {0} is available'}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding UpdateStatusText}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                           IsVisible="{Binding UpdateStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap" Text="Stop your servers first, or HighPop stops them for you."
+                           IsVisible="{x:Static views:MainWindow.CanSelfUpdate}" />
+                <Button Classes="primary" Content="Install update" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        IsVisible="{x:Static views:MainWindow.CanSelfUpdate}"
+                        Command="{Binding PerformUpdateCommand}" IsEnabled="{Binding !UpdateDownloading}" />
+                <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap"
+                           Text="Download the new version from the HighPop GitHub releases page."
+                           IsVisible="{x:Static views:MainWindow.CannotSelfUpdate}" />
+              </StackPanel>
+            </Border>
+            <Button Classes="primary" Content="{Binding Loc.AddServer}" HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center" Command="{Binding OpenAddDialogCommand}" />
+            <Button Content="Import server profile" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Command="{Binding ImportServerProfileCommand}"
+                    ToolTip.Tip="Import portable HPRM settings and relink a moved Rust installation" />
+            <UniformGrid Rows="1" Columns="5">
+              <Button Height="32" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                      Command="{Binding OpenDashboardCommand}" ToolTip.Tip="Dashboard">
+                <ctl:StrokeIcon Data="{StaticResource IconChart}" Width="16" Height="16" />
+              </Button>
+              <Button Height="32" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                      Command="{Binding OpenMachinesCommand}" ToolTip.Tip="Remote Machines (Master/Slave)">
+                <ctl:StrokeIcon Data="{StaticResource IconServer}" Width="16" Height="16" />
+              </Button>
+              <Button Height="32" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                      Command="{Binding BackupAllCommand}" ToolTip.Tip="{Binding Loc.BackupAll}">
+                <ctl:StrokeIcon Data="{StaticResource IconSave}" Width="16" Height="16" />
+              </Button>
+              <Button Height="32" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                      Command="{Binding OpenSettingsCommand}" ToolTip.Tip="{Binding Loc.SettingsBtn}">
+                <ctl:StrokeIcon Data="{StaticResource IconGear}" Width="16" Height="16" />
+              </Button>
+              <Button Height="32" Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                      Command="{Binding OpenSupportCommand}" ToolTip.Tip="About / Support">
+                <ctl:StrokeIcon Data="{StaticResource IconInfo}" Width="16" Height="16" />
+              </Button>
+            </UniformGrid>
+          </StackPanel>
+        </Border>
+
+        <!-- Server list -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" Margin="16,12,8,4">
+              <TextBlock Text="{Binding Loc.Servers}" FontSize="10" FontWeight="Bold"
+                         Foreground="{DynamicResource AccentBlueBrush}" VerticalAlignment="Center" />
+              <ComboBox Grid.Column="1" x:Name="SortCombo" Width="100" MinHeight="22" Height="26" FontSize="11" Padding="8,0"
+                        SelectionChanged="SortCombo_SelectionChanged" Loaded="SortCombo_Loaded">
+                <ComboBoxItem Content="A → Z" Tag="name-asc" />
+                <ComboBoxItem Content="Z → A" Tag="name-desc" />
+                <ComboBoxItem Content="Status" Tag="status" />
+              </ComboBox>
+              <Button Grid.Column="2" Width="26" Height="26" MinHeight="0" Padding="0" Margin="4,0,0,0"
+                      HorizontalContentAlignment="Center" Command="{Binding ToggleBatchModeCommand}"
+                      ToolTip.Tip="Toggle batch selection mode">
+                <ctl:StrokeIcon Data="{StaticResource IconCheckSquare}" Width="14" Height="14" />
+              </Button>
+            </Grid>
+
+            <!-- Batch toolbar -->
+            <Border IsVisible="{Binding BatchMode}" Background="{DynamicResource BgSurface2Brush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Padding="8,6">
+              <StackPanel Spacing="5">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock FontSize="11" Foreground="{DynamicResource AccentBlueBrush}" VerticalAlignment="Center">
+                    <Run Text="{Binding BatchSelectedCount, Mode=OneWay}" /><Run Text=" selected" />
+                  </TextBlock>
+                  <Button FontSize="10" MinHeight="0" Height="22" Padding="6,0" Content="All"
+                          Command="{Binding BatchSelectAllCommand}" ToolTip.Tip="Select all servers" />
+                  <Button FontSize="10" MinHeight="0" Height="22" Padding="6,0" Content="None"
+                          Command="{Binding BatchClearSelectionCommand}" ToolTip.Tip="Clear selection" />
+                </StackPanel>
+                <UniformGrid Rows="2" Columns="2">
+                  <Button Classes="primary" FontSize="10" MinHeight="0" Height="28" Padding="6,0" Margin="1"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                          Content="▶ Start" Command="{Binding BatchStartCommand}" ToolTip.Tip="Start selected servers" />
+                  <Button FontSize="10" MinHeight="0" Height="28" Padding="6,0" Margin="1"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                          Content="■ Stop" Command="{Binding BatchStopCommand}" ToolTip.Tip="Stop selected servers" />
+                  <Button FontSize="10" MinHeight="0" Height="28" Padding="6,0" Margin="1"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                          Content="↺ Restart" Command="{Binding BatchRestartCommand}" ToolTip.Tip="Restart selected servers" />
+                  <Button FontSize="10" MinHeight="0" Height="28" Padding="6,0" Margin="1"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                          Content="Backup" Command="{Binding BatchBackupCommand}" ToolTip.Tip="Backup selected servers" />
+                </UniformGrid>
+              </StackPanel>
+            </Border>
+
+            <ListBox Classes="servers" ItemsSource="{Binding SortedServers}" SelectedItem="{Binding SelectedServer}"
+                     Background="Transparent" BorderThickness="0" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ServerViewModel">
+                  <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                    <CheckBox IsChecked="{Binding IsBatchSelected}" VerticalAlignment="Center" Margin="0,0,6,0" MinWidth="0"
+                              IsVisible="{ReflectionBinding $parent[ListBox].DataContext.BatchMode}" />
+                    <Border Grid.Column="1" Width="64" Height="24" CornerRadius="3" Margin="0,0,8,0"
+                            Background="{DynamicResource BgSurface2Brush}" ClipToBounds="True">
+                      <Image Source="{Binding GameImageUrl, Converter={x:Static conv:GameImageConverter.Instance}}" Stretch="Uniform" />
+                    </Border>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="{Binding ServerNumber}" FontSize="10" Foreground="{DynamicResource TextMutedBrush}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Server.DisplayName}" FontSize="13" FontWeight="SemiBold" />
+                      </StackPanel>
+                      <TextBlock Text="{Binding Plugin.GameName}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </StackPanel>
+                    <Ellipse Grid.Column="3" Width="8" Height="8" VerticalAlignment="Center" Fill="{Binding StatusColor}" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Servers on connected remote machines -->
+            <StackPanel IsVisible="{Binding RemoteServers.Count, Converter={x:Static conv:HasItemsConverter.Instance}}">
+              <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="12,8,12,4" />
+              <TextBlock Text="REMOTE" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource AccentBlueBrush}"
+                         Margin="16,8,8,4" />
+              <ListBox Classes="servers" ItemsSource="{Binding SortedRemoteServers}" SelectedItem="{Binding SelectedRemoteServer}"
+                       Background="Transparent" BorderThickness="0" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:RemoteServerViewModel">
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                      <Border Width="64" Height="24" CornerRadius="3" Margin="0,0,8,0"
+                              Background="{DynamicResource BgSurface2Brush}" ClipToBounds="True">
+                        <Image Source="{Binding GameImageUrl, Converter={x:Static conv:GameImageConverter.Instance}}" Stretch="Uniform" />
+                      </Border>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding MachineName}" FontSize="11" Foreground="{DynamicResource AccentBlueBrush}" />
+                      </StackPanel>
+                      <Ellipse Grid.Column="2" Width="8" Height="8" VerticalAlignment="Center" Fill="{Binding StatusColor}" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+
+    <!-- ══ MAIN CONTENT ══ -->
+    <Panel Grid.Row="1" Grid.Column="1">
+      <Panel IsVisible="{Binding ShowDashboard}">
+        <views:DashboardView DataContext="{Binding Dashboard}" />
+      </Panel>
+      <Panel IsVisible="{Binding ShowMachines}">
+        <views:MachinesView />
+      </Panel>
+      <Panel IsVisible="{Binding ShowRemoteDetail}">
+        <views:RemoteServerView DataContext="{Binding SelectedRemoteServer}" />
+      </Panel>
+      <Panel IsVisible="{Binding ShowSupport}">
+        <views:SupportView />
+      </Panel>
+
+      <Panel IsVisible="{Binding ShowServerGrid}">
+        <!-- No server selected -->
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="4"
+                    IsVisible="{Binding SelectedServer, Converter={x:Static ObjectConverters.IsNull}}">
+          <Image Source="avares://HighPop.Desktop/Assets/highpop-mark.png" Width="72" Height="72" HorizontalAlignment="Center" />
+          <TextBlock Text="{Binding Loc.EmptyTitle}" FontSize="16" Foreground="{DynamicResource TextSecondaryBrush}"
+                     HorizontalAlignment="Center" Margin="0,8,0,0" />
+          <TextBlock Text="{Binding Loc.EmptySubtitle}" FontSize="13" Foreground="{DynamicResource TextMutedBrush}"
+                     HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Server detail -->
+        <ContentControl Content="{Binding SelectedServer}">
+          <ContentControl.ContentTemplate>
+            <DataTemplate x:DataType="vm:ServerViewModel">
+              <Grid RowDefinitions="Auto,Auto,*" Background="{DynamicResource BgDeepBrush}">
+
+                <!-- Header -->
+                <Border Background="{DynamicResource BrandHeaderBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="0,0,0,1" Padding="24,14,24,10">
+                  <StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
+                      <Ellipse Width="10" Height="10" VerticalAlignment="Center" Fill="{Binding StatusColor}" />
+                      <TextBlock Text="{Binding Server.DisplayName}" FontSize="20" FontWeight="Bold" />
+                      <Border Background="{DynamicResource BgSurface2Brush}" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Plugin.GameName}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                      </Border>
+                      <Border Background="{DynamicResource BgSurface2Brush}" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Plugin.Category}" FontSize="11" Foreground="{DynamicResource AccentBlueBrush}" />
+                      </Border>
+                      <StackPanel Orientation="Horizontal" Margin="6,0,0,0" VerticalAlignment="Center" IsVisible="{Binding IsRunning}">
+                        <TextBlock Text="Uptime: " FontSize="12" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding UptimeText}" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontFamily="Consolas,Menlo,monospace" />
+                      </StackPanel>
+                    </StackPanel>
+                    <TextBlock Text="{Binding LifecycleDetailText}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                               Margin="20,0,0,8" TextTrimming="CharacterEllipsis" />
+                    <!-- Lifecycle command deck -->
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Button Classes="success" Content="▶  Start" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}" />
+                      <Button Classes="primary" Content="■  Stop safely" Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}" />
+                      <Button Classes="danger" Content="Force Stop PID" Command="{Binding ForceStopCommand}" IsEnabled="{Binding CanForceStop}"
+                              ToolTip.Tip="Force-close the exact Rust PID started by HighPop, including its process tree." />
+                      <Button Content="↻  Restart" Command="{Binding RestartCommand}" IsEnabled="{Binding CanStop}" ToolTip.Tip="Restart" />
+                      <Button Content="↓  Install / Update" Command="{Binding InstallCommand}" IsEnabled="{Binding CanInstallServerFiles}"
+                              ToolTip.Tip="Pulls and validates the latest Rust Dedicated Server files. Stop Rust before using this button." />
+                      <Button Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center"
+                              Command="{Binding OpenInstallFolderCommand}" ToolTip.Tip="Open install folder">
+                        <ctl:StrokeIcon Data="{StaticResource IconFolder}" Width="16" Height="16" />
+                      </Button>
+                      <Button Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center"
+                              Command="{Binding JoinServerCommand}" IsEnabled="{Binding IsRunning}"
+                              ToolTip.Tip="Join server (steam://connect)">
+                        <ctl:StrokeIcon Data="{StaticResource IconJoin}" Width="16" Height="16" />
+                      </Button>
+                      <Button Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center"
+                              Command="{Binding CopyConnectionLinkCommand}" ToolTip.Tip="Copy steam://connect link to clipboard">
+                        <ctl:StrokeIcon Data="{StaticResource IconLink}" Width="16" Height="16" />
+                      </Button>
+                      <Button Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center"
+                              Command="{ReflectionBinding $parent[Window].DataContext.CloneServerCommand}" CommandParameter="{Binding}"
+                              ToolTip.Tip="Clone server (copy config, allocate new ports)">
+                        <ctl:StrokeIcon Data="{StaticResource IconCopy}" Width="16" Height="16" />
+                      </Button>
+                      <Button Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center"
+                              Command="{ReflectionBinding $parent[Window].DataContext.ExportServerProfileCommand}" CommandParameter="{Binding}"
+                              ToolTip.Tip="Export this server's portable HPRM settings">
+                        <ctl:StrokeIcon Data="{StaticResource IconUpload}" Width="16" Height="16" />
+                      </Button>
+                      <Button Classes="danger" Width="36" Height="36" Padding="0" HorizontalContentAlignment="Center"
+                              Command="{ReflectionBinding $parent[Window].DataContext.RemoveServerCommand}" CommandParameter="{Binding}"
+                              ToolTip.Tip="Remove server from list">
+                        <ctl:StrokeIcon Data="{StaticResource IconTrash}" Width="16" Height="16" />
+                      </Button>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- Performance bar / install progress -->
+                <Panel Grid.Row="1">
+                  <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="0,0,0,1" Padding="24,8" IsVisible="{Binding IsRunning}">
+                    <StackPanel Orientation="Horizontal" Spacing="32">
+                      <StackPanel>
+                        <TextBlock Text="CPU" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="{Binding CpuPercent, StringFormat={}{0:F1}}" FontSize="16" FontWeight="Bold" />
+                          <TextBlock Text="%" FontSize="12" VerticalAlignment="Bottom" Margin="1,0,0,1"
+                                     Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                        <ProgressBar Value="{Binding CpuPercent}" Maximum="100" Width="120" Height="4" MinHeight="4"
+                                     Foreground="{DynamicResource AccentBlueBrush}" />
+                      </StackPanel>
+                      <StackPanel>
+                        <TextBlock Text="RAM" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="{Binding MemoryMb}" FontSize="16" FontWeight="Bold" />
+                          <TextBlock Text=" MB" FontSize="12" VerticalAlignment="Bottom" Margin="1,0,0,1"
+                                     Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                        <ProgressBar Value="{Binding MemoryMb}" Maximum="16384" Width="120" Height="4" MinHeight="4"
+                                     Foreground="{DynamicResource AccentGreenBrush}" />
+                      </StackPanel>
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Bandwidth ↓" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding NetIn}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentGreenBrush}" />
+                        <TextBlock Text="Bandwidth ↑" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding NetOut}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource AccentBlueBrush}" />
+                      </StackPanel>
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Connections" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding ConnectionCount}" FontSize="22" FontWeight="Bold" />
+                      </StackPanel>
+                      <StackPanel VerticalAlignment="Center" IsVisible="{Binding HasRcon}">
+                        <TextBlock Text="RCON" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                                   Fill="{Binding RconConnected, Converter={x:Static conv:ConnectedBrushConverter.Instance}}" />
+                          <TextBlock FontSize="13" Text="{Binding RconConnected, Converter={x:Static conv:ConnectedTextConverter.Instance}}"
+                                     Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+                  <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="0,0,0,1" Padding="24,10" IsVisible="{Binding IsInstalling}">
+                    <StackPanel Spacing="6">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding InstallProgressText}" FontSize="12" Foreground="{DynamicResource AccentBlueBrush}" />
+                        <TextBlock Text="{Binding InstallProgress, StringFormat={}{0}%}" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                      </StackPanel>
+                      <ProgressBar Value="{Binding InstallProgress}" Maximum="100" />
+                    </StackPanel>
+                  </Border>
+                </Panel>
+
+                <!-- Sections: a grouped sidebar with a sub-tab strip per group -->
+                <TabControl Grid.Row="2" Classes="nav" SelectedIndex="{x:Static views:MainWindow.StartTab}">
+                  <TabItem Header="Console" Tag="{StaticResource IconTerminal}">
+                    <TabControl Classes="subtabs" SelectedIndex="{x:Static views:MainWindow.StartSub}">
+                      <TabItem Header="{Binding Loc.TabConsole}"><views:ConsoleTab /></TabItem>
+                      <TabItem Header="Reference" IsVisible="{Binding IsRust}"><views:ReferenceTab /></TabItem>
+                    </TabControl>
+                  </TabItem>
+                  <TabItem Header="Players" Tag="{StaticResource IconUsers}"><views:PlayersTab /></TabItem>
+                  <TabItem Header="Configure" Tag="{StaticResource IconSliders}">
+                    <TabControl Classes="subtabs" SelectedIndex="{x:Static views:MainWindow.StartSub}">
+                      <TabItem Header="{Binding Loc.TabSettings}"><views:ServerSettingsTab /></TabItem>
+                      <TabItem Header="Rust" IsVisible="{Binding IsRust}"><views:RustTab /></TabItem>
+                      <TabItem Header="Config files"><views:ConfigTab /></TabItem>
+                      <TabItem Header="Mods" IsVisible="{Binding HasModSupport}"><views:ModsTab /></TabItem>
+                    </TabControl>
+                  </TabItem>
+                  <TabItem Header="Automation" Tag="{StaticResource IconClock}">
+                    <TabControl Classes="subtabs" SelectedIndex="{x:Static views:MainWindow.StartSub}">
+                      <TabItem Header="Automation"><views:AutomationTab /></TabItem>
+                      <TabItem Header="Schedule"><views:ScheduleTab /></TabItem>
+                      <TabItem Header="{Binding Loc.TabBackups}"><views:BackupsTab /></TabItem>
+                      <TabItem Header="Log watcher"><views:LogWatcherTab /></TabItem>
+                    </TabControl>
+                  </TabItem>
+                  <TabItem Header="Monitoring" Tag="{StaticResource IconActivity}">
+                    <TabControl Classes="subtabs" SelectedIndex="{x:Static views:MainWindow.StartSub}">
+                      <TabItem Header="{Binding Loc.TabInfo}"><views:InfoTab /></TabItem>
+                      <TabItem Header="Charts"><views:ChartsTab /></TabItem>
+                      <TabItem Header="Action log"><views:ActionLogTab /></TabItem>
+                    </TabControl>
+                  </TabItem>
+                  <TabItem Header="Files" Tag="{StaticResource IconFolder}"><views:FilesTab /></TabItem>
+                </TabControl>
+              </Grid>
+            </DataTemplate>
+          </ContentControl.ContentTemplate>
+        </ContentControl>
+      </Panel>
+    </Panel>
+
+    <!-- ══ ADD SERVER DIALOG ══ -->
+    <Panel Grid.RowSpan="2" Grid.ColumnSpan="2" IsVisible="{Binding ShowAddDialog}">
+      <Border Background="#0D1117" Opacity="0.75" />
+      <Border Classes="card" Width="480" VerticalAlignment="Center" HorizontalAlignment="Center" Padding="28">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding Loc.DialogTitle}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+
+          <TextBlock Classes="label" Text="Rust Dedicated Server" />
+          <Border Classes="card" Padding="12" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+              <Image Source="avares://HighPop.Desktop/Assets/highpop-mark.png" Width="38" Height="38" />
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Rust" FontWeight="Bold" FontSize="15" />
+                <TextBlock Text="High-population dedicated server" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+
+          <TextBlock Classes="label" Text="{Binding Loc.DialogName}" />
+          <TextBox Text="{Binding NewServerName}" />
+          <TextBlock Text="Tip: a descriptive name (e.g. &quot;Friday Night Rust&quot;) is easier to find later than just the game's name"
+                     FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,12" TextWrapping="Wrap" />
+
+          <TextBlock Classes="label" Text="{Binding Loc.DialogInstall}" />
+          <TextBox Text="{Binding NewServerInstall}" Margin="0,0,0,12" />
+
+          <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto" Margin="0,0,0,8">
+            <StackPanel>
+              <TextBlock Classes="label" Text="Game Port" />
+              <TextBox Text="{Binding NewServerPort}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Classes="label" Text="Query Port" />
+              <TextBox Text="{Binding NewServerQueryPort}" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Margin="0,8,0,0">
+              <TextBlock Classes="label" Text="WebRCON Port" />
+              <TextBox Text="{Binding NewServerRconPort}" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
+              <TextBlock Classes="label" Text="Rust+ Port" />
+              <TextBox Text="{Binding NewServerRustPlusPort}" />
+            </StackPanel>
+          </Grid>
+
+          <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <TextBlock Text="{Binding NewServerPortStatus}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,10,0" />
+            <Button Grid.Column="1" Content="Find free ports" Command="{Binding AutoAssignNewServerPortsCommand}" />
+          </Grid>
+
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="{Binding Loc.DialogCancel}" Command="{Binding CloseAddDialogCommand}" />
+            <Button Classes="primary" Content="{Binding Loc.DialogCreate}" IsEnabled="{Binding NewServerPortsValid}"
+                    Command="{Binding ConfirmAddServerCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </Panel>
+  </Grid>
+</Window>

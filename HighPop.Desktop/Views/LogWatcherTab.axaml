@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:models="using:HighPop.Models"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             x:Class="HighPop.Desktop.Views.LogWatcherTab"
+             x:DataType="vm:ServerViewModel">
+  <ScrollViewer Background="{DynamicResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24">
+      <TextBlock Classes="section" Text="Log Watcher" Margin="0,0,0,12" />
+      <TextBlock Text="Trigger actions automatically when a keyword appears in the server log." FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,16" TextWrapping="Wrap" />
+
+      <Border Classes="card" Margin="0,0,0,16">
+        <StackPanel>
+          <TextBlock Text="Active rules" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12" />
+          <ItemsControl ItemsSource="{Binding Automation.LogWatchRules}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="models:LogWatchRule">
+                <Border Background="{DynamicResource BgSurface2Brush}" CornerRadius="6" Padding="12,8" Margin="0,0,0,6">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <CheckBox IsChecked="{Binding Enabled}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Keyword: " FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding Keyword}" FontSize="12" FontFamily="Consolas,Menlo,monospace" Foreground="{DynamicResource AccentYellowBrush}" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Action: " FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding Action}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock Text=" · Cooldown: " FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock Text="{Binding CooldownMin}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <TextBlock Text=" min" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+                        <TextBlock FontSize="11" Margin="6,0,0,0" Foreground="{DynamicResource TextMutedBrush}"
+                                   IsVisible="{Binding RconCommand, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                          <Run Text=" · RCON: " /><Run Text="{Binding RconCommand}" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </TextBlock>
+                      </StackPanel>
+                    </StackPanel>
+                    <Button Grid.Column="2" Classes="danger" Width="32" Padding="0" HorizontalContentAlignment="Center" CommandParameter="{Binding}"
+                            Command="{ReflectionBinding $parent[UserControl].DataContext.Automation.RemoveLogWatchRuleCommand}">
+                      <ctl:StrokeIcon Data="{StaticResource IconTrash}" Width="14" Height="14" />
+                    </Button>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="No rules configured yet." FontSize="12" Foreground="{DynamicResource TextMutedBrush}" Margin="0,4,0,0"
+                     IsVisible="{Binding Automation.LogWatchRules.Count, Converter={x:Static conv:NoItemsConverter.Instance}}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel>
+          <TextBlock Text="Add rule" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,12" />
+          <Grid ColumnDefinitions="*,12,130,12,80" RowDefinitions="Auto,Auto" RowSpacing="4">
+            <TextBlock Text="Keyword" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBlock Grid.Column="2" Text="Action" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBlock Grid.Column="4" Text="Cooldown (min)" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBox Grid.Row="1" Text="{Binding Automation.NewWatchKeyword}" ToolTip.Tip="Text to search for in the log (case-insensitive)" />
+            <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding Automation.LogWatchActions}" SelectedItem="{Binding Automation.NewWatchAction}" HorizontalAlignment="Stretch" />
+            <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding Automation.NewWatchCooldown}" />
+          </Grid>
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4" Margin="0,10,0,0">
+            <TextBlock Text="RCON command (only for SendRcon action)" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBox Grid.Row="1" Text="{Binding Automation.NewWatchRcon}" ToolTip.Tip="Leave empty for non-RCON actions" />
+            <Button Grid.Row="1" Grid.Column="1" Classes="primary" Content="Add rule" Margin="12,0,0,0" Command="{Binding Automation.AddLogWatchRuleCommand}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer></UserControl>

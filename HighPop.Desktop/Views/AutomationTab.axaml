@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:models="using:HighPop.Models"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             x:Class="HighPop.Desktop.Views.AutomationTab"
+             x:DataType="vm:ServerViewModel">
+  <ScrollViewer Background="{DynamicResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24">
+      <TextBlock Classes="section" Text="Automation &amp; Discord" Margin="0,0,0,12" />
+      <TextBlock Text="Lifecycle rules run locally inside HighPop. Discord settings connect this server to the bot and alert services configured in global Settings."
+                 FontSize="12" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+      <Border Classes="card" Margin="0,0,0,16">
+        <StackPanel>
+          <TextBlock Text="Lifecycle" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10" />
+          <CheckBox IsChecked="{Binding Server.AutoStart}" Content="Auto-start when HighPop launches" Margin="0,0,0,8"
+                    ToolTip.Tip="Starts this Rust instance after the manager launches." />
+          <CheckBox IsChecked="{Binding Server.KeepOnline}" Content="Always-on: keep this server online" Margin="0,0,0,5"
+                    ToolTip.Tip="Recommended for production. Empty-player shutdown is ignored and unexpected exits are retried indefinitely with a capped backoff." />
+          <TextBlock Text="Always-on recovers a server after an unexpected exit only after HighPop started or reattached it. It never starts a stopped server merely because the manager opened; use Auto-start for that. Empty-player shutdown remains disabled."
+                     Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="20,0,0,8" />
+          <CheckBox IsChecked="{Binding Server.WakeOnDemand}" Content="Wake on demand" Margin="0,0,0,5"
+                    ToolTip.Tip="Lets the Discord bot or local status page start a stopped server." />
+          <CheckBox IsChecked="{Binding Server.WakeOnDemandPortTrigger}" Content="Also wake on an incoming game-port connection" Margin="20,0,0,8"
+                    IsEnabled="{Binding Server.WakeOnDemand}" ToolTip.Tip="Port scans can also trigger this option; leave it off if Discord-only wake is preferred." />
+          <CheckBox IsChecked="{Binding Server.ShutDownWhenEmpty}" Content="Stop after the server remains empty" Margin="0,0,0,5"
+                    IsEnabled="{Binding !Server.KeepOnline}" ToolTip.Tip="Available only when Always-on is disabled." />
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="20,0,0,8" IsVisible="{Binding Server.ShutDownWhenEmpty}">
+            <TextBlock Text="Empty for" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBox Text="{Binding Server.ShutDownIdleMinutes}" Width="90" TextAlignment="Center" Padding="4,10" />
+            <TextBlock Text="minutes" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" />
+          </StackPanel>
+          <TextBlock Classes="label" Text="Slow-start protection" Margin="0,8,0,5" />
+          <TextBlock Text="Freeze detection and empty-server shutdown remain paused until Rust reports ready, WebRCON connects, or this grace period expires."
+                     Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
+          <UniformGrid Columns="3">
+            <StackPanel Margin="0,0,12,0"><StackPanel><TextBlock Classes="label" Text="Startup grace" /><DockPanel><TextBlock Text="minutes" DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" Margin="6,0,0,0" /><TextBox Text="{Binding Server.StartupGraceMinutes}" TextAlignment="Center" /></DockPanel></StackPanel></StackPanel>
+            <StackPanel Margin="0,0,12,0"><StackPanel><TextBlock Classes="label" Text="First WebRCON attempt" /><DockPanel><TextBlock Text="seconds" DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" Margin="6,0,0,0" /><TextBox Text="{Binding Server.RconAutoConnectDelaySeconds}" TextAlignment="Center" /></DockPanel></StackPanel></StackPanel>
+            <StackPanel><TextBlock Classes="label" Text="WebRCON retry window" /><DockPanel><TextBlock Text="minutes" DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" Margin="6,0,0,0" /><TextBox Text="{Binding Server.RconAutoConnectTimeoutMinutes}" TextAlignment="Center" /></DockPanel></StackPanel>
+          </UniformGrid>
+          <TextBlock Text="{Binding LastExitSummary, StringFormat='Last process exit: {0}'}" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card" Margin="0,0,0,16">
+        <StackPanel>
+          <TextBlock Text="Recovery &amp; maintenance" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,10" />
+          <CheckBox IsChecked="{Binding Server.AutoRestart}" Content="Restart after an unexpected crash" Margin="0,0,0,8" />
+          <Grid ColumnDefinitions="*,16,*" Margin="20,0,0,12">
+            <StackPanel><TextBlock Classes="label" Text="Maximum retries per 10 minutes" /><TextBox Text="{Binding Server.AutoRestartMaxRetries}" /></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Delay before restart (seconds)" /><TextBox Text="{Binding Server.AutoRestartDelaySec}" /></StackPanel>
+          </Grid>
+          <CheckBox IsChecked="{Binding Server.UpdateOnStart}" Content="Check for a Rust update before each start" Margin="0,0,0,8" />
+          <CheckBox IsChecked="{Binding Server.AutoUpdate}" Content="Safe live update monitoring" Margin="0,0,0,5"
+                    ToolTip.Tip="Checks Steam build IDs without modifying a running server. When an update exists, HighPop warns players, saves, stops, validates, updates, and restarts." />
+          <Grid ColumnDefinitions="*,16,*" Margin="20,0,0,12">
+            <StackPanel><TextBlock Classes="label" Text="Check every (minutes)" /><TextBox Text="{Binding Server.AutoUpdateIntervalMin}" TextAlignment="Center" /></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Classes="label" Text="Player warning (minutes)" /><TextBox Text="{Binding Server.AutoUpdateWarningMinutes}" TextAlignment="Center" /></StackPanel>
+          </Grid>
+          <TextBlock Classes="label" Text="Safe Stop timeout" />
+          <DockPanel Margin="0,0,0,12">
+            <TextBlock Text="seconds (15–600)" DockPanel.Dock="Right" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" Margin="8,0,0,0" />
+            <TextBox Text="{Binding Server.GracefulStopTimeoutSeconds}" TextAlignment="Center" />
+          </DockPanel>
+          <CheckBox IsChecked="{Binding Server.BackupOnStart}" Content="Create a backup before each start" Margin="0,0,0,8" />
+          <CheckBox IsChecked="{Binding Server.BackupOnShutdown}" Content="Create a backup after each clean stop" Margin="0,0,0,8" />
+          <CheckBox IsChecked="{Binding Server.DailyRestartEnabled}" Content="Restart daily" Margin="0,0,0,5" />
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="20,0,0,12">
+            <TextBlock Text="Local time (HH:MM)" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" />
+            <TextBox Text="{Binding DailyRestartTimeText}" Width="110" TextAlignment="Center" Padding="4,10" />
+          </StackPanel>
+          <TextBlock Classes="label" Text="Backup paths (relative to the install directory; separate multiple paths with semicolons)" />
+          <TextBox Text="{Binding Server.BackupSavePath}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card" Margin="0,0,0,16">
+        <StackPanel>
+          <TextBlock Text="Discord integration" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,5" />
+          <TextBlock Text="HighPop's local Discord service publishes alerts and live status boards, receives button interactions through the gateway, and routes approved Start, Stop, Restart, Backup, and Update actions back to this manager."
+                     FontSize="11" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+          <CheckBox IsChecked="{Binding Server.DiscordAlertsEnabled}" Content="Send alerts for this server" Margin="0,0,0,10" />
+          <TextBlock Classes="label" Text="Server webhook override (optional)" />
+          <TextBox Text="{Binding Server.DiscordWebhookUrl}" Margin="0,0,0,10" />
+          <TextBlock Classes="label" Text="Public status-board channel ID (optional)" />
+          <TextBox Text="{Binding Server.DiscordStatusChannelId}" Margin="0,0,0,4" />
+          <TextBlock Text="Leave empty to use the combined board configured in Settings → Discord Remote Control Bot." FontSize="11" Foreground="{DynamicResource TextMutedBrush}" Margin="0,0,0,12" />
+          <CheckBox IsChecked="{Binding Server.DiscordAdminControls}" Content="Publish administrator action buttons" Margin="0,0,0,8" />
+          <StackPanel IsVisible="{Binding Server.DiscordAdminControls}">
+            <TextBlock Classes="label" Text="Private administrator channel ID" />
+            <TextBox Text="{Binding Server.DiscordAdminChannelId}" Margin="0,0,0,5" />
+            <TextBlock Text="Keep this channel staff-only and configure Allowed User IDs globally. These controls can stop or update the live server."
+                       FontSize="11" Foreground="{DynamicResource AccentRedBrush}" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer></UserControl>

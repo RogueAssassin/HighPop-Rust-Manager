@@ -54,6 +54,8 @@ public partial class App : System.Windows.Application
                     { tb.SelectAll(); ev.Handled = true; }
             }));
 
+        UiDispatcher.Thread = new WpfUiThread();
+        Dialogs.Platform = new WpfPlatform();
         base.OnStartup(e);
 
         var exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
@@ -292,6 +294,7 @@ public partial class App : System.Windows.Application
         s.AddSingleton<PerformanceMonitorService>();
         s.AddSingleton<ScheduledTaskService>();
         s.AddSingleton<TrayService>();
+        s.AddSingleton<ITrayStatus>(sp => sp.GetRequiredService<TrayService>());
         s.AddSingleton<SystemMetricsService>();
         s.AddSingleton<ModManagerService>();
         s.AddSingleton<DiscordBotService>();

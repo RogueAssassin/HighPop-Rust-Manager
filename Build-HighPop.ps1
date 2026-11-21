@@ -23,7 +23,7 @@ dotnet run --project (Join-Path $root "HighPop.SmokeTests\HighPop.SmokeTests.csp
 dotnet publish (Join-Path $root "HighPop\HighPop.csproj") `
     -c $Configuration -r $Runtime --self-contained true -o $publish
 
-$version = (Select-String -Path (Join-Path $root "HighPop\HighPop.csproj") -Pattern '<Version>([^<]+)</Version>').Matches.Groups[1].Value
+$version = (Select-String -Path (Join-Path $root "Directory.Build.props") -Pattern '<Version>([^<]+)</Version>').Matches.Groups[1].Value
 & (Join-Path $root "scripts\Build-PortablePackage.ps1") `
     -PublishDirectory $publish `
     -OutputDirectory $artifacts `

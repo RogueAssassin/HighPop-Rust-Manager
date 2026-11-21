@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HighPop.Desktop.Views.OnboardingWindow"
+        Title="Welcome to HighPop" Width="500" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="28,24" Spacing="12">
+    <TextBlock Text="Welcome to HighPop" FontSize="20" FontWeight="Bold" />
+    <TextBlock TextWrapping="Wrap" Opacity="0.85"
+               Text="HighPop Rust Manager controls your Rust servers from one panel. Quick start:" />
+    <Grid ColumnDefinitions="24,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+      <TextBlock Text="1." FontWeight="Bold" Foreground="{DynamicResource AccentBlueBrush}" />
+      <TextBlock Grid.Column="1" TextWrapping="Wrap" Text="Add a server and give the Rust instance a descriptive name." />
+      <TextBlock Grid.Row="1" Text="2." FontWeight="Bold" Foreground="{DynamicResource AccentBlueBrush}" />
+      <TextBlock Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Text="Install or update it. HighPop downloads SteamCMD and the server automatically." />
+      <TextBlock Grid.Row="2" Text="3." FontWeight="Bold" Foreground="{DynamicResource AccentBlueBrush}" />
+      <TextBlock Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Text="Use the Settings tab for ports and password, Console to send commands, and Schedule for automatic restarts and backups." />
+      <TextBlock Grid.Row="3" Text="4." FontWeight="Bold" Foreground="{DynamicResource AccentBlueBrush}" />
+      <TextBlock Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" Text="Choose Carbon or Oxide under Mods, then configure backups and safe wipe schedules before launch." />
+    </Grid>
+    <CheckBox x:Name="DontShowAgainCheck" Content="Don't show this again" Opacity="0.8" />
+    <Button Content="Got it" HorizontalAlignment="Right" Width="100" HorizontalContentAlignment="Center" Click="GotIt_Click" />
+  </StackPanel>
+</Window>
