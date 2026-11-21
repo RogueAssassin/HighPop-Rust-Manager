@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
+             x:Class="HighPop.Desktop.Views.ChartsTab"
+             x:DataType="vm:ServerViewModel">
+  <!-- The plots are bound in code-behind so a PlotModel is released when the tab goes off screen. -->
+  <Grid RowDefinitions="Auto,*,*" Background="{DynamicResource BgDeepBrush}">
+    <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,8">
+      <Grid ColumnDefinitions="Auto,Auto,*">
+        <TextBlock Text="Time range:" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding Monitoring.PerfRangeOptions}" SelectedItem="{Binding Monitoring.PerfRangeMinutes}" Width="100" />
+        <TextBlock Grid.Column="2" Text="{Binding Monitoring.ChartSummary}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                   FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="16,0,0,0" />
+      </Grid>
+    </Border>
+    <oxy:PlotView x:Name="PerfView" Grid.Row="1" Background="Transparent" Margin="8" />
+    <oxy:PlotView x:Name="OperationsView" Grid.Row="2" Background="Transparent" Margin="8,0,8,8" />
+  </Grid></UserControl>

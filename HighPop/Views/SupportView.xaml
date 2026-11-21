@@ -1,7 +1,7 @@
 <UserControl x:Class="HighPop.Views.SupportView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:app="clr-namespace:HighPop"
+             xmlns:app="clr-namespace:HighPop;assembly=HighPop.Core"
              Background="{StaticResource BgDeepBrush}" Loaded="SupportView_Loaded">
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="32">
         <StackPanel MaxWidth="760" HorizontalAlignment="Left">

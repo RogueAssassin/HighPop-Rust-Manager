@@ -1,3 +1,4 @@
+using System.Formats.Tar;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Diagnostics;
@@ -721,6 +722,54 @@ try
               "/HPRM/assets/presets/escaped.json", out _),
         "self-update asset staging accepts packaged assets and rejects traversal");
 
+    {
+        static byte[] MakeTarGz(params (string Name, TarEntryType Type, string Content)[] entries)
+        {
+            using var raw = new MemoryStream();
+            using (var gz = new GZipStream(raw, CompressionMode.Compress, leaveOpen: true))
+            using (var tar = new TarWriter(gz, TarEntryFormat.Pax, leaveOpen: false))
+            {
+                foreach (var (name, type, content) in entries)
+                {
+                    var entry = new PaxTarEntry(type, name);
+                    if (type == TarEntryType.SymbolicLink) entry.LinkName = content;
+                    else if (type == TarEntryType.RegularFile) entry.DataStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content));
+                    tar.WriteEntry(entry);
+                }
+            }
+            return raw.ToArray();
+        }
+
+        bool Extracts(byte[] archive, string folder, out int count)
+        {
+            count = 0;
+            try { count = LinuxSelfUpdateService.ExtractToStaging(archive, Path.Combine(testRoot, folder)); return true; }
+            catch (InvalidDataException) { return false; }
+        }
+
+        var good = MakeTarGz(
+            ("HPRM/", TarEntryType.Directory, ""),
+            ("HPRM/HighPop.Desktop", TarEntryType.RegularFile, "bin"),
+            ("HPRM/HighPop.Desktop.dll", TarEntryType.RegularFile, "dll"),
+            ("HPRM/assets/presets/a.json", TarEntryType.RegularFile, "{}"),
+            ("HPRM/../escaped.txt", TarEntryType.RegularFile, "x"),
+            ("other/ignored.txt", TarEntryType.RegularFile, "x"));
+        Check(Extracts(good, "linux-update-good", out var goodCount) && goodCount == 3
+              && File.Exists(Path.Combine(testRoot, "linux-update-good", "assets", "presets", "a.json"))
+              && !File.Exists(Path.Combine(testRoot, "escaped.txt"))
+              && !File.Exists(Path.Combine(testRoot, "linux-update-good", "ignored.txt")),
+            "linux self-update extracts HPRM files and ignores paths outside it");
+        Check(!Extracts(MakeTarGz(("HPRM/HighPop.Desktop", TarEntryType.RegularFile, "bin"),
+                  ("HPRM/link", TarEntryType.SymbolicLink, "/etc/passwd")), "linux-update-link", out _),
+            "linux self-update refuses symbolic links");
+        Check(!Extracts(MakeTarGz(("HPRM/readme.txt", TarEntryType.RegularFile, "x")), "linux-update-missing", out _),
+            "linux self-update refuses an archive without the desktop app");
+        Check(LinuxSelfUpdateService.TryGetSafeRelativePath("HPRM/a/b.dll", out var rel) && rel == "a/b.dll"
+              && !LinuxSelfUpdateService.TryGetSafeRelativePath("HPRM/../x", out _)
+              && !LinuxSelfUpdateService.TryGetSafeRelativePath("/HPRM/x", out _),
+            "linux self-update path check accepts HPRM paths and rejects traversal");
+    }
+
     var legacyServerRoot = Path.Combine(testRoot, "assets", "servers");
     var portableServerRoot = Path.Combine(testRoot, "Servers");
     var legacyServerPath = Path.Combine(legacyServerRoot, "server-one");
@@ -877,6 +926,85 @@ try
           && runawayEndsWithMarker
           && !File.Exists(runawayLogPath),
         "a runaway log is archived as its newest 64 MB only and then removed");
+
+    // ── Linux support: each Windows-only seam has a safe, correct Linux path ──
+    {
+        // Secrets: AES-GCM with a private key file (what EncryptionService uses on Linux).
+        var keyDirectory = Path.Combine(testRoot, "linux-key");
+        var keyFile = Path.Combine(keyDirectory, "secret.key");
+        var linuxKey = EncryptionService.LoadOrCreateKey(keyFile);
+        var linuxKeyAgain = EncryptionService.LoadOrCreateKey(keyFile);
+        var sealedSecret = EncryptionService.EncryptWithKey("discord-token"u8.ToArray(), linuxKey);
+        var flippedSecret = (byte[])sealedSecret.Clone();
+        flippedSecret[^1] ^= 0xFF;
+        bool ThrowsCrypto(Action action) { try { action(); return false; } catch (CryptographicException) { return true; } }
+        var shortKeyFile = Path.Combine(keyDirectory, "short.key");
+        File.WriteAllBytes(shortKeyFile, new byte[5]);
+        var shortKeyRefused = false;
+        try { EncryptionService.LoadOrCreateKey(shortKeyFile); } catch (InvalidDataException) { shortKeyRefused = true; }
+        Check(linuxKey.Length == 32 && linuxKey.SequenceEqual(linuxKeyAgain)
+              && System.Text.Encoding.UTF8.GetString(EncryptionService.DecryptWithKey(sealedSecret, linuxKey)) == "discord-token"
+              && ThrowsCrypto(() => EncryptionService.DecryptWithKey(flippedSecret, linuxKey))
+              && ThrowsCrypto(() => EncryptionService.DecryptWithKey(sealedSecret, RandomNumberGenerator.GetBytes(32)))
+              && shortKeyRefused
+              && File.ReadAllBytes(shortKeyFile).Length == 5,
+            "Linux secrets use a random 256-bit key file with authenticated encryption; wrong or short keys are refused");
+        Check(EncryptionService.Decrypt(EncryptionService.Encrypt("round-trip")) == "round-trip"
+              && EncryptionService.Decrypt("lnx1:" + Convert.ToBase64String(sealedSecret)) == string.Empty
+              && EncryptionService.Decrypt("not-base64-or-dpapi") == string.Empty,
+            "secrets round-trip on this OS and a value from the other OS reads as empty instead of crashing");
+
+        // CPU, memory and network come from /proc on Linux.
+        var cpuParsed = SystemMetricsService.TryParseProcStatCpu("cpu  4705 150 1120 16250 520 0 17 0 0 0", out var cpuIdle, out var cpuTotal);
+        var memParsed = SystemMetricsService.TryParseMemInfo(
+            "MemTotal:       16318360 kB\nMemFree:         1000000 kB\nMemAvailable:   10318360 kB\n", out var memTotalMb, out var memUsedMb);
+        Check(cpuParsed && cpuIdle == 16770 && cpuTotal == 22762
+              && Math.Abs(SystemMetricsService.ComputeCpuPercent(16770, 22762, 16870, 22962) - 50f) < 0.01f
+              && SystemMetricsService.ComputeCpuPercent(5, 5, 5, 5) == 0f
+              && !SystemMetricsService.TryParseProcStatCpu("cpu0 1 2 3 4 5", out _, out _)
+              && memParsed && memTotalMb == 15935 && memUsedMb == 5859
+              && !SystemMetricsService.TryParseMemInfo("garbage", out _, out _),
+            "Linux CPU and memory are read from /proc/stat and /proc/meminfo");
+        const string procNetTcp =
+            "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+            "   0: 00000000:6D60 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 55555 1 0000000000000000 100 0 0 10 0\n" +
+            "   1: 0100007F:E3A2 0100007F:6D60 01 00000000:00000000 00:00000000 00000000  1000        0 66666 1 0000000000000000 20 4 30 10 -1\n";
+        var tcpRows = ProcessNetworkTracker.ParseProcNetTcp(procNetTcp);
+        Check(tcpRows.Count == 2
+              && tcpRows[0].State == 0x0A && tcpRows[0].LocalPort == 28000 && tcpRows[0].Inode == 55555
+              && tcpRows[1].State == 1 && tcpRows[1].Inode == 66666
+              && ProcessNetworkTracker.ParseProcNetTcp("not a table").Count == 0,
+            "Linux TCP connections and listening ports are parsed from /proc/net/tcp");
+
+        // SteamCMD ships as a tar.gz on Linux.
+        var steamSource = Path.Combine(testRoot, "steamcmd-src");
+        var steamTarget = Path.Combine(testRoot, "steamcmd-out");
+        Directory.CreateDirectory(Path.Combine(steamSource, "linux32"));
+        File.WriteAllText(Path.Combine(steamSource, "steamcmd.sh"), "#!/bin/bash\n");
+        File.WriteAllText(Path.Combine(steamSource, "linux32", "steamcmd"), "binary");
+        var steamTar = Path.Combine(testRoot, "steamcmd_linux.tar.gz");
+        using (var tarFile = File.Create(steamTar))
+        using (var tarGzip = new GZipStream(tarFile, CompressionLevel.Fastest))
+            System.Formats.Tar.TarFile.CreateFromDirectory(steamSource, tarGzip, includeBaseDirectory: false);
+        SteamCmdService.ExtractSteamCmdArchive(steamTar, steamTarget);
+        Check(File.Exists(Path.Combine(steamTarget, "steamcmd.sh"))
+              && File.Exists(Path.Combine(steamTarget, "linux32", "steamcmd"))
+              && HostPlatform.SteamCmdArchiveName == (OperatingSystem.IsWindows() ? "steamcmd.zip" : "steamcmd_linux.tar.gz"),
+            "the SteamCMD Linux tar.gz archive extracts");
+
+        // Launch, firewall and framework downloads.
+        var launchInfo = new ProcessStartInfo("RustDedicated");
+        ServerManagerService.ConfigureLinuxLaunch(launchInfo, Path.Combine("srv", "rust"));
+        var firewallAdvice = FirewallService.LinuxFirewallAdvice(server);
+        var linuxOxideRelease =
+            $$"""{"name":"2.0.7900","assets":[{"name":"Oxide.Rust-linux.zip","browser_download_url":"https://github.com/OxideMod/Oxide.Rust/releases/download/2.0.7900/Oxide.Rust-linux.zip","digest":"sha256:{{new string('a', 64)}}","size":10}]}""";
+        var linuxOxide = ModManagerService.ParseLatestReleaseAsset(linuxOxideRelease, "OxideMod/Oxide.Rust", ModManagerService.OxideLinuxAsset);
+        Check(launchInfo.Environment["LD_LIBRARY_PATH"]!.StartsWith(Path.Combine("srv", "rust", "RustDedicated_Data", "Plugins", "x86_64"), StringComparison.Ordinal)
+              && firewallAdvice.Contains("28015/udp") && firewallAdvice.Contains("28016/tcp") && firewallAdvice.Contains("ufw allow")
+              && linuxOxide.Name == "Oxide.Rust-linux.zip" && linuxOxide.Sha256 == new string('a', 64)
+              && GameRegistry.Get("rust")!.Executable == HostPlatform.RustExecutableName,
+            "Linux start sets the native library path, firewall advice lists the ports, and the Oxide Linux asset is verified");
+    }
 
     var oxideManaged = Path.Combine(server.InstallPath, "RustDedicated_Data", "Managed");
     Directory.CreateDirectory(oxideManaged);
@@ -1326,6 +1454,38 @@ try
     }
     catch (InvalidDataException) { traversalRejected = true; }
     Check(traversalRejected, "preset path traversal rejected");
+
+    // Saved profiles must not merge into the default server.cfg variables: that duplicated every
+    // variable after a reload and made start validation refuse the server.
+    {
+        var varConfig = new ConfigService();
+        var savedServersJson = File.Exists(varConfig.ServersFile) ? File.ReadAllText(varConfig.ServersFile) : null;
+        try
+        {
+            var fresh = new GameServer { GameId = "rust", DisplayName = "Variables" };
+            var defaultCount = fresh.RustServerVariables.Count;
+            varConfig.SaveServers([fresh]);
+            var reloaded = new ConfigService().LoadServers().Single();
+            Check(reloaded.RustServerVariables.Count == defaultCount
+                  && RustPlugin.ValidateServerVariables(reloaded) == null,
+                "a saved profile reloads without duplicating its server.cfg variables");
+            var doubled = new GameServer { GameId = "rust", DisplayName = "Doubled" };
+            foreach (var copy in RustServerVariable.CreateDefaults()) doubled.RustServerVariables.Add(copy);
+            File.WriteAllText(varConfig.ServersFile, Newtonsoft.Json.JsonConvert.SerializeObject(new[] { doubled }));
+            var repaired = new ConfigService().LoadServers().Single();
+            Check(repaired.RustServerVariables.Count == defaultCount
+                  && RustPlugin.ValidateServerVariables(repaired) == null,
+                "profiles saved with doubled server.cfg variables are repaired on load");
+            var cloned = ServerProfileTransferService.CloneForTests(reloaded);
+            Check(cloned.RustServerVariables.Count == defaultCount,
+                "a cloned profile keeps its own server.cfg variables");
+        }
+        finally
+        {
+            if (savedServersJson != null) File.WriteAllText(varConfig.ServersFile, savedServersJson);
+            else if (File.Exists(varConfig.ServersFile)) File.Delete(varConfig.ServersFile);
+        }
+    }
 
     // Invalid or duplicate server Ids are repaired on load and written back, so loading again
     // (and lifecycle saves that look servers up by Id) never multiplies the server list.

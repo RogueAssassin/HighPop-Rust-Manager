@@ -32,7 +32,7 @@ jobs:
         id: release
         shell: bash
         run: |
-          version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' HighPop/HighPop.csproj | head -n 1)"
+          version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
           if [[ -z "$version" ]]; then
             echo "Could not read the HighPop project version" >&2
             exit 1
@@ -216,3 +216,68 @@ jobs:
             HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip
             HighPop-${{ needs.prepare.outputs.tag }}-win-x64.zip.sha256
             HighPop-${{ needs.prepare.outputs.tag }}-win-x64.manifest.json
+
+  linux-x64:
+    # Added to the release the Windows job just created. If this job fails, the Windows release stands and
+    # the Linux app simply sees no update asset yet (it never offers an update it cannot install).
+    needs: [prepare, windows-x64]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build Linux projects
+        run: |
+          dotnet build HighPop.Desktop/HighPop.Desktop.csproj -c Release
+          dotnet build HighPop.Server/HighPop.Server.csproj -c Release
+          dotnet build HighPop.LinuxCheck/HighPop.LinuxCheck.csproj -c Release
+
+      - name: Linux host checks
+        run: dotnet run --project HighPop.LinuxCheck/HighPop.LinuxCheck.csproj -c Release --no-build
+
+      - name: Publish desktop app and headless host
+        run: |
+          dotnet publish HighPop.Desktop/HighPop.Desktop.csproj -c Release -r linux-x64 --self-contained true -o publish_desktop
+          dotnet publish HighPop.Server/HighPop.Server.csproj -c Release -r linux-x64 --self-contained true -o publish_server
+
+      - name: Package tarballs
+        run: |
+          scripts/build-linux-package.sh publish_desktop . "${{ needs.prepare.outputs.version }}" desktop "${{ github.sha }}"
+          scripts/build-linux-package.sh publish_server . "${{ needs.prepare.outputs.version }}" server "${{ github.sha }}"
+
+      - name: Verify checksums
+        run: |
+          tag="${{ needs.prepare.outputs.tag }}"
+          sha256sum --check "HighPop-$tag-linux-x64.tar.gz.sha256" "HighPop-$tag-linux-server-x64.tar.gz.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: HighPop-${{ needs.prepare.outputs.tag }}-linux-x64
+          path: |
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-x64.tar.gz
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-x64.tar.gz.sha256
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-server-x64.tar.gz
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-server-x64.tar.gz.sha256
+          if-no-files-found: error
+
+      - name: Add Linux files to the GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: HighPop Rust Manager ${{ needs.prepare.outputs.tag }}
+          fail_on_unmatched_files: true
+          files: |
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-x64.tar.gz
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-x64.tar.gz.sha256
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-server-x64.tar.gz
+            HighPop-${{ needs.prepare.outputs.tag }}-linux-server-x64.tar.gz.sha256

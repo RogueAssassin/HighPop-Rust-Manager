@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:models="using:HighPop.Models"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             x:Class="HighPop.Desktop.Views.InfoTab"
+             x:DataType="vm:ServerViewModel">
+  <ScrollViewer Background="{DynamicResource BgDeepBrush}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="24">
+      <TextBlock Classes="section" Text="Game info" Margin="0,0,0,12" />
+      <Border Classes="card">
+        <Grid ColumnDefinitions="160,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="12">
+          <TextBlock Classes="label" Text="Game" />
+          <TextBlock Grid.Column="1" Text="{Binding Plugin.GameName}" FontWeight="SemiBold" />
+          <TextBlock Grid.Row="1" Classes="label" Text="Category" />
+          <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Plugin.Category}" />
+          <TextBlock Grid.Row="2" Classes="label" Text="Steam App ID" />
+          <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Plugin.SteamAppId}" />
+          <TextBlock Grid.Row="3" Classes="label" Text="This server's port" />
+          <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Server.ServerPort}" FontWeight="SemiBold" />
+          <TextBlock Grid.Row="4" Classes="label" Text="Game's default port" />
+          <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Plugin.DefaultPort}" Foreground="{DynamicResource TextSecondaryBrush}" />
+          <TextBlock Grid.Row="5" Classes="label" Text="RCON supported" />
+          <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Plugin.HasRcon}" />
+          <TextBlock Grid.Row="6" Classes="label" Text="Description" />
+          <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Plugin.Description}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+        </Grid>
+      </Border>
+
+      <StackPanel IsVisible="{Binding ShowVersionInfo}">
+        <TextBlock Classes="section" Text="Installed version" Margin="0,20,0,12" />
+        <Border Classes="card">
+          <StackPanel>
+            <Grid ColumnDefinitions="160,*" Margin="0,0,0,10">
+              <TextBlock Classes="label" Text="Build number" />
+              <TextBlock Grid.Column="1" Text="{Binding InstalledVersionText}" FontWeight="SemiBold" />
+            </Grid>
+            <TextBlock Text="SteamCMD checks for updates automatically every time you click Install/Update." FontSize="11"
+                       Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <StackPanel IsVisible="{Binding IsRust}">
+        <TextBlock Classes="section" Text="Rust Operations" Margin="0,20,0,12" />
+        <Border Classes="card">
+          <StackPanel>
+            <TextBlock Text="A live operational summary of the settings and services HighPop uses for this Rust instance."
+                       FontSize="11" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+            <Grid ColumnDefinitions="*,16,*" RowDefinitions="Auto,Auto" RowSpacing="12">
+              <StackPanel>
+                <TextBlock Classes="label" Text="Server profile" />
+                <TextBlock Text="{Binding RustServerProfile}" FontWeight="SemiBold" />
+                <TextBlock Text="Official placement remains Facepunch-assigned." FontSize="10" Foreground="{DynamicResource TextMutedBrush}" />
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Classes="label" Text="Mod framework" />
+                <TextBlock Text="{Binding DetectedModFramework}" FontWeight="SemiBold" />
+                <TextBlock FontSize="10" Foreground="{DynamicResource TextMutedBrush}">
+                  <Run Text="{Binding InstalledPlugins.Count, Mode=OneWay}" /><Run Text=" plugin file(s) detected" />
+                </TextBlock>
+              </StackPanel>
+              <StackPanel Grid.Row="1">
+                <TextBlock Classes="label" Text="WebRCON" />
+                <TextBlock Text="{Binding RconStatusText}" FontWeight="SemiBold" />
+                <TextBlock Text="Auto-connect and player activity collection share this connection." FontSize="10"
+                           Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="2">
+                <TextBlock Classes="label" Text="Managed Rust paths" />
+                <TextBlock Text="{Binding EffectiveLogDirectory}" FontFamily="Consolas,Menlo,monospace" FontSize="10" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ServerConfigPath}" FontFamily="Consolas,Menlo,monospace" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Grid>
+            <WrapPanel Margin="0,14,0,0">
+              <Button Margin="0,0,8,0" Command="{Binding OpenInstallFolderCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconFolder}" Width="13" Height="13" /><TextBlock Text="Open server files" /></StackPanel></Button>
+              <Button Margin="0,0,8,0" Content="↻ Rescan mods" Command="{Binding RefreshInstalledPluginsCommand}" />
+              <Button Margin="0,0,8,0" Command="{Binding OpenLogDirectoryCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconFolder}" Width="13" Height="13" /><TextBlock Text="Open Rust logs" /></StackPanel></Button>
+              <Button Margin="0,0,8,0" Command="{Binding OpenServerConfigDirectoryCommand}"><StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconFolder}" Width="13" Height="13" /><TextBlock Text="Open config folder" /></StackPanel></Button>
+              <Button Content="Open server.cfg" Command="{Binding OpenServerConfigCommand}" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+
+      <TextBlock Classes="section" Text="Share" Margin="0,20,0,12" />
+      <Border Classes="card">
+        <StackPanel>
+          <TextBlock Text="Generates a read-only status link (player count, uptime) safe to post in Discord or on a website — no controls, no login needed."
+                     TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,10" />
+          <Button HorizontalAlignment="Left" Command="{Binding CopyStatusLinkCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconLink}" Width="13" Height="13" /><TextBlock Text="Copy shareable status link" /></StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer></UserControl>

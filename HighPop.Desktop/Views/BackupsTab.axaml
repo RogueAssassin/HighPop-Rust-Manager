@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
+             x:Class="HighPop.Desktop.Views.BackupsTab"
+             x:DataType="vm:ServerViewModel">
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource BgDeepBrush}">
+    <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,12">
+      <StackPanel Spacing="12">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Classes="primary" Content="{Binding Loc.BackupCreate}" Command="{Binding Backups.CreateBackupCommand}" />
+          <TextBlock Text="{Binding Backups.Entries.Count, StringFormat='{}{0} backups'}" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="13" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Keep at most" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+          <TextBox Width="76" TextAlignment="Center" Padding="4,10" Text="{Binding Backups.BackupRetention}" />
+          <TextBlock Text="backups (0 = unlimited)" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,16,0" />
+          <TextBlock Text="Delete backups older than" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+          <TextBox Width="76" TextAlignment="Center" Padding="4,10" Text="{Binding Backups.BackupMaxAgeDays}" />
+          <TextBlock Text="days (0 = off)" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" Margin="0,0,8,0" />
+          <Button Command="{Binding Backups.CleanupBackupsNowCommand}" ToolTip.Tip="Permanently delete backups that exceed the limits above, right now">
+            <StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconTrash}" Width="13" Height="13" /><TextBlock Text="Clean up now" /></StackPanel>
+          </Button>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <CheckBox IsChecked="{Binding Backups.UseIncrementalBackups}" Content="Incremental backups" Margin="0,0,8,0"
+                    ToolTip.Tip="Only changed files are zipped after the first backup — much faster and smaller for large worlds" />
+          <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Backups.UseIncrementalBackups}">
+            <TextBlock Text="Full backup every" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+            <TextBox Width="76" TextAlignment="Center" Padding="4,10" Text="{Binding Backups.FullBackupEveryN}" />
+            <TextBlock Text="backups" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    <ScrollViewer Grid.Row="1" Padding="16">
+      <ItemsControl ItemsSource="{Binding Backups.Entries}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="svc:BackupEntry">
+            <Border Classes="card" Margin="0,0,0,8">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="{Binding CreatedAt, StringFormat='dd.MM.yyyy HH:mm:ss'}" FontWeight="SemiBold" FontSize="13" />
+                    <TextBlock Text="·" FontWeight="SemiBold" FontSize="13" />
+                    <TextBlock Text="{Binding IsIncremental, Converter={x:Static conv:BoolToIncrementalLabelConverter.Instance}}" Foreground="{DynamicResource TextMutedBrush}" FontSize="11" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12">
+                    <Run Text="{Binding SizeText}" /><Run Text=" · " /><Run Text="{Binding FilePath}" />
+                  </TextBlock>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                  <Button Content="↩ Restore" CommandParameter="{Binding}"
+                          Command="{ReflectionBinding $parent[UserControl].DataContext.Backups.RestoreBackupCommand}" />
+                  <Button Classes="danger" Content="✕" Width="32" Padding="0" HorizontalContentAlignment="Center" CommandParameter="{Binding}"
+                          Command="{ReflectionBinding $parent[UserControl].DataContext.Backups.DeleteBackupCommand}" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid></UserControl>

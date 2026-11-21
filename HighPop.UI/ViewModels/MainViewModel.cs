@@ -1,0 +1,1465 @@
+﻿using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HighPop.Games;
+using HighPop.Models;
+using HighPop.Services;
+
+namespace HighPop.ViewModels;
+
+public partial class MainViewModel : BaseViewModel
+{
+    private readonly ConfigService             _config;
+    private readonly ServerManagerService      _manager;
+    private readonly SteamCmdService           _steamCmd;
+    private readonly BackupService             _backup;
+    private readonly NotificationService       _notifications;
+    private readonly PerformanceMonitorService _perfMonitor;
+    private readonly ITrayStatus               _tray;
+    private readonly SystemMetricsService      _metrics;
+    private readonly ModManagerService         _mods;
+    private readonly DiscordBotService         _bot;
+    private readonly ConfigEditorService       _configEditor;
+    private readonly PlayerStatsService        _playerStats;
+    private readonly PerfHistoryService        _perfHistory;
+    private readonly NetworkMonitorService     _network;
+    private readonly TemplateService           _templates;
+    private readonly UserService               _users;
+    private readonly ServerGroupService        _groups;
+    private readonly GroupBanListService       _groupBans;
+    private readonly RustModerationService     _moderation;
+    private readonly ServerHygieneService      _hygiene;
+    private readonly ConfigPresetService       _presets;
+    private readonly RustTelemetryService      _telemetry;
+    private readonly RustReferenceService      _rustReference;
+    private readonly RogueRustPluginCatalogService _pluginCatalog;
+    private readonly WebApiService             _webApi;
+    private readonly ScheduledTaskService      _scheduler;
+    private readonly RemoteMachineService      _remoteMachines;
+    private readonly CrashPredictionService    _crashPrediction;
+    private readonly LogWatcherService         _logWatcher;
+    private readonly ServerHealthService       _healthCheck;
+    private readonly ServerProfileTransferService _profileTransfer;
+    private readonly UPnPService               _upnp;
+    private readonly WakeOnDemandService       _wakeOnDemand;
+    private readonly System.Timers.Timer       _autoSaveTimer;
+    private readonly System.Timers.Timer       _updateCheckTimer;
+
+    public SettingsViewModel Settings { get; }
+    public DashboardViewModel Dashboard { get; }
+    public ObservableCollection<ServerViewModel>       Servers       { get; } = [];
+    public ObservableCollection<MachineViewModel>      RemoteMachines { get; } = [];
+    public ObservableCollection<RemoteServerViewModel> RemoteServers  { get; } = [];
+
+    [ObservableProperty] private ServerViewModel?       _selectedServer;
+    [ObservableProperty] private RemoteServerViewModel? _selectedRemoteServer;
+    [ObservableProperty] private bool _showAddDialog;
+    [ObservableProperty] private string _newServerName    = string.Empty;
+    [ObservableProperty] private string _newServerInstall = string.Empty;
+    [ObservableProperty] private IGamePlugin? _newServerGame = GameRegistry.RustServer;
+    [ObservableProperty] private int  _newServerPort      = 28015;
+    [ObservableProperty] private int  _newServerQueryPort = 28017;
+    [ObservableProperty] private int  _newServerRconPort  = 28016;
+    [ObservableProperty] private int  _newServerRustPlusPort = 28083;
+    [ObservableProperty] private string _newServerPortStatus = "Ports have not been checked.";
+    [ObservableProperty] private bool _newServerPortsValid;
+    [ObservableProperty] private bool _showSettingsPage;
+    [ObservableProperty] private bool _showDashboard;
+    [ObservableProperty] private bool _showSupport;
+    [ObservableProperty] private bool _showMachines;
+
+    // Computed: show the normal server grid only when no page is open
+    public bool ShowServerGrid =>
+        !ShowDashboard && !ShowSupport && !ShowMachines && SelectedRemoteServer == null;
+
+    // Computed: show the remote server management view
+    public bool ShowRemoteDetail =>
+        SelectedRemoteServer != null && !ShowDashboard && !ShowSupport && !ShowMachines;
+
+    partial void OnShowDashboardChanged(bool _)
+    {
+        OnPropertyChanged(nameof(ShowServerGrid));
+        OnPropertyChanged(nameof(ShowRemoteDetail));
+    }
+    partial void OnShowSupportChanged(bool _)
+    {
+        OnPropertyChanged(nameof(ShowServerGrid));
+        OnPropertyChanged(nameof(ShowRemoteDetail));
+    }
+    partial void OnShowMachinesChanged(bool _)
+    {
+        OnPropertyChanged(nameof(ShowServerGrid));
+        OnPropertyChanged(nameof(ShowRemoteDetail));
+    }
+    partial void OnSelectedRemoteServerChanged(RemoteServerViewModel? _)
+    {
+        OnPropertyChanged(nameof(ShowServerGrid));
+        OnPropertyChanged(nameof(ShowRemoteDetail));
+    }
+    [ObservableProperty] private string _sortMode = "name-asc";
+
+    // ── Update checker ────────────────────────────────────────────────────────
+    [ObservableProperty] private bool   _updateAvailable;
+    [ObservableProperty] private string _latestVersion  = string.Empty;
+    [ObservableProperty] private string _updateDownloadUrl = string.Empty;
+    [ObservableProperty] private bool   _updateDownloading;
+    [ObservableProperty] private string _updateStatusText = string.Empty;
+
+    public bool HasRunningServers => Servers.Any(s => s.IsRunning);
+    public bool CanInstallUpdate  => UpdateAvailable && !UpdateDownloading && !HasRunningServers;
+
+    partial void OnUpdateAvailableChanged(bool value)   => OnPropertyChanged(nameof(CanInstallUpdate));
+    partial void OnUpdateDownloadingChanged(bool value) => OnPropertyChanged(nameof(CanInstallUpdate));
+
+    // ── Batch operations ──────────────────────────────────────────────────────
+    [ObservableProperty] private bool _batchMode;
+    public int BatchSelectedCount => Servers.Count(s => s.IsBatchSelected);
+
+    partial void OnBatchModeChanged(bool value)
+    {
+        if (!value)
+            foreach (var s in Servers) s.IsBatchSelected = false;
+        OnPropertyChanged(nameof(BatchSelectedCount));
+    }
+
+    // ── Add Machine dialog fields ─────────────────────────────────────────────
+    [ObservableProperty] private string _newMachineName  = string.Empty;
+    [ObservableProperty] private string _newMachineUrl   = string.Empty;
+    [ObservableProperty] private string _newMachineToken = string.Empty;
+
+    // ── User Management ───────────────────────────────────────────────────────
+    [ObservableProperty] private string _newUserName = string.Empty;
+    [ObservableProperty] private string _newUserRole = "Viewer";
+    public List<Services.WgsUser> Users => _users.GetAll();
+
+    public string[] SortModes { get; } = ["name-asc", "name-desc", "status"];
+
+    public IEnumerable<ServerViewModel> SortedServers => SortMode switch
+    {
+        "name-desc"  => Servers.OrderByDescending(s => s.Server.DisplayName),
+        "status"     => Servers.OrderByDescending(s => (int)s.Server.Status),
+        _            => Servers.OrderBy(s => s.Server.DisplayName),
+    };
+
+    public IEnumerable<RemoteServerViewModel> SortedRemoteServers => SortMode switch
+    {
+        "name-desc"  => RemoteServers.OrderByDescending(s => s.DisplayName),
+        "status"     => RemoteServers.OrderByDescending(s => RemoteStatusRank(s.Status)),
+        _            => RemoteServers.OrderBy(s => s.DisplayName),
+    };
+
+    private static int RemoteStatusRank(string status)
+        => Enum.TryParse<ServerStatus>(status, out var s) ? (int)s : -1;
+
+    public int TotalServers  => Servers.Count;
+    public int RunningCount  => Servers.Count(s => s.Server.Status == ServerStatus.Running);
+    public int StoppedCount  => Servers.Count(s => s.Server.Status == ServerStatus.Stopped);
+
+    public MainViewModel(ConfigService config, ServerManagerService manager, SteamCmdService steamCmd,
+        BackupService backup, NotificationService notifications, PerformanceMonitorService perfMonitor,
+        ITrayStatus tray, SettingsViewModel settings, SystemMetricsService metrics,
+        ModManagerService mods, DiscordBotService bot,
+        ConfigEditorService configEditor, PlayerStatsService playerStats, PerfHistoryService perfHistory,
+        NetworkMonitorService network, TemplateService templates, UserService users,
+        ServerGroupService groups, WebApiService webApi, ScheduledTaskService scheduler,
+        RemoteMachineService remoteMachines, CrashPredictionService crashPrediction,
+        UPnPService upnp, WakeOnDemandService wakeOnDemand, GroupBanListService groupBans,
+        RustModerationService moderation, ServerHygieneService hygiene,
+        ConfigPresetService presets, LogWatcherService logWatcher,
+        ServerHealthService healthCheck, RustTelemetryService telemetry,
+        ServerProfileTransferService profileTransfer, RustReferenceService rustReference,
+        RogueRustPluginCatalogService pluginCatalog)
+    {
+        _groupBans = groupBans;
+        _moderation = moderation;
+        _hygiene   = hygiene;
+        _presets   = presets;
+        _telemetry = telemetry;
+        _rustReference = rustReference;
+        _pluginCatalog = pluginCatalog;
+        _config          = config;
+        _sortMode        = config.SortMode; // restore last-used sort order without triggering a save
+        _manager         = manager;
+        _steamCmd        = steamCmd;
+        _backup          = backup;
+        _notifications   = notifications;
+        _perfMonitor     = perfMonitor;
+        _tray            = tray;
+        _metrics         = metrics;
+        _mods            = mods;
+        _bot             = bot;
+        _configEditor    = configEditor;
+        _playerStats     = playerStats;
+        _perfHistory     = perfHistory;
+        _network         = network;
+        _templates       = templates;
+        _users           = users;
+        _groups          = groups;
+        _webApi          = webApi;
+        _scheduler       = scheduler;
+        _remoteMachines  = remoteMachines;
+        _crashPrediction = crashPrediction;
+        _logWatcher      = logWatcher;
+        _healthCheck     = healthCheck;
+        _profileTransfer = profileTransfer;
+        _upnp            = upnp;
+        _wakeOnDemand    = wakeOnDemand;
+        Settings         = settings;
+        Dashboard        = new DashboardViewModel(metrics, network, Servers);
+
+        manager.PortsReassigned += srv => Save();
+
+        manager.StatusChanged += (id, status) =>
+        {
+            // StatusChanged is raised from process/lifecycle threads. Never block them on the
+            // UI thread: queue the UI refresh and resolve the server from the snapshot.
+            var server = FindServerSnapshot(id)?.Server;
+            UiDispatcher.Post(() =>
+            {
+                OnPropertyChanged(nameof(RunningCount));
+                OnPropertyChanged(nameof(StoppedCount));
+                OnPropertyChanged(nameof(HasRunningServers));
+                OnPropertyChanged(nameof(CanInstallUpdate));
+                _tray.SetStatus(RunningCount, TotalServers);
+            });
+            if (server != null)
+                Save();
+
+            if (server != null)
+            {
+                if (status == ServerStatus.Running)
+                {
+                    if (_config.EnableUPnP) _ = ApplyUpnpAsync(server, add: true);
+                    _crashPrediction.RegisterServerStart(id);
+                    _wakeOnDemand.Disarm(id);
+                    _wakeOnDemand.ArmIdleShutdown(server);
+                }
+                else if (status is ServerStatus.Stopped or ServerStatus.Error)
+                {
+                    if (_config.EnableUPnP) _ = ApplyUpnpAsync(server, add: false);
+                    _wakeOnDemand.DisarmIdleShutdown(id);
+                    _wakeOnDemand.Arm(server);
+                }
+            }
+        };
+
+        Servers.CollectionChanged += (_, _) =>
+        {
+            _serverSnapshot = [.. Servers];
+            OnPropertyChanged(nameof(SortedServers));
+        };
+        RemoteServers.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SortedRemoteServers));
+        LoadServers();
+        _ = CheckForUpdateAsync(promptOnDetection: true);
+
+        // Re-check for updates periodically — the startup-only check meant anyone leaving
+        // HighPop running for days never saw the "update available" badge until next restart.
+        _updateCheckTimer = new System.Timers.Timer(TimeSpan.FromHours(4).TotalMilliseconds) { AutoReset = true };
+        _updateCheckTimer.Elapsed += async (_, _) =>
+        {
+            // async void timer handler: an escaped exception would end the process.
+            try { await CheckForUpdateAsync(promptOnDetection: false); }
+            catch (Exception ex) { System.Diagnostics.Trace.TraceError($"Update check failed: {ex.Message}"); }
+        };
+        _updateCheckTimer.Start();
+
+        // A 15-second interval avoids repeatedly serializing every profile while the user is
+        // idle. Explicit lifecycle changes and application shutdown still save immediately.
+        _autoSaveTimer = new System.Timers.Timer(15_000) { AutoReset = true };
+        // A locked file or a profile edited mid-serialisation must not take down the manager;
+        // the next tick saves again.
+        _autoSaveTimer.Elapsed += (_, _) =>
+        {
+            try { Save(); }
+            catch (Exception ex) { System.Diagnostics.Trace.TraceError($"Auto-save failed: {ex.Message}"); }
+        };
+        _autoSaveTimer.Start();
+
+        _healthCheck.StartMonitoring();
+
+        // Wire up Discord bot callbacks — same Dispatcher fix as WebAPI
+        _bot.GetServers    = () => ServerSnapshot.Select(v => v.Server).ToList();
+        _bot.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.Discord, "Discord start request") : Task.CompletedTask; });
+        _bot.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.Discord, "Discord stop request") : Task.CompletedTask; });
+        _bot.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.Discord, "Discord restart request") : Task.CompletedTask; });
+        _bot.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)       : Task.CompletedTask; });
+        _bot.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.Backups.CreateBackupCommand.ExecuteAsync(null) : Task.CompletedTask; });
+        _bot.SendCmd       = (id, cmd) => DispatchCommandAndWait(() =>
+        {
+            var vm = FindServer(id);
+            return vm != null
+                ? vm.SendManagedCommandAsync(cmd, "Discord")
+                : Task.CompletedTask;
+        });
+
+        // Start bot if already configured
+        _bot.ApplySettings(notifications.Settings);
+
+        // Wire Scheduled Task callbacks
+        _scheduler.GetServers   = () => ServerSnapshot.Select(v => v.Server).ToList();
+        _scheduler.UpdateServer = id => DispatchCommandAndWait(() =>
+        {
+            var vm = FindServer(id);
+            return vm != null ? vm.UpdateCommand.ExecuteAsync(null) : Task.CompletedTask;
+        });
+
+        // Backup/Restart/Stop scheduled tasks can create a backup behind the scenes (the task
+        // itself, or BackupOnShutdown) — refresh the Backups tab if that server is open so the
+        // new file shows up without the user having to trigger something else first.
+        _scheduler.TaskExecuted += (task, result) =>
+        {
+            UiDispatcher.Post(() =>
+            {
+                var vm = FindServer(task.ServerId);
+                if (vm == null) return;
+                vm.RecordAction($"Scheduled {task.Action}: {result}");
+                vm.RefreshScheduledTasks();
+                if (task.Action is ScheduledActionType.Backup or ScheduledActionType.Restart or ScheduledActionType.Stop)
+                    vm.RefreshBackups();
+            });
+        };
+
+        // Same idea for idle-shutdown backups, which bypass the scheduler entirely
+        _wakeOnDemand.ServerBackedUp += id =>
+        {
+            UiDispatcher.Post(() =>
+            {
+                var vm = FindServer(id);
+                vm?.RefreshBackups();
+            });
+        };
+
+        // Wire Web API callbacks
+        // The Web API runs on HTTP worker threads; enumerate the immutable snapshot, never
+        // the live ObservableCollection (which may be mutated on the UI thread concurrently).
+        _webApi.GetServers    = () => ServerSnapshot.Select(v => v.Server).ToList();
+        // AsyncRelayCommand.ExecuteAsync monitors task completion and calls
+        // ButtonBase.UpdateCanExecute() — a DependencyProperty access that requires the
+        // UI thread. Always dispatch through the Dispatcher so WPF never sees a
+        // cross-thread call, regardless of which thread the HTTP handler runs on.
+        // Fire-and-forget (return Task.CompletedTask immediately) so the HTTP response
+        // is not held open for the full duration of long operations like restart.
+        static Task DispatchCommand(Func<Task> action)
+        {
+            _ = UiDispatcher.RunTaskAsync(async () =>
+            {
+                try { await action(); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[HighPop] Remote command failed: {ex}"); }
+            });
+            return Task.CompletedTask;
+        }
+        static Task DispatchCommandAndWait(Func<Task> action) => UiDispatcher.RunTaskAsync(action);
+        _webApi.StartServer   = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StartManagedAsync(LifecycleInitiator.WebApi, "Web API start request") : Task.CompletedTask; });
+        _webApi.StopServer    = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.StopManagedAsync(LifecycleInitiator.WebApi, "Web API stop request") : Task.CompletedTask; });
+        _webApi.RestartServer = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.RestartManagedAsync(LifecycleInitiator.WebApi, "Web API restart request") : Task.CompletedTask; });
+        _webApi.UpdateServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.UpdateCommand.ExecuteAsync(null)        : Task.CompletedTask; });
+        _webApi.BackupServer  = id => DispatchCommand(() => { var vm = FindServer(id); return vm != null ? vm.Backups.CreateBackupCommand.ExecuteAsync(null)  : Task.CompletedTask; });
+        _webApi.SendCmd       = async (id, cmd) => await manager.SendCommandAsync(id, cmd);
+        _webApi.GetMetrics    = () => metrics.Current;
+        _webApi.GetNetwork    = () => (network.CurrentBytesInPerSec, network.CurrentBytesOutPerSec);
+        _webApi.GetLog = (id, offset) =>
+        {
+            var inst = manager.GetInstance(id);
+            if (inst == null) return ([], [], offset);
+            var all   = inst.GetLogSnapshot();
+            var slice = all.Skip(offset).ToList();
+            return (
+                slice.Select(m => m.Text).ToList(),
+                slice.Select(m => m.Type.ToString()).ToList(),
+                offset + slice.Count
+            );
+        };
+        _webApi.Users     = users;
+        _webApi.GetUptime = id => manager.GetInstance(id)?.Uptime is TimeSpan t && t > TimeSpan.Zero
+            ? $"{(int)t.TotalHours:D2}:{t.Minutes:D2}:{t.Seconds:D2}"
+            : null;
+        _webApi.GetOnlinePlayers = id =>
+            FindServerSnapshot(id)?.OnlinePlayers ?? [];
+        _webApi.GetPerfSamples = (id, minutes) =>
+        {
+            var cutoff = DateTime.Now.AddMinutes(-minutes);
+            return _perfHistory.Get(id).Where(s => s.Time >= cutoff)
+                .Select(s => (s.Time, s.Cpu, s.MemMb));
+        };
+        _webApi.GetBackups = id =>
+        {
+            var srv = FindServerSnapshot(id)?.Server;
+            if (srv == null) return [];
+            return _backup.GetBackupsForServer(srv)
+                .Select(b => (
+                    fileName:  System.IO.Path.GetFileName(b.FilePath),
+                    sizeText:  b.SizeText,
+                    createdAt: b.CreatedAt));
+        };
+        _webApi.RestoreBackup = async (id, fileName) =>
+        {
+            var srv = FindServerSnapshot(id)?.Server;
+            if (srv == null) return "Server not found";
+            var dir      = System.IO.Path.GetFullPath(System.IO.Path.Combine(_backup.BackupRoot, id));
+            var zipPath  = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, fileName));
+            // Ensure the resolved path is strictly within the server backup directory
+            if (!zipPath.StartsWith(dir + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return "Invalid backup path";
+            if (!System.IO.File.Exists(zipPath)) return "Backup file not found";
+            // Same rule as the Backups page: restoring under a live RustDedicated corrupts the save.
+            if (srv.Status != ServerStatus.Stopped) return "Stop the server before restoring a backup";
+            try { await _backup.RestoreBackupAsync(srv, zipPath); return null; }
+            catch (Exception ex) { return ex.Message; }
+        };
+
+        _webApi.SaveNote = async (id, notes) =>
+        {
+            var (srv, all) = await UiDispatcher.RunAsync(() =>
+            {
+                var found = FindServer(id)?.Server;
+                if (found == null) return ((GameServer?)null, (List<GameServer>?)null);
+                found.Notes = notes;
+                return (found, Servers.Select(v => v.Server).ToList());
+            });
+            if (srv == null || all == null) return "Server not found";
+            await Task.Run(() => _config.SaveServers(all));
+            return null;
+        };
+
+        _webApi.GetScheduledTasks = () => _scheduler.Tasks;
+
+        _webApi.RunScheduledTask = async (taskId) =>
+        {
+            var task = _scheduler.Tasks.FirstOrDefault(t => t.Id == taskId);
+            if (task == null) return "Task not found";
+            await _scheduler.ExecuteNowAsync(taskId);
+            return null;
+        };
+
+        _webApi.GetFullLog = id =>
+        {
+            // vm.Log is a UI-bound collection; copy it on the UI thread, but never wait forever.
+            var lines = UiDispatcher.Read(() =>
+                FindServer(id)?.Log.Select(m => $"[{m.FormattedTime}] {m.Text}").ToList(),
+                fallback: null);
+            return lines ?? [];
+        };
+
+        // Wire RemoteMachineService
+        foreach (var machine in _remoteMachines.Machines)
+            RemoteMachines.Add(new MachineViewModel(machine, _remoteMachines));
+
+        _remoteMachines.MachineUpdated += OnMachineUpdated;
+        _remoteMachines.MachinesChanged += OnMachinesChanged;
+
+        // Wire CrashPredictionService — snapshot on UI thread so background thread gets a safe copy
+        _crashPrediction.GetRunningServers = () =>
+            ServerSnapshot.Where(v => v.Server.Status == ServerStatus.Running)
+                          .Select(v => (v.Server.Id, v.Server.DisplayName, v.Server.CurrentPlayers))
+                          .ToList();
+        _crashPrediction.PredictionRaised += OnCrashPrediction;
+        manager.LogReceived += (id, msg) =>
+        {
+            // Called for every console line. Resolve from the snapshot instead of a blocking
+            // UI round-trip per line (thousands per minute on a busy Oxide server).
+            var server = FindServerSnapshot(id)?.Server;
+            if (server != null)
+            {
+                _crashPrediction.CheckLogLine(id, server.DisplayName, msg.Text);
+                _logWatcher.CheckLine(server, msg.Text);
+            }
+        };
+    }
+
+    private void OnMachineUpdated(string machineId, List<Services.RemoteServerInfo> servers)
+    {
+        UiDispatcher.Post(() =>
+        {
+            var machineVm = RemoteMachines.FirstOrDefault(m => m.Definition.Id == machineId);
+            if (machineVm != null)
+            {
+                machineVm.IsOnline = servers.Count > 0 || _remoteMachines.IsOnline(machineId);
+                machineVm.UpdateServers(servers);
+            }
+
+            // Sync RemoteServers sidebar list
+            var machineDef = _remoteMachines.Machines.FirstOrDefault(m => m.Id == machineId);
+            if (machineDef == null) return;
+
+            foreach (var info in servers)
+            {
+                var existing = RemoteServers.FirstOrDefault(r => r.ServerId == info.Id && r.MachineName == machineDef.Name);
+                if (existing != null)
+                    existing.UpdateInfo(info);
+                else
+                    RemoteServers.Add(new RemoteServerViewModel(machineId, machineDef.Name, info, _remoteMachines));
+            }
+            // Remove servers that disappeared
+            var ids = servers.Select(s => s.Id).ToHashSet();
+            foreach (var gone in RemoteServers.Where(r => r.MachineName == machineDef.Name && !ids.Contains(r.ServerId)).ToList())
+            {
+                if (SelectedRemoteServer == gone) { gone.StopPolling(); SelectedRemoteServer = null; }
+                gone.Dispose();
+                RemoteServers.Remove(gone);
+            }
+        });
+    }
+
+    private void OnMachinesChanged()
+    {
+        UiDispatcher.Post(() =>
+        {
+            RemoteMachines.Clear();
+            foreach (var machine in _remoteMachines.Machines)
+                RemoteMachines.Add(new MachineViewModel(machine, _remoteMachines));
+
+            // Clear remote servers that belong to removed machines
+            var machineNames = _remoteMachines.Machines.Select(m => m.Name).ToHashSet();
+            foreach (var gone in RemoteServers.Where(r => !machineNames.Contains(r.MachineName)).ToList())
+            {
+                if (SelectedRemoteServer == gone) { gone.StopPolling(); SelectedRemoteServer = null; }
+                gone.Dispose();
+                RemoteServers.Remove(gone);
+            }
+        });
+    }
+
+    private void OnCrashPrediction(string serverId, Services.CrashPrediction pred)
+    {
+        // FindServer accesses Servers collection — must run on UI thread
+        UiDispatcher.Post(() =>
+        {
+            FindServer(serverId)?.AppendConsoleWarning(
+                $"[HighPop PREDICTION] {pred.Reason} (Severity {pred.Severity})");
+        });
+
+        // NotifyAsync is fire-and-forget, safe to call from any thread
+        if (Settings.CrashPredictionDiscord)
+        {
+            var color = pred.Severity >= 2 ? "#F85149" : "#D29922";
+            _ = _notifications.NotifyAsync(
+                $"⚠ Crash predicted: {pred.ServerName}",
+                $"{pred.Reason}\nSeverity: {(pred.Severity >= 2 ? "Critical" : "Warning")}",
+                color);
+        }
+    }
+
+    private void LoadServers()
+    {
+        int num = 1;
+        foreach (var srv in _config.LoadServers()
+                     .Where(s => s.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase)))
+        {
+            srv.Status = ServerStatus.Stopped;
+            bool reattached = _manager.TryReattach(srv);
+            var vm = MakeVm(srv);
+            vm.ServerNumber = num++;
+            Servers.Add(vm);
+            // KeepOnline protects an already-running/reattached process; it must never
+            // turn opening the manager into an implicit server start. Persisted desired Running
+            // is different: it proves an earlier explicit start and may resume recovery.
+            if (!reattached && ServerLifecycleRules.CanRecover(srv))
+                _manager.QueueAlwaysOnRecovery(srv, "manager launch found persisted running intent");
+            else if (ServerStartupPolicy.ShouldStartOnManagerLaunch(srv, reattached))
+                _ = UiDispatcher.RunTaskAsync(() =>
+                        vm.StartManagedAsync(LifecycleInitiator.AutoStart, "Auto-start on manager launch"))
+                        .ContinueWith(t => Console.WriteLine($"[HighPop] AutoStart failed for {srv.DisplayName}: {t.Exception?.InnerException?.Message}"),
+                            TaskContinuationOptions.OnlyOnFaulted);
+        }
+        SelectedServer = Servers.FirstOrDefault();
+        RefreshCounts();
+        _tray.SetStatus(RunningCount, TotalServers);
+    }
+
+    private ServerViewModel? FindServer(string id) => Servers.FirstOrDefault(v => v.Server.Id == id);
+
+    // Immutable copy of Servers, replaced on the UI thread whenever the collection changes.
+    // Background services (process events, Web API, Discord, scheduler, crash prediction)
+    // read this instead of the live ObservableCollection, so they never need to block on
+    // the UI thread just to find a server.
+    private volatile ServerViewModel[] _serverSnapshot = [];
+    private IReadOnlyList<ServerViewModel> ServerSnapshot => _serverSnapshot;
+    private ServerViewModel? FindServerSnapshot(string id)
+    {
+        foreach (var vm in _serverSnapshot)
+            if (vm.Server.Id == id) return vm;
+        return null;
+    }
+
+    [RelayCommand]
+    private void ToggleBatchMode() => BatchMode = !BatchMode;
+
+    [RelayCommand]
+    private void BatchSelectAll()
+    {
+        foreach (var s in Servers) s.IsBatchSelected = true;
+        OnPropertyChanged(nameof(BatchSelectedCount));
+    }
+
+    [RelayCommand]
+    private void BatchClearSelection()
+    {
+        foreach (var s in Servers) s.IsBatchSelected = false;
+        OnPropertyChanged(nameof(BatchSelectedCount));
+    }
+
+    [RelayCommand]
+    private async Task BatchStartAsync()
+    {
+        var targets = Servers.Where(s => s.IsBatchSelected && s.CanStart).ToList();
+        foreach (var vm in targets)
+            await vm.StartCommand.ExecuteAsync(null);
+    }
+
+    [RelayCommand]
+    private async Task BatchStopAsync()
+    {
+        var targets = Servers.Where(s => s.IsBatchSelected && s.CanStop).ToList();
+        foreach (var vm in targets)
+            await vm.StopCommand.ExecuteAsync(null);
+    }
+
+    [RelayCommand]
+    private async Task BatchRestartAsync()
+    {
+        var targets = Servers.Where(s => s.IsBatchSelected && s.IsRunning).ToList();
+        foreach (var vm in targets)
+            await vm.RestartCommand.ExecuteAsync(null);
+    }
+
+    [RelayCommand]
+    private async Task BatchBackupAsync()
+    {
+        var targets = Servers.Where(s => s.IsBatchSelected).ToList();
+        foreach (var vm in targets)
+            await vm.Backups.CreateBackupCommand.ExecuteAsync(null);
+    }
+
+    private async Task CheckForUpdateAsync(bool promptOnDetection)
+    {
+        var (hasUpdate, latest, url) = await Services.UpdateCheckerService.CheckAsync();
+        if (!hasUpdate) return;
+
+        var isNewlyDetected = !UpdateAvailable || LatestVersion != latest;
+        UpdateAvailable   = true;
+        LatestVersion     = latest;
+        UpdateDownloadUrl = url;
+
+        // Only notify once per newly-seen version — the periodic re-check would otherwise
+        // spam the same "update available" message every 4 hours.
+        if (isNewlyDetected)
+        {
+            try
+            {
+                await _notifications.NotifyAsync(
+                    $"⬆️ HighPop {latest} is available",
+                    "A new version of HighPop Rust Manager has been released. Open HighPop to update.",
+                    "#A855F7");
+            }
+            catch { }
+
+            if (promptOnDetection)
+                await PromptForStartupUpdateAsync();
+        }
+    }
+
+    private async Task PromptForStartupUpdateAsync()
+    {
+        // An app that cannot replace itself must not offer an install it would only fail.
+        if (!Dialogs.SupportsSelfUpdate) return;
+        var running = Servers.Count(server => server.IsRunning);
+        var runningWarning = running > 0
+            ? $"\n\n{running} running server{(running == 1 ? "" : "s")} will be saved and stopped before the manager update."
+            : string.Empty;
+        var result = Dialogs.Show(
+            $"HighPop {LatestVersion} is available. You are running {AppInfo.VersionDisplay}." +
+            runningWarning +
+            "\n\nInstall the verified update now? HighPop will restart automatically.",
+            "HighPop update available",
+            DialogButtons.YesNo,
+            DialogImage.Information);
+
+        if (result == DialogResult.Yes)
+            await PerformUpdateCoreAsync(requireConfirmation: false);
+    }
+
+    [ObservableProperty] private string _wgsUpdateCheckResult = string.Empty;
+
+    /// <summary>Manual "check now" for whoever is sitting at the admin PC — the automatic check
+    /// only runs on startup and every 4 hours, which can feel slow when you know a fix just shipped.</summary>
+    [RelayCommand]
+    private async Task CheckForWgsUpdateNowAsync()
+    {
+        WgsUpdateCheckResult = "Checking...";
+        var (hasUpdate, latest, url) = await Services.UpdateCheckerService.CheckAsync();
+        if (hasUpdate)
+        {
+            UpdateAvailable      = true;
+            LatestVersion        = latest;
+            UpdateDownloadUrl    = url;
+            WgsUpdateCheckResult = $"⬆️ {latest} is available — click the badge in the title bar to update";
+        }
+        else
+        {
+            WgsUpdateCheckResult = string.IsNullOrWhiteSpace(latest)
+                ? "⚠️ Could not reach the release service — try again shortly"
+                : $"✅ {AppInfo.VersionDisplay} is the latest version";
+        }
+    }
+
+    [RelayCommand]
+    private Task PerformUpdateAsync() => PerformUpdateCoreAsync(requireConfirmation: true);
+
+    private async Task PerformUpdateCoreAsync(bool requireConfirmation)
+    {
+        // Count running servers
+        var running = Servers.Where(s => s.IsRunning).ToList();
+
+        // Warn if this update requires a newer .NET runtime than currently running
+        if (Environment.Version.Major < 10)
+        {
+            var dotnetWarning = Dialogs.Show(
+                $"HighPop {LatestVersion} requires .NET 10 Desktop Runtime, but you are currently running .NET {Environment.Version.Major}.\n\n" +
+                "You must install .NET 10 Desktop Runtime before updating, otherwise HighPop will not start after the update.\n\n" +
+                "Download it now from:\nhttps://dotnet.microsoft.com/download/dotnet/10.0\n\n" +
+                "Install .NET 10 Desktop Runtime (Windows x64), then come back and update.\n\n" +
+                "Do you want to open the download page now?",
+                "⚠️ .NET 10 Required",
+                DialogButtons.YesNo,
+                DialogImage.Warning);
+
+            if (dotnetWarning == DialogResult.Yes)
+            {
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "https://dotnet.microsoft.com/download/dotnet/10.0") { UseShellExecute = true }); }
+                catch { }
+            }
+            return;
+        }
+
+        // Build confirmation message
+        string msg = running.Count > 0
+            ? $"HighPop will update to {LatestVersion}.\n\n" +
+              $"{running.Count} server{(running.Count == 1 ? "" : "s")} {(running.Count == 1 ? "is" : "are")} currently running and will be stopped before the update.\n\n" +
+              "HighPop will restart automatically after the update."
+            : $"HighPop will update to {LatestVersion} and restart automatically.";
+
+        if (requireConfirmation)
+        {
+            var result = Dialogs.Show(
+                msg,
+                "Update HighPop",
+                DialogButtons.OKCancel,
+                DialogImage.Information);
+
+            if (result != DialogResult.OK) return;
+        }
+
+        UpdateDownloading = true;
+        UpdateStatusText  = "Stopping servers...";
+
+        // Stop all running servers gracefully
+        foreach (var vm in running)
+        {
+            try { await vm.StopCommand.ExecuteAsync(null); }
+            catch { }
+        }
+
+        // Download and prepare update
+        var progress = new Progress<(int pct, string msg)>(x =>
+        {
+            UiDispatcher.Post(() => UpdateStatusText = $"[{x.pct}%] {x.msg}");
+        });
+
+        var ok = await Dialogs.DownloadUpdateAsync(UpdateDownloadUrl, progress);
+
+        if (!ok)
+        {
+            UpdateDownloading = false;
+            UpdateStatusText  = string.Empty;
+            Dialogs.Show(
+                "Download failed. Opening GitHub releases page instead.",
+                "Update failed",
+                DialogButtons.OK,
+                DialogImage.Warning);
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                Services.UpdateCheckerService.ReleasesUrl) { UseShellExecute = true }); }
+            catch { }
+            return;
+        }
+
+        bool launched = Dialogs.ApplyUpdateAndRestart();
+        if (!launched)
+        {
+            UpdateDownloading = false;
+            UpdateStatusText  = string.Empty;
+            Dialogs.Show(
+                "Could not start the update process. Please update manually from GitHub.",
+                "Update failed",
+                DialogButtons.OK,
+                DialogImage.Warning);
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                Services.UpdateCheckerService.ReleasesUrl) { UseShellExecute = true }); }
+            catch { }
+        }
+    }
+
+    private ServerViewModel MakeVm(GameServer srv)
+    {
+        var vm = new ServerViewModel(srv, _manager, _steamCmd, _backup, _notifications, _perfMonitor, _config, _mods,
+               _configEditor, _playerStats, _perfHistory, _templates, _scheduler,
+               _network, _groupBans, _moderation, _hygiene, _presets, _telemetry,
+               _rustReference, _pluginCatalog);
+        vm.BatchSelectionChanged = () => OnPropertyChanged(nameof(BatchSelectedCount));
+        vm.ValidatePortSet = ValidatePortSetForServer;
+        return vm;
+    }
+
+    private async Task ApplyUpnpAsync(GameServer server, bool add)
+    {
+        var result = add
+            ? await _upnp.AddPortsForServerAsync(server)
+            : await _upnp.RemovePortsForServerAsync(server);
+        if (!result.Success)
+            _manager.InjectLogLine(server.Id, $"[UPnP] {result.Message}", ConsoleMessageType.Warning);
+    }
+
+    [RelayCommand]
+    private void OpenAddDialog()
+    {
+        NewServerName    = string.Empty;
+        NewServerGame    = GameRegistry.RustServer;
+        AssignFreePorts(useGameDefaults: true);
+        ShowAddDialog    = true;
+    }
+
+    partial void OnSelectedServerChanged(ServerViewModel? oldValue, ServerViewModel? newValue)
+    {
+        if (oldValue != null) oldValue.IsWorkspaceActive = false;
+        if (newValue != null)
+        {
+            newValue.IsWorkspaceActive = true;
+            ShowDashboard      = false;
+            ShowSupport        = false;
+            ShowMachines       = false;
+            ShowSettingsPage   = false;
+            SelectedRemoteServer?.StopPolling();
+            SelectedRemoteServer = null;
+        }
+    }
+
+    partial void OnSelectedRemoteServerChanged(RemoteServerViewModel? oldValue, RemoteServerViewModel? newValue)
+    {
+        oldValue?.StopPolling();
+        if (newValue != null)
+        {
+            SelectedServer   = null;
+            ShowDashboard    = false;
+            ShowSupport      = false;
+            ShowMachines     = false;
+            ShowSettingsPage = false;
+            newValue.StartPolling();
+        }
+    }
+    partial void OnSortModeChanged(string value)
+    {
+        OnPropertyChanged(nameof(SortedServers));
+        OnPropertyChanged(nameof(SortedRemoteServers));
+        _config.SortMode = value;
+        _config.Save();
+    }
+    partial void OnNewServerGameChanged(IGamePlugin? value)
+    {
+        UpdateInstallPath();
+        if (value == null) return;
+        AssignFreePorts(useGameDefaults: true);
+    }
+    partial void OnNewServerNameChanged(string value)      => UpdateInstallPath();
+    partial void OnNewServerPortChanged(int value)          => UpdateNewServerPortStatus();
+    partial void OnNewServerQueryPortChanged(int value)     => UpdateNewServerPortStatus();
+    partial void OnNewServerRconPortChanged(int value)      => UpdateNewServerPortStatus();
+    partial void OnNewServerRustPlusPortChanged(int value)  => UpdateNewServerPortStatus();
+
+    private void UpdateInstallPath()
+    {
+        if (NewServerGame == null) return;
+        var baseName = string.IsNullOrWhiteSpace(NewServerName)
+            ? NewServerGame.GameId
+            : string.Join("_", NewServerName.Split(System.IO.Path.GetInvalidFileNameChars()));
+        // One directly-addressable folder per server: HPRM/Servers/<server-name>.
+        NewServerInstall = System.IO.Path.Combine(
+            _config.DefaultInstallRoot,
+            baseName);
+    }
+
+    [RelayCommand]
+    private void CloseAddDialog() => ShowAddDialog = false;
+
+    [RelayCommand]
+    private void ConfirmAddServer()
+    {
+        if (NewServerGame == null || string.IsNullOrWhiteSpace(NewServerName)) return;
+
+        var ports = CurrentNewServerPorts();
+        var portErrors = ServerPortAllocator.Validate(
+            ports, ExistingPortSets(), PortCheckerService.IsAvailable);
+        if (portErrors.Count > 0)
+        {
+            Dialogs.Show(
+                string.Join(Environment.NewLine, portErrors),
+                "Port conflict", DialogButtons.OK, DialogImage.Warning);
+            return;
+        }
+
+        string fullInstallPath;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(NewServerInstall))
+                throw new ArgumentException("An installation folder is required.");
+            fullInstallPath = System.IO.Path.GetFullPath(NewServerInstall.Trim());
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException
+                                   or System.Security.SecurityException)
+        {
+            Dialogs.Show(
+                $"Choose a valid installation folder. {ex.Message}",
+                "Invalid installation folder", DialogButtons.OK,
+                DialogImage.Warning);
+            return;
+        }
+        if (Servers.Any(existing => string.Equals(
+                System.IO.Path.GetFullPath(existing.Server.InstallPath), fullInstallPath,
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            Dialogs.Show(
+                "Another server already uses this installation folder. Choose a unique folder so saves, configuration, and logs cannot overlap.",
+                "Installation folder conflict", DialogButtons.OK,
+                DialogImage.Warning);
+            return;
+        }
+
+        var srv = new GameServer
+        {
+            GameId        = NewServerGame.GameId,
+            DisplayName   = NewServerName,
+            ServerName    = NewServerName,
+            InstallPath   = NewServerInstall,
+            ServerPort    = NewServerPort,
+            QueryPort     = NewServerQueryPort,
+            RconPort      = NewServerRconPort,
+            RconPassword  = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
+            MaxPlayers    = NewServerGame.DefaultMaxPlayers,
+            Status        = ServerStatus.NotInstalled,
+            GameSpecificSettings = NewServerGame.GetDefaultSettings(),
+        };
+
+        srv.GameSpecificSettings["appPort"] = NewServerRustPlusPort.ToString();
+        var identity = new string(NewServerName
+            .ToLowerInvariant()
+            .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_')
+            .ToArray());
+        srv.GameSpecificSettings["identity"] = string.IsNullOrWhiteSpace(identity) ? "highpop" : identity;
+
+        var vm = MakeVm(srv);
+        vm.ServerNumber = Servers.Count + 1;
+        Servers.Add(vm);
+        SelectedServer = vm;
+        ShowAddDialog  = false;
+        Save();
+        RefreshCounts();
+    }
+
+    [RelayCommand]
+    private void CloneServer(ServerViewModel? source)
+    {
+        if (source == null) return;
+
+        var src = source.Server;
+        var plugin = GameRegistry.Get(src.GameId);
+        if (plugin == null) return;
+
+        // Allocate fresh ports so clone doesn't conflict
+        var sourcePorts = PortSetFor(src);
+        var allocated = ServerPortAllocator.FindAvailable(
+            sourcePorts, ExistingPortSets(), PortCheckerService.IsAvailable);
+        if (!allocated.HasValue)
+        {
+            Dialogs.Show(
+                "HighPop could not find a free Game, Query, WebRCON, and Rust+ port set for this clone.",
+                "No free port set", DialogButtons.OK,
+                DialogImage.Warning);
+            return;
+        }
+        var ports = allocated.Value;
+
+        // Build a unique name and install path
+        var cloneName = $"{src.DisplayName} (Copy)";
+        var safeName  = string.Join("_", cloneName.Split(System.IO.Path.GetInvalidFileNameChars()));
+        var clonePath = System.IO.Path.Combine(
+            System.IO.Path.GetDirectoryName(src.InstallPath) ?? _config.DefaultInstallRoot,
+            safeName);
+
+        var clone = new GameServer
+        {
+            GameId               = src.GameId,
+            DisplayName          = cloneName,
+            ServerName           = cloneName,
+            InstallPath          = clonePath,
+            ServerPort           = ports.Game,
+            QueryPort            = ports.Query,
+            RconPort             = ports.Rcon,
+            RconPassword         = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)),
+            AutoConnectRcon      = src.AutoConnectRcon,
+            RconAutoConnectDelaySeconds = src.RconAutoConnectDelaySeconds,
+            RconAutoConnectTimeoutMinutes = src.RconAutoConnectTimeoutMinutes,
+            StartupGraceMinutes  = src.StartupGraceMinutes,
+            MaxPlayers           = src.MaxPlayers,
+            AutoRestart          = src.AutoRestart,
+            KeepOnline           = src.KeepOnline,
+            AutoUpdate           = src.AutoUpdate,
+            DailyRestartEnabled  = src.DailyRestartEnabled,
+            DailyRestartTime     = src.DailyRestartTime,
+            DiscordAlertsEnabled = src.DiscordAlertsEnabled,
+            BackupEnabled        = src.BackupEnabled,
+            BackupRetention      = src.BackupRetention,
+            CpuAffinityMask      = src.CpuAffinityMask,
+            ProcessPriority      = src.ProcessPriority,
+            RustServerProfile    = src.RustServerProfile,
+            RogueRustChannel     = src.RogueRustChannel,
+            RustTelemetryEnabled = src.RustTelemetryEnabled,
+            RustTelemetryRetentionDays = src.RustTelemetryRetentionDays,
+            RustTelemetryMaxMegabytes = src.RustTelemetryMaxMegabytes,
+            RustServerVariables  = new ObservableCollection<RustServerVariable>(src.RustServerVariables
+                .Select(variable => new RustServerVariable
+                {
+                    Enabled = variable.Enabled,
+                    Name = variable.Name,
+                    Value = variable.Value,
+                    Description = variable.Description,
+                })),
+            Status               = ServerStatus.NotInstalled,
+            GameSpecificSettings = new Dictionary<string, string>(src.GameSpecificSettings),
+        };
+
+        clone.GameSpecificSettings["appPort"] = ports.RustPlus.ToString();
+        clone.GameSpecificSettings["identity"] = "highpop_" + clone.Id[..8];
+
+        var vm = MakeVm(clone);
+        vm.ServerNumber = Servers.Count + 1;
+        Servers.Add(vm);
+        SelectedServer = vm;
+        Save();
+        RefreshCounts();
+        source.CopyCustomImageTo(clone.Id);
+    }
+
+    [RelayCommand]
+    private void ExportServerProfile(ServerViewModel? source)
+    {
+        if (source == null) return;
+        var safeName = string.Join("_", source.Server.DisplayName.Split(
+            System.IO.Path.GetInvalidFileNameChars()));
+        var exportPath = Dialogs.SaveFile("Export HPRM server profile",
+            "HPRM server profile (*.hprm-server.json)|*.hprm-server.json|JSON files (*.json)|*.json",
+            safeName + ServerProfileTransferService.FileExtension);
+        if (exportPath == null) return;
+
+        try
+        {
+            _profileTransfer.Export(source.Server, exportPath);
+            Dialogs.Show(
+                "The server settings were exported. Server files and credentials (RCON password, server password, and Discord webhook) are intentionally excluded. Re-enter them after import.",
+                "Server profile exported", DialogButtons.OK,
+                DialogImage.Information);
+        }
+        catch (Exception ex)
+        {
+            Dialogs.Show($"The server profile could not be exported: {ex.Message}",
+                "Export failed", DialogButtons.OK, DialogImage.Error);
+        }
+    }
+
+    [RelayCommand]
+    private void ImportServerProfile()
+    {
+        var importPath = Dialogs.OpenFile("Import HPRM server profile",
+            "HPRM server profile (*.hprm-server.json)|*.hprm-server.json|JSON files (*.json)|*.json");
+        if (importPath == null) return;
+
+        try
+        {
+            var document = _profileTransfer.Read(importPath);
+            var installFolder = Dialogs.Folder(
+                "Select this server's Rust installation folder. Choose its new location if it was moved.",
+                System.IO.Directory.Exists(document.OriginalInstallPath)
+                    ? document.OriginalInstallPath
+                    : _config.DefaultInstallRoot);
+            if (installFolder == null) return;
+
+            var imported = _profileTransfer.PrepareImport(document, installFolder);
+            if (Servers.Any(existing => PathsEqual(existing.Server.InstallPath, imported.InstallPath)))
+                throw new InvalidOperationException(
+                    "Another HPRM profile already uses that installation folder. Choose the moved server's unique folder.");
+
+            imported.DisplayName = UniqueImportedName(imported.DisplayName);
+            var preferredPorts = PortSetFor(imported);
+            var portErrors = ServerPortAllocator.Validate(
+                preferredPorts, ExistingPortSets(), PortCheckerService.IsAvailable);
+            var portsChanged = portErrors.Count > 0;
+            if (portsChanged)
+            {
+                var allocated = ServerPortAllocator.FindAvailable(
+                    preferredPorts, ExistingPortSets(), PortCheckerService.IsAvailable)
+                    ?? throw new InvalidOperationException("No free four-port set was available for the imported profile.");
+                imported.ServerPort = allocated.Game;
+                imported.QueryPort = allocated.Query;
+                imported.RconPort = allocated.Rcon;
+                imported.GameSpecificSettings["appPort"] = allocated.RustPlus.ToString();
+            }
+
+            var viewModel = MakeVm(imported);
+            viewModel.ServerNumber = Servers.Count + 1;
+            Servers.Add(viewModel);
+            SelectedServer = viewModel;
+            Save();
+            RefreshCounts();
+
+            var portNote = portsChanged
+                ? " Conflicting ports were reassigned to a free set."
+                : string.Empty;
+            Dialogs.Show(
+                "The server profile was imported and linked to the selected folder." + portNote +
+                " Re-enter its RCON/server passwords and Discord webhook before starting it.",
+                "Server profile imported", DialogButtons.OK,
+                DialogImage.Information);
+        }
+        catch (Exception ex)
+        {
+            Dialogs.Show($"The server profile could not be imported: {ex.Message}",
+                "Import failed", DialogButtons.OK, DialogImage.Error);
+        }
+    }
+
+    private string UniqueImportedName(string requested)
+    {
+        var baseName = string.IsNullOrWhiteSpace(requested) ? "Imported Rust server" : requested.Trim();
+        if (!Servers.Any(server => string.Equals(server.Server.DisplayName, baseName,
+                StringComparison.OrdinalIgnoreCase))) return baseName;
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{baseName} (Imported {suffix})";
+            if (!Servers.Any(server => string.Equals(server.Server.DisplayName, candidate,
+                    StringComparison.OrdinalIgnoreCase))) return candidate;
+        }
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        try
+        {
+            return string.Equals(System.IO.Path.GetFullPath(left).TrimEnd('\\', '/'),
+                System.IO.Path.GetFullPath(right).TrimEnd('\\', '/'),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    [RelayCommand]
+    private async Task RemoveServerAsync(ServerViewModel? vm)
+    {
+        if (vm == null) return;
+
+        var removeChoice = Dialogs.RemoveServer(vm.Server.DisplayName);
+        if (removeChoice == RemoveServerResult.Cancel) return;
+
+        if (vm.IsRunning)
+        {
+            await vm.StopCommand.ExecuteAsync(null);
+            // Wait for the process to fully release file handles before deleting
+            var inst = _manager.GetInstance(vm.Server.Id);
+            if (inst?.Process != null)
+            {
+                try { await inst.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+                catch { /* timeout or already exited */ }
+            }
+            await Task.Delay(500); // extra buffer for OS handle release
+        }
+
+        if (removeChoice == RemoveServerResult.RemoveWithFiles
+            && System.IO.Directory.Exists(vm.Server.InstallPath))
+        {
+            try { System.IO.Directory.Delete(vm.Server.InstallPath, recursive: true); }
+            catch (Exception ex)
+            {
+                Dialogs.Show(
+                    $"File deletion failed:\n{ex.Message}",
+                    "Error", DialogButtons.OK, DialogImage.Warning);
+            }
+        }
+
+        vm.Dispose();
+        Servers.Remove(vm);
+        if (SelectedServer == vm) SelectedServer = Servers.FirstOrDefault();
+        Save();
+        RefreshCounts();
+    }
+
+    [RelayCommand]
+    private async Task BackupAllAsync()
+    {
+        foreach (var vm in Servers)
+            await vm.Backups.CreateBackupCommand.ExecuteAsync(null);
+    }
+
+    [RelayCommand]
+    private void OpenDashboard()
+    {
+        SelectedServer   = null;
+        ShowDashboard    = true;
+        ShowSettingsPage = false;
+        ShowSupport      = false;
+        ShowMachines     = false;
+        DebugLog("OpenDashboard");
+    }
+
+    [RelayCommand]
+    private void OpenSupport()
+    {
+        SelectedServer   = null;
+        ShowSupport      = true;
+        ShowDashboard    = false;
+        ShowSettingsPage = false;
+        ShowMachines     = false;
+        DebugLog("OpenSupport");
+    }
+
+    [RelayCommand]
+    private void OpenMachines()
+    {
+        SelectedServer   = null;
+        ShowMachines     = true;
+        ShowDashboard    = false;
+        ShowSettingsPage = false;
+        ShowSupport      = false;
+        DebugLog("OpenMachines");
+    }
+
+    // ── User Management ───────────────────────────────────────────────────────
+
+    [ObservableProperty] private string _userChangePassword = string.Empty;
+    public List<Services.AuditEntry> AuditLog => _users.GetAuditLog(50);
+
+    [RelayCommand]
+    private void AddUser(object? passwordControl)
+    {
+        var pwBox = PasswordSources.From(passwordControl);
+        if (string.IsNullOrWhiteSpace(NewUserName) || pwBox == null) return;
+        var role = Enum.TryParse<Services.UserRole>(NewUserRole, out var r) ? r : Services.UserRole.Viewer;
+        _users.CreateUser(NewUserName, pwBox.Password, role);
+        _users.WriteAudit("admin", "create_user", $"user={NewUserName} role={role}");
+        NewUserName = string.Empty;
+        pwBox.Clear();
+        RefreshUsers();
+    }
+
+    [RelayCommand]
+    private void RegenerateToken(Services.WgsUser? user)
+    {
+        if (user == null) return;
+        _users.RegenerateToken(user.Id, "admin");
+        RefreshUsers();
+    }
+
+    [RelayCommand]
+    private void ToggleEnabled(Services.WgsUser? user)
+    {
+        if (user == null) return;
+        _users.SetEnabled(user.Id, !user.IsEnabled, "admin");
+        RefreshUsers();
+    }
+
+    [RelayCommand]
+    private void ChangeUserRole(Services.WgsUser? user)
+    {
+        if (user == null) return;
+        var newRole = user.Role == Services.UserRole.Admin
+            ? Services.UserRole.Viewer
+            : Services.UserRole.Admin;
+        _users.ChangeRole(user.Id, newRole, "admin");
+        RefreshUsers();
+    }
+
+    [RelayCommand]
+    private void ChangeUserPassword(Services.WgsUser? user)
+    {
+        if (user == null || string.IsNullOrWhiteSpace(UserChangePassword)) return;
+        _users.ChangePassword(user.Id, UserChangePassword, "admin");
+        UserChangePassword = string.Empty;
+        RefreshUsers();
+    }
+
+    [RelayCommand]
+    private void DeleteUser(Services.WgsUser? user)
+    {
+        if (user == null) return;
+        var result = Dialogs.Show(
+            $"Delete user \"{user.Username}\"?", "Confirm",
+            DialogButtons.YesNo, DialogImage.Warning);
+        if (result != DialogResult.Yes) return;
+        _users.DeleteUser(user.Id, "admin");
+        RefreshUsers();
+    }
+
+    [RelayCommand]
+    private void RefreshAuditLog() => OnPropertyChanged(nameof(AuditLog));
+
+    private void RefreshUsers()
+    {
+        OnPropertyChanged(nameof(Users));
+        OnPropertyChanged(nameof(AuditLog));
+    }
+
+    // ── Remote Machines (Master side) ────────────────────────────────────────
+
+    [RelayCommand]
+    private void AddMachine()
+    {
+        if (string.IsNullOrWhiteSpace(NewMachineUrl)) return;
+        var def = new Models.MachineDefinition
+        {
+            Name    = string.IsNullOrWhiteSpace(NewMachineName) ? NewMachineUrl : NewMachineName,
+            Url     = NewMachineUrl.TrimEnd('/'),
+            Token   = NewMachineToken,
+            Enabled = true,
+        };
+        _remoteMachines.AddMachine(def);
+        NewMachineName  = string.Empty;
+        NewMachineUrl   = string.Empty;
+        NewMachineToken = string.Empty;
+    }
+
+    [RelayCommand]
+    private void RemoveMachine(MachineViewModel? vm)
+    {
+        if (vm == null) return;
+        _remoteMachines.RemoveMachine(vm.Definition.Id);
+    }
+
+    [RelayCommand]
+    private void OpenSettings()
+    {
+        Dialogs.Settings(Settings, this);
+    }
+
+    [RelayCommand]
+    public void Save()
+    {
+        // Save is called from the UI, the 15 s auto-save timer and process/lifecycle events.
+        // Read the immutable server snapshot so background callers never block on the UI
+        // thread; ConfigService serialises and atomically writes under its own lock.
+        var snapshot = ServerSnapshot.Select(viewModel => viewModel.Server).ToList();
+
+        var errors = ServerPortAllocator.ValidateProfiles(snapshot.Select(server =>
+            (server.Id, server.DisplayName, PortSetFor(server))));
+        if (errors.Count > 0)
+        {
+            var summary = string.Join(" ", errors.Take(2));
+            UiDispatcher.Post(() =>
+            {
+                foreach (var viewModel in Servers)
+                    viewModel.PortConfigurationStatus = summary;
+            });
+            return;
+        }
+
+        _config.SaveServers(snapshot);
+    }
+
+    private void RefreshCounts()
+    {
+        OnPropertyChanged(nameof(TotalServers));
+        OnPropertyChanged(nameof(RunningCount));
+        OnPropertyChanged(nameof(StoppedCount));
+    }
+
+    public void RecoverFromTextRenderingFailure()
+    {
+        foreach (var server in Servers)
+            server.ResetUiTextAfterRenderFailure();
+        foreach (var remote in RemoteServers)
+            remote.ResetUiTextAfterRenderFailure();
+    }
+
+    public void RecoverFromUiBindingFailure()
+    {
+        foreach (var server in Servers)
+            server.ResetRustReferenceAfterBindingFailure();
+    }
+
+    private static void DebugLog(string msg)
+    {
+        try
+        {
+            var exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
+                         ?? AppContext.BaseDirectory;
+            var path = System.IO.Path.Combine(exeDir, "assets", "logs", "crash.log");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            System.IO.File.AppendAllText(path, $"[{DateTime.Now:HH:mm:ss}] NAV: {msg}\n");
+        }
+        catch { }
+    }
+
+    private IEnumerable<ServerPortSet> ExistingPortSets() =>
+        Servers.Select(vm => PortSetFor(vm.Server)).ToList();
+
+    private static ServerPortSet PortSetFor(GameServer server)
+    {
+        var rustPlus = server.GameSpecificSettings.TryGetValue("appPort", out var text)
+            && int.TryParse(text, out var parsed) ? parsed : 0;
+        return new ServerPortSet(server.ServerPort, server.QueryPort, server.RconPort, rustPlus);
+    }
+
+    private string? ValidatePortSetForServer(GameServer server, ServerPortSet candidate)
+    {
+        var otherProfiles = Servers
+            .Where(viewModel => viewModel.Server.Id != server.Id)
+            .Select(viewModel => PortSetFor(viewModel.Server))
+            .ToList();
+        var errors = ServerPortAllocator.Validate(candidate, otherProfiles, PortCheckerService.IsAvailable);
+        return errors.Count == 0 ? null : string.Join(" ", errors.Take(2));
+    }
+
+    private ServerPortSet CurrentNewServerPorts() => new(
+        NewServerPort, NewServerQueryPort, NewServerRconPort, NewServerRustPlusPort);
+
+    [RelayCommand]
+    private void AutoAssignNewServerPorts() => AssignFreePorts(useGameDefaults: false);
+
+    private void AssignFreePorts(bool useGameDefaults)
+    {
+        var game = NewServerGame ?? GameRegistry.RustServer;
+        var preferred = useGameDefaults
+            ? new ServerPortSet(game.DefaultPort, game.DefaultQueryPort,
+                game.DefaultPort + 1, game.DefaultPort + 68)
+            : CurrentNewServerPorts();
+        var allocated = ServerPortAllocator.FindAvailable(
+            preferred, ExistingPortSets(), PortCheckerService.IsAvailable);
+        if (!allocated.HasValue)
+        {
+            NewServerPortsValid = false;
+            NewServerPortStatus = "No free four-port set was found in the search range.";
+            return;
+        }
+        NewServerPort = allocated.Value.Game;
+        NewServerQueryPort = allocated.Value.Query;
+        NewServerRconPort = allocated.Value.Rcon;
+        NewServerRustPlusPort = allocated.Value.RustPlus;
+        UpdateNewServerPortStatus();
+    }
+
+    private void UpdateNewServerPortStatus()
+    {
+        var errors = ServerPortAllocator.Validate(
+            CurrentNewServerPorts(), ExistingPortSets(), PortCheckerService.IsAvailable);
+        NewServerPortsValid = errors.Count == 0;
+        NewServerPortStatus = NewServerPortsValid
+            ? "All four ports are valid and currently available."
+            : string.Join(" ", errors.Take(2));
+    }
+
+}

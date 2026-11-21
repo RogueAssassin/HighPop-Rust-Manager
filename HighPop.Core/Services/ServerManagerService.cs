@@ -1,0 +1,1974 @@
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using HighPop.Games;
+using HighPop.Models;
+
+namespace HighPop.Services;
+
+public class ServerInstance
+{
+    public GameServer Server { get; }
+    public Process? Process { get; set; }
+    /// <summary>
+    /// Immutable identity of the Rust process HighPop launched or verified during reattach.
+    /// Shutdown always targets this PID instead of relying on a potentially stale Process handle.
+    /// </summary>
+    public int OwnedProcessId { get; private set; }
+    public DateTime? OwnedProcessStartedUtc { get; private set; }
+    public DateTime? StartTime { get; set; }
+    public ObservableCollection<ConsoleMessage> Log { get; } = [];
+    // Lock protecting Log for concurrent read (GetLog HTTP handler) vs write (process output threads)
+    public readonly object LogLock = new();
+    public int RestartCount { get; set; }
+    public CancellationTokenSource DailyRestartCts { get; } = new();
+    public CancellationTokenSource? RustLogTailCts { get; set; }
+    public nint JobHandle { get; set; } = nint.Zero;
+    public volatile bool IntentionalStop;
+    public string StopReason { get; set; } = string.Empty;
+    private int _ready;
+    private int _rustLogActive;
+    public bool IsReady => Volatile.Read(ref _ready) == 1;
+    public bool IsRustLogActive => Volatile.Read(ref _rustLogActive) == 1;
+    public DateTime? ReadyTime { get; private set; }
+    public string ReadySource { get; private set; } = string.Empty;
+    public DateTime? ProcessObservedUtc { get; private set; }
+    public DateTime? RustReadyUtc { get; private set; }
+    public DateTime? RconReadyUtc { get; private set; }
+    public DateTime? LastPlayerSampleUtc { get; private set; }
+    private readonly object _consoleDedupeLock = new();
+    private readonly Dictionary<string, (string Transport, long Timestamp)> _recentConsoleLines =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Times of recent crashes (last 10 minutes). Used for crash-loop detection.</summary>
+    public List<DateTime> CrashTimes { get; } = [];
+
+    public ServerInstance(GameServer server) => Server = server;
+
+    public void CaptureProcessIdentity(Process process)
+    {
+        OwnedProcessId = process.Id;
+        try { OwnedProcessStartedUtc = process.StartTime.ToUniversalTime(); }
+        catch { OwnedProcessStartedUtc = null; }
+    }
+
+    public bool TryMarkReady(string source)
+    {
+        var now = DateTime.UtcNow;
+        if (source.Contains("WebRCON", StringComparison.OrdinalIgnoreCase)) RconReadyUtc = now;
+        else if (source.Contains("Rust", StringComparison.OrdinalIgnoreCase)) RustReadyUtc = now;
+        if (Interlocked.CompareExchange(ref _ready, 1, 0) != 0) return false;
+        ReadyTime = now.ToLocalTime();
+        ReadySource = source;
+        return true;
+    }
+
+    public void MarkProcessObserved() => ProcessObservedUtc = DateTime.UtcNow;
+    public void MarkPlayerSample() => LastPlayerSampleUtc = DateTime.UtcNow;
+    public void MarkRustLogActive() => Interlocked.Exchange(ref _rustLogActive, 1);
+
+    /// <summary>
+    /// Suppresses a line only when a different Rust output transport mirrors it within two
+    /// seconds. Legitimate repeated messages from the same transport remain visible.
+    /// </summary>
+    public bool TryAcceptConsoleLine(string text, string transport)
+    {
+        var now = Stopwatch.GetTimestamp();
+        var threshold = Stopwatch.Frequency * 2;
+        lock (_consoleDedupeLock)
+        {
+            if (_recentConsoleLines.TryGetValue(text, out var previous)
+                && !string.Equals(previous.Transport, transport, StringComparison.Ordinal)
+                && now - previous.Timestamp < threshold)
+                return false;
+
+            _recentConsoleLines[text] = (transport, now);
+            if (_recentConsoleLines.Count > 2000) _recentConsoleLines.Clear();
+            return true;
+        }
+    }
+
+    public TimeSpan Uptime => StartTime.HasValue ? DateTime.Now - StartTime.Value : TimeSpan.Zero;
+
+    private const int MaxLogLines = 500;
+    public void AddToLog(ConsoleMessage msg)
+    {
+        lock (LogLock)
+        {
+            Log.Add(msg);
+            while (Log.Count > MaxLogLines) Log.RemoveAt(0);
+        }
+    }
+    public List<ConsoleMessage> GetLogSnapshot() { lock (LogLock) return Log.ToList(); }
+
+    public void CancelAuxiliaryMonitoring()
+    {
+        try { RustLogTailCts?.Cancel(); } catch { }
+        RustLogTailCts?.Dispose();
+        RustLogTailCts = null;
+        ReleaseRcon();
+    }
+
+    // ── Shared WebRCON channel ────────────────────────────────────────────────
+    // Background senders (broadcasts, scheduler, Web API, Discord, log watches and the Oxide
+    // stop path) reuse one persistent WebRCON connection per running server instead of opening
+    // and authenticating a new WebSocket for every command.
+    private readonly SemaphoreSlim _rconGate = new(1, 1);
+    private RconService? _rcon;
+
+    /// <summary>Why the shared channel last failed to connect (empty after a success).</summary>
+    public string LastRconError { get; private set; } = string.Empty;
+
+    public async Task<RconService?> GetRconAsync(
+        string host,
+        int port,
+        string password,
+        CancellationToken cancellationToken)
+    {
+        var current = Volatile.Read(ref _rcon);
+        if (current?.IsConnected == true) return current;
+
+        await _rconGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            current = Volatile.Read(ref _rcon);
+            if (current?.IsConnected == true) return current;
+            Interlocked.Exchange(ref _rcon, null)?.Dispose();
+
+            var rcon = new RconService();
+            if (!await rcon.ConnectAsync(host, port, password, cancellationToken).ConfigureAwait(false))
+            {
+                LastRconError = rcon.LastError;
+                rcon.Dispose();
+                return null;
+            }
+            LastRconError = string.Empty;
+            Volatile.Write(ref _rcon, rcon);
+            return rcon;
+        }
+        finally { _rconGate.Release(); }
+    }
+
+    /// <summary>Drops the shared channel without waiting (safe on the UI thread).</summary>
+    public void ReleaseRcon(RconService? expected = null)
+    {
+        if (expected != null)
+        {
+            if (Interlocked.CompareExchange(ref _rcon, null, expected) == expected)
+                expected.Dispose();
+            return;
+        }
+        Interlocked.Exchange(ref _rcon, null)?.Dispose();
+    }
+}
+
+public sealed record ServerHealthSnapshot(
+    string ServerId,
+    string DisplayName,
+    bool ProcessRunning,
+    DateTime? ProcessObservedUtc,
+    DateTime? RustReadyUtc,
+    DateTime? RconReadyUtc,
+    DateTime? LastPlayerSampleUtc,
+    int CurrentPlayers,
+    ServerDesiredState DesiredState,
+    ServerLifecyclePhase LifecyclePhase,
+    string LifecycleReason);
+
+public class ServerManagerService
+{
+    private readonly NetworkMonitorService _network;
+    private readonly ConfigService _config;
+    private readonly RustTelemetryService _telemetry;
+    private readonly ServerLifecycleCoordinator _lifecycle;
+    private readonly ServerHygieneService _hygiene;
+    private readonly ConcurrentDictionary<string, ServerInstance> _running = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _lifecycleGates = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeGracefulStops = new();
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<DateTime>> _crashHistory = new();
+    private readonly ConcurrentDictionary<string, long> _recoveryGenerations = new();
+
+    public event Action<string, ConsoleMessage>? LogReceived;
+    public event Action<string, ServerStatus>?  StatusChanged;
+    public event Action<ServerLifecycleTransition>? LifecycleChanged;
+    /// <summary>Fired when a server has crashed too many times and auto-restart gives up.</summary>
+    public event Action<string>? CrashLimitReached;
+    /// <summary>Fired when a server's ports were automatically reassigned because they were in use.</summary>
+    public event Action<GameServer>? PortsReassigned;
+
+    public ServerManagerService(
+        ConfigService config,
+        NetworkMonitorService network,
+        RustTelemetryService telemetry,
+        ServerLifecycleCoordinator lifecycle,
+        ServerHygieneService hygiene)
+    {
+        _config  = config;
+        _network = network;
+        _telemetry = telemetry;
+        _lifecycle = lifecycle;
+        _hygiene = hygiene;
+        _lifecycle.Transitioned += transition => LifecycleChanged?.Invoke(transition);
+    }
+
+    public ServerInstance? GetInstance(string serverId)
+        => _running.TryGetValue(serverId, out var i) ? i : null;
+
+    /// <summary>
+    /// True after Rust reports startup completion, WebRCON connects, or the configured
+    /// slow-start grace window expires. Automated health/idle actions must not run earlier.
+    /// </summary>
+    public bool IsServerReady(string serverId)
+    {
+        if (!_running.TryGetValue(serverId, out var inst) || inst.Process?.HasExited != false)
+            return false;
+        if (inst.IsReady) return true;
+
+        var graceMinutes = Math.Clamp(inst.Server.StartupGraceMinutes, 1, 60);
+        if (inst.Uptime < TimeSpan.FromMinutes(graceMinutes)) return false;
+
+        MarkServerReady(inst.Server, inst, $"startup grace elapsed ({graceMinutes} min)");
+        return true;
+    }
+
+    public void ReportRconConnected(string serverId)
+    {
+        if (_running.TryGetValue(serverId, out var inst))
+            MarkServerReady(inst.Server, inst, "WebRCON connected");
+    }
+
+    public void ReportPlayerSample(string serverId)
+    {
+        if (_running.TryGetValue(serverId, out var inst)) inst.MarkPlayerSample();
+    }
+
+    public IReadOnlyList<ServerHealthSnapshot> GetHealthSnapshots() => _running.Values
+        .OrderBy(instance => instance.Server.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .Select(instance => new ServerHealthSnapshot(
+            instance.Server.Id,
+            instance.Server.DisplayName,
+            instance.Process?.HasExited == false,
+            instance.ProcessObservedUtc,
+            instance.RustReadyUtc,
+            instance.RconReadyUtc,
+            instance.LastPlayerSampleUtc,
+            instance.Server.CurrentPlayers,
+            instance.Server.DesiredState,
+            instance.Server.LifecyclePhase,
+            instance.Server.LastLifecycleReason))
+        .ToList();
+
+    public int RunningCount => _running.Count;
+
+    public GameServer? GetServer(string serverId)
+        => _running.TryGetValue(serverId, out var i) ? i.Server : null;
+
+    /// <summary>Other currently-running servers in the same group and of the same game, used for ban-list sync.</summary>
+    public IEnumerable<GameServer> GetRunningGroupSiblings(GameServer server)
+        => _running.Values
+            .Select(i => i.Server)
+            .Where(s => s.Id != server.Id
+                     && s.GameId == server.GameId
+                     && !string.IsNullOrEmpty(server.GroupId)
+                     && s.GroupId == server.GroupId);
+
+    /// <summary>
+    /// Called once at HighPop startup for every saved server. If the server has a persisted
+    /// RunningPid and a matching process is still alive (HighPop was closed while the game
+    /// server kept running), reattach to it so Status/Stop/Kill work again. Otherwise
+    /// clears the stale PID.
+    /// </summary>
+    public bool TryReattach(GameServer server)
+    {
+        if (server.RunningPid <= 0)
+        {
+            _lifecycle.InitializeAfterLoad(server, reattached: false);
+            return false;
+        }
+        try
+        {
+            var p = Process.GetProcessById(server.RunningPid);
+            if (p.HasExited)
+            {
+                ClearRunningIdentity(server);
+                _lifecycle.InitializeAfterLoad(server, reattached: false);
+                return false;
+            }
+
+            var plugin = GameRegistry.Get(server.GameId);
+            var exeName = plugin != null ? Path.GetFileNameWithoutExtension(plugin.Executable) : null;
+            if (!string.IsNullOrEmpty(exeName) && !string.Equals(p.ProcessName, exeName, StringComparison.OrdinalIgnoreCase))
+            {
+                // PID was recycled by an unrelated process — not actually our server.
+                ClearRunningIdentity(server);
+                _lifecycle.InitializeAfterLoad(server, reattached: false);
+                return false;
+            }
+
+            if (server.RunningProcessStartedUtc is { } expectedStart
+                && Math.Abs((p.StartTime.ToUniversalTime() - expectedStart).TotalSeconds) > 2)
+            {
+                ClearRunningIdentity(server);
+                _lifecycle.InitializeAfterLoad(server, reattached: false);
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(server.RunningExecutablePath))
+            {
+                var actualPath = p.MainModule?.FileName;
+                if (string.IsNullOrWhiteSpace(actualPath)
+                    || !string.Equals(Path.GetFullPath(actualPath),
+                        Path.GetFullPath(server.RunningExecutablePath),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    ClearRunningIdentity(server);
+                    _lifecycle.InitializeAfterLoad(server, reattached: false);
+                    return false;
+                }
+            }
+
+            var inst = new ServerInstance(server) { Process = p, StartTime = SafeStartTime(p) };
+            inst.CaptureProcessIdentity(p);
+            inst.MarkProcessObserved();
+            inst.TryMarkReady("reattached running process");
+            try { p.EnableRaisingEvents = true; } catch { }
+            p.Exited += async (_, _) =>
+            {
+                if (!IsCurrentInstance(server.Id, inst)) return;
+                _network.UnregisterServer(server.Id);
+                RecordProcessExit(server, inst, SafeExitCode(p), inst.IntentionalStop);
+                ClearRunningIdentity(server);
+                RemoveInstanceIfCurrent(server.Id, inst);
+                if (inst.IntentionalStop)
+                {
+                    SetStatus(server, ServerStatus.Stopped);
+                    _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
+                        server.LastLifecycleInitiator, inst.StopReason,
+                        server.LastLifecycleOperationId);
+                    return;
+                }
+
+                SetStatus(server, ServerStatus.Error);
+                if (!ServerLifecycleRules.CanRecover(server))
+                {
+                    _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
+                        LifecycleInitiator.AlwaysOn, "Reattached Rust process exited unexpectedly");
+                    return;
+                }
+
+                var recovery = _lifecycle.BeginRecovery(server,
+                    "Reattached Rust process exited unexpectedly");
+                var generation = _recoveryGenerations.AddOrUpdate(server.Id, 1,
+                    (_, current) => current + 1);
+                await RecoverUnexpectedExitAsync(server, generation,
+                    recovery, server.AutoRestartDelaySec);
+            };
+            _running[server.Id] = inst;
+            inst.RustLogTailCts = new CancellationTokenSource();
+            _ = TailRustLogAsync(server, inst, includeRecentHistory: true,
+                cancellationToken: inst.RustLogTailCts.Token);
+            RememberRunningIdentity(server, p);
+            _network.RegisterServer(server.Id, p.Id);
+            SetStatus(server, ServerStatus.Running);
+            _lifecycle.InitializeAfterLoad(server, reattached: true);
+            var msg = new ConsoleMessage { Text = $"[HighPop] Reattached to running process (PID {p.Id}) after HighPop restart.", Type = ConsoleMessageType.Info };
+            inst.AddToLog(msg);
+            LogReceived?.Invoke(server.Id, msg);
+            return true;
+        }
+        catch
+        {
+            ClearRunningIdentity(server);
+            _lifecycle.InitializeAfterLoad(server, reattached: false);
+            return false;
+        }
+    }
+
+    private static DateTime? SafeStartTime(Process p)
+    {
+        try { return p.StartTime; } catch { return null; }
+    }
+
+    public async Task StartAsync(
+        GameServer server,
+        LifecycleInitiator initiator = LifecycleInitiator.Operator,
+        string reason = "Start requested")
+    {
+        if (IsRunning(server.Id)) return;
+        // Reject invalid profiles before persisting Running intent. Otherwise a bad executable
+        // or credential could be retried forever after the manager restarts.
+        var plugin = GameRegistry.Get(server.GameId);
+        if (plugin == null) throw new InvalidOperationException("This profile is not a Rust Dedicated Server.");
+        var validationError = plugin.ValidateBeforeStart(server);
+        if (validationError != null) throw new InvalidOperationException(validationError);
+
+        var operation = _lifecycle.RequestStart(server, initiator, reason);
+        var operationToken = _lifecycle.GetCancellationToken(server, operation.Generation);
+        var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
+        try { await gate.WaitAsync(operationToken); }
+        catch (OperationCanceledException) { return; }
+        try
+        {
+            if (!_lifecycle.IsCurrent(server, operation.Generation)
+                || server.DesiredState != ServerDesiredState.Running)
+                return;
+            try { await StartCoreAsync(server, operation, operationToken); }
+            catch (OperationCanceledException) when (!_lifecycle.IsCurrent(server, operation.Generation))
+            {
+                // A newer Stop/Start owns the profile now; cancellation is an expected outcome.
+            }
+        }
+        finally { gate.Release(); }
+    }
+
+    private async Task StartCoreAsync(
+        GameServer server,
+        ServerLifecycleTransition operation,
+        CancellationToken operationToken = default)
+    {
+        if (IsRunning(server.Id)) return;
+
+        var plugin = GameRegistry.Get(server.GameId);
+        if (plugin == null) throw new InvalidOperationException("This profile is not a Rust Dedicated Server.");
+
+        var validationError = plugin.ValidateBeforeStart(server);
+        if (validationError != null) throw new InvalidOperationException(validationError);
+
+        SetStatus(server, ServerStatus.Starting);
+        try
+        {
+
+        try { Directory.CreateDirectory(server.InstallPath); } catch { }
+        await plugin.PreStartAsync(server);
+        operationToken.ThrowIfCancellationRequested();
+
+        // Pre-flight: kill any zombie instance of THIS server's own executable.
+        // Must match on the resolved install-path exe, not just process name — two
+        // Rust servers share the RustDedicated process name, so killing by name alone
+        // name, and killing by name alone would kill the other server's process.
+        var inst0 = new ServerInstance(server);
+        _running[server.Id] = inst0;
+        var exeName = Path.GetFileNameWithoutExtension(plugin.Executable);
+        if (!string.IsNullOrEmpty(exeName))
+        {
+            var expectedExePath = Path.Combine(server.InstallPath, plugin.Executable);
+            var otherRunningPids = _running.Values
+                .Where(i => i.Server.Id != server.Id)
+                .Select(i => i.Process?.Id ?? 0)
+                .ToHashSet();
+
+            var candidates = Process.GetProcessesByName(exeName);
+            var zombies = new List<Process>();
+            foreach (var p in candidates)
+            {
+                var keep = false;
+                try
+                {
+                    if (!p.HasExited && !otherRunningPids.Contains(p.Id))
+                    {
+                        var path = p.MainModule?.FileName;
+                        keep = path != null &&
+                               string.Equals(Path.GetFullPath(path), Path.GetFullPath(expectedExePath),
+                                   StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+                catch { keep = false; }
+                if (keep) zombies.Add(p);
+                else p.Dispose();
+            }
+            foreach (var z in zombies)
+            {
+                using (z)
+                {
+                    try
+                    {
+                        var zombiePid = z.Id;
+                        z.Kill(entireProcessTree: true);
+                        await WaitForProcessExitAsync(z, TimeSpan.FromSeconds(3));
+                        var msg = new ConsoleMessage { Text = $"[PRE-FLIGHT] Killed leftover process {exeName} (PID {zombiePid})", Type = ConsoleMessageType.Warning };
+                        inst0.AddToLog(msg);
+                        LogReceived?.Invoke(server.Id, msg);
+                    }
+                    catch { /* process already gone */ }
+                }
+            }
+            if (zombies.Count > 0)
+                await Task.Delay(1000); // brief pause so OS releases ports
+        }
+
+        // Start every Rust generation with fresh server/framework logs. The previous
+        // generation is first committed to a bounded ZIP archive, so a failed archive can
+        // never destroy the only diagnostic copy.
+        var archiveStatus = new ConsoleMessage
+        {
+            Text = "[LOG ARCHIVE] Checking and archiving previous Rust, Oxide, and Carbon logs before startup...",
+            Type = ConsoleMessageType.System,
+        };
+        inst0.AddToLog(archiveStatus);
+        LogReceived?.Invoke(server.Id, archiveStatus);
+        var logArchive = await Task.Run(() => _hygiene.ArchiveLogsForStart(server), operationToken);
+        operationToken.ThrowIfCancellationRequested();
+        if (!logArchive.Succeeded)
+        {
+            var warning = new ConsoleMessage
+            {
+                Text = $"[LOG ARCHIVE] ⚠ {logArchive.Error}",
+                Type = ConsoleMessageType.Warning,
+            };
+            inst0.AddToLog(warning);
+            LogReceived?.Invoke(server.Id, warning);
+        }
+        else if (logArchive.ArchivePath != null)
+        {
+            var archived = new ConsoleMessage
+            {
+                Text = $"[LOG ARCHIVE] Saved {logArchive.ArchivedFiles} file(s) " +
+                       $"({FormatByteCount(logArchive.ArchivedBytes)}) to {logArchive.ArchivePath}. " +
+                       $"Keeping the latest {ServerHygieneService.RetainedLogArchives} start archives.",
+                Type = logArchive.DeleteFailures == 0
+                    ? ConsoleMessageType.System
+                    : ConsoleMessageType.Warning,
+            };
+            if (logArchive.TruncatedFiles > 0)
+            {
+                archived.Text += $" {logArchive.TruncatedFiles} log(s) were larger than " +
+                                 $"{FormatByteCount(ServerHygieneService.MaxArchivedBytesPerLog)}, so only their last " +
+                                 $"{FormatByteCount(ServerHygieneService.MaxArchivedBytesPerLog)} were kept. " +
+                                 "A log that big usually means a plugin is printing in a loop; check the end of that log.";
+                archived.Type = ConsoleMessageType.Warning;
+            }
+            if (logArchive.DeleteFailures > 0)
+                archived.Text += $" {logArchive.DeleteFailures} source file(s) could not be removed and will be retried next start.";
+            inst0.AddToLog(archived);
+            LogReceived?.Invoke(server.Id, archived);
+        }
+
+        // Pre-flight: auto-reassign ports if any are in use
+        var conflictingPorts = PortCheckerService.CheckServerPorts(server).Where(r => !r.IsAvailable).ToList();
+        if (conflictingPorts.Any() && server.LastStarted == null)
+        {
+            int oldGame  = server.ServerPort;
+            int oldQuery = server.QueryPort;
+            int oldRcon  = server.RconPort;
+            int oldApp   = server.GameSpecificSettings.TryGetValue("appPort", out var appPortText)
+                && int.TryParse(appPortText, out var appPort) ? appPort : 0;
+
+            // Find a free offset (up to 1000) where all ports are available
+            int offset = 1;
+            while (offset < 1000)
+            {
+                bool ok = true;
+                if (!PortCheckerService.CheckPort(oldGame + offset, "UDP").IsAvailable)  { ok = false; }
+                if (ok && oldQuery > 0 && !PortCheckerService.CheckPort(oldQuery + offset, "UDP").IsAvailable) { ok = false; }
+                if (ok && oldRcon  > 0 && !PortCheckerService.CheckPort(oldRcon  + offset, "TCP").IsAvailable) { ok = false; }
+                if (ok && oldApp   > 0 && !PortCheckerService.CheckPort(oldApp   + offset, "TCP").IsAvailable) { ok = false; }
+                if (ok) break;
+                offset++;
+            }
+
+            if (offset < 1000)
+            {
+                server.ServerPort = oldGame  + offset;
+                if (oldQuery > 0) server.QueryPort = oldQuery + offset;
+                if (oldRcon  > 0) server.RconPort  = oldRcon  + offset;
+                if (oldApp   > 0) server.GameSpecificSettings["appPort"] = (oldApp + offset).ToString();
+
+                var msg = new ConsoleMessage
+                {
+                    Text = $"[HighPop] Ports in use — automatically reassigned: game {oldGame}→{server.ServerPort}" +
+                           (oldQuery > 0 ? $", query {oldQuery}→{server.QueryPort}" : "") +
+                           (oldRcon  > 0 ? $", rcon {oldRcon}→{server.RconPort}"   : "") +
+                           (oldApp   > 0 ? $", Rust+ {oldApp}→{oldApp + offset}"   : ""),
+                    Type = ConsoleMessageType.Warning
+                };
+                inst0.AddToLog(msg);
+                LogReceived?.Invoke(server.Id, msg);
+                PortsReassigned?.Invoke(server);
+            }
+            else
+            {
+                // Could not find free ports — warn and proceed anyway
+                foreach (var r in conflictingPorts)
+                {
+                    var w = new ConsoleMessage { Text = $"[PRE-FLIGHT] ⚠ {r.Message}", Type = ConsoleMessageType.Warning };
+                    inst0.AddToLog(w);
+                    LogReceived?.Invoke(server.Id, w);
+                }
+            }
+        }
+        else if (conflictingPorts.Any())
+        {
+            // Not the first start for this server — leave the saved ports alone, just warn clearly
+            // so the user can fix it manually (stop the conflicting process, or change the port).
+            foreach (var r in conflictingPorts)
+            {
+                var w = new ConsoleMessage
+                {
+                    Text = $"[PRE-FLIGHT] ⚠ {r.Message} — fix it in Settings or stop whatever else is using that port.",
+                    Type = ConsoleMessageType.Warning
+                };
+                inst0.AddToLog(w);
+                LogReceived?.Invoke(server.Id, w);
+            }
+        }
+
+        var args = plugin.BuildStartArguments(server);
+        if (!string.IsNullOrWhiteSpace(server.CustomArgs)) args += $" {server.CustomArgs.Replace(Environment.NewLine, " ")}";
+        var exe  = Path.Combine(server.InstallPath, plugin.Executable);
+
+        // If primary exe missing, try auto-detect from install folder
+        if (!File.Exists(exe))
+        {
+            var found = TryFindExecutable(server.InstallPath, plugin.Executable);
+            if (found != null)
+                exe = found;
+            else
+                throw new FileNotFoundException("Server executable not found in: " + server.InstallPath);
+        }
+
+        var exeDir = Path.GetDirectoryName(exe) ?? server.InstallPath;
+        var oxideInstalled = ModManagerService.GetInstalledOxideVersion(server.InstallPath) != null;
+        var carbonInstalled = ModManagerService.IsCarbonInstalled(server.InstallPath);
+        var useRustLiveLog = ShouldUseRustLiveLog(carbonInstalled);
+        var captureProcessStreams = !useRustLiveLog;
+        var redirectStandardInput = !oxideInstalled;
+        var psi = new ProcessStartInfo
+        {
+            FileName               = exe,
+            Arguments              = args,
+            WorkingDirectory       = exeDir,
+            UseShellExecute        = false,
+            RedirectStandardOutput = captureProcessStreams,
+            RedirectStandardError  = captureProcessStreams,
+            // Vanilla and Carbon retain direct process commands. Oxide uses WebRCON because
+            // redirected standard handles trigger its duplicate output fallback.
+            RedirectStandardInput  = redirectStandardInput,
+            // Oxide expects valid Windows console handles. CREATE_NO_WINDOW leaves them
+            // unsupported and makes Oxide install a second output-redirection path.
+            // WindowStyle.Hidden supplies real handles without exposing the console window.
+            CreateNoWindow         = captureProcessStreams,
+            WindowStyle            = ProcessWindowStyle.Hidden,
+        };
+        if (captureProcessStreams)
+        {
+            psi.StandardOutputEncoding = System.Text.Encoding.UTF8;
+            psi.StandardErrorEncoding = System.Text.Encoding.UTF8;
+        }
+        psi.Environment["ROGUERUST_UPDATE_MANIFEST_URL"] =
+            ModManagerService.GetRogueRustManifestUrl(server.RogueRustChannel);
+        if (!OperatingSystem.IsWindows()) ConfigureLinuxLaunch(psi, exeDir);
+
+        var inst = inst0;
+
+        var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+
+        // Some engines (especially Oxide) mirror the same line to multiple transports.
+        // ServerInstance owns cross-transport de-duplication so the Rust logfile fallback
+        // can also share it with stdout and stderr.
+        var lastStdoutType = ConsoleMessageType.Info;
+        var lastStderrType = ConsoleMessageType.Info;
+
+        void AddLog(string text, bool fromStandardError)
+        {
+            var previousType = fromStandardError ? lastStderrType : lastStdoutType;
+            var parsed = ConsoleOutputParser.Parse(text, fromStandardError, previousType);
+            if (parsed == null) return;
+            if (fromStandardError) lastStderrType = parsed.Type;
+            else lastStdoutType = parsed.Type;
+
+            var transport = fromStandardError ? "stderr" : "stdout";
+            if (!inst.TryAcceptConsoleLine(parsed.Text, transport)) return;
+
+            var msg = new ConsoleMessage
+            {
+                Text = parsed.Text,
+                Type = parsed.Type,
+                Source = parsed.Source,
+            };
+            inst.AddToLog(msg);
+            LogReceived?.Invoke(server.Id, msg);
+            if (server.GameId == "rust"
+                && parsed.Text.Contains("Server startup complete", StringComparison.OrdinalIgnoreCase))
+                MarkServerReady(server, inst, "Rust startup log");
+        }
+
+        if (captureProcessStreams) proc.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data == null) return;
+            if (plugin.IsNoiseLine(e.Data)) return;
+            AddLog(e.Data, fromStandardError: false);
+        };
+
+        if (captureProcessStreams) proc.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data == null) return;
+            if (plugin.IsNoiseLine(e.Data)) return;
+            AddLog(e.Data, fromStandardError: true);
+        };
+
+        proc.Exited += async (_, _) =>
+        {
+            try
+            {
+                inst.DailyRestartCts.Cancel();
+                JobObjectService.ReleaseJob(inst.JobHandle);
+                inst.JobHandle = nint.Zero;
+
+                // An old Exited callback must never remove or change the state of a
+                // replacement process that has already started for this profile.
+                if (!IsCurrentInstance(server.Id, inst)) return;
+
+                _network.UnregisterServer(server.Id);
+                var exitCode = SafeExitCode(proc);
+                RecordProcessExit(server, inst, exitCode, inst.IntentionalStop);
+                ClearRunningIdentity(server);
+
+                if (inst.IntentionalStop)
+                {
+                    RemoveInstanceIfCurrent(server.Id, inst);
+                    SetStatus(server, ServerStatus.Stopped);
+                    return;
+                }
+
+                SetStatus(server, ServerStatus.Error);
+
+                if (!ServerLifecycleRules.CanRecover(server))
+                {
+                    RemoveInstanceIfCurrent(server.Id, inst);
+                    _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
+                        LifecycleInitiator.AlwaysOn,
+                        "Rust process exited unexpectedly and recovery policy is not active");
+                    return;
+                }
+
+                // Crash history belongs to the server profile, not one short-lived process
+                // instance. Otherwise every successful relaunch resets the protection.
+                var now = DateTime.Now;
+                var crashes = _crashHistory.GetOrAdd(server.Id, _ => new ConcurrentQueue<DateTime>());
+                crashes.Enqueue(now);
+                while (crashes.TryPeek(out var oldest) && now - oldest > TimeSpan.FromMinutes(10))
+                    crashes.TryDequeue(out _);
+                var crashCount = crashes.Count;
+
+                int maxRetries = server.AutoRestartMaxRetries > 0 ? server.AutoRestartMaxRetries : 5;
+
+                if (!server.KeepOnline && crashCount > maxRetries)
+                {
+                    var giveUp = new ConsoleMessage
+                    {
+                        Text = $"[HighPop] Server crashed {crashCount}× in 10 min (limit {maxRetries}). Auto-restart disabled.",
+                        Type = ConsoleMessageType.Error
+                    };
+                    inst.AddToLog(giveUp);
+                    LogReceived?.Invoke(server.Id, giveUp);
+                    server.AutoRestart = false;
+                    SetStatus(server, ServerStatus.Error);
+                    RemoveInstanceIfCurrent(server.Id, inst);
+                    CrashLimitReached?.Invoke(server.Id);
+                    return;
+                }
+
+                int baseDelaySec = Math.Clamp(
+                    server.AutoRestartDelaySec > 0 ? server.AutoRestartDelaySec : 10,
+                    1,
+                    300);
+                int delaySec = server.KeepOnline
+                    ? Math.Min(300, baseDelaySec * (1 << Math.Min(Math.Max(0, crashCount - 1), 5)))
+                    : baseDelaySec;
+                inst.RestartCount++;
+                var delayMsg = new ConsoleMessage
+                {
+                    Text = server.KeepOnline
+                        ? $"[HighPop] Server stopped unexpectedly (crash #{crashCount}). Always-on recovery starts in {delaySec}s..."
+                        : $"[HighPop] Server stopped unexpectedly (crash #{crashCount}/{maxRetries}). Restarting in {delaySec}s...",
+                    Type = ConsoleMessageType.Warning
+                };
+                inst.AddToLog(delayMsg);
+                LogReceived?.Invoke(server.Id, delayMsg);
+
+                RemoveInstanceIfCurrent(server.Id, inst);
+                var recovery = _lifecycle.BeginRecovery(server,
+                    $"Rust process exited unexpectedly (crash #{crashCount})");
+                var generation = _recoveryGenerations.AddOrUpdate(server.Id, 1, (_, current) => current + 1);
+                await RecoverUnexpectedExitAsync(server, generation, recovery, delaySec);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[HighPop] Exited handler error for {server.Id}: {ex.Message}");
+            }
+        };
+
+        operationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            proc.Start();
+        }
+        catch (Win32Exception ex)
+        {
+            _running.TryRemove(server.Id, out _);
+            SetStatus(server, ServerStatus.Error);
+            var errMsg = new ConsoleMessage
+            {
+                Text = $"[ERR] Failed to start server process: {ex.Message}",
+                Type = ConsoleMessageType.Error
+            };
+            LogReceived?.Invoke(server.Id, errMsg);
+            throw;
+        }
+
+        // Publish process identity before output handlers can observe a fast startup line.
+        inst.Process   = proc;
+        inst.StartTime = DateTime.Now;
+        inst.CaptureProcessIdentity(proc);
+        inst.MarkProcessObserved();
+        server.LastStarted = DateTime.Now;
+        RememberRunningIdentity(server, proc);
+
+        // Vanilla and Oxide use one authoritative Rust logfile, preventing mirrored process
+        // stream lines. Carbon retains its richer formatted process-stream console.
+        if (useRustLiveLog)
+        {
+            inst.RustLogTailCts = new CancellationTokenSource();
+            _ = TailRustLogAsync(server, inst, includeRecentHistory: false,
+                cancellationToken: inst.RustLogTailCts.Token);
+        }
+
+        if (captureProcessStreams)
+        {
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+        }
+
+        // Rust output is captured in HighPop, so hide any window the process creates. Carbon
+        // uses CreateNoWindow; Vanilla/Oxide receive a real but hidden console and publish
+        // their reporting through the single logfile source above.
+        _ = ApplyWindowStyleAsync(proc, SW_HIDE, 30);
+
+        // Apply CPU affinity
+        if (server.CpuAffinityMask != 0)
+        {
+            try { proc.ProcessorAffinity = (IntPtr)server.CpuAffinityMask; } catch { }
+        }
+
+        // Apply process priority
+        try
+        {
+            proc.PriorityClass = server.ProcessPriority switch
+            {
+                "AboveNormal" => ProcessPriorityClass.AboveNormal,
+                "High"        => ProcessPriorityClass.High,
+                "BelowNormal" => ProcessPriorityClass.BelowNormal,
+                "RealTime"    => ProcessPriorityClass.RealTime,
+                _             => ProcessPriorityClass.Normal,
+            };
+        }
+        catch { }
+
+        // Apply RAM limit via Windows Job Object
+        if (server.MaxRamMb > 0)
+        {
+            inst.JobHandle = JobObjectService.ApplyRamLimit(proc, server.MaxRamMb);
+            var ramMessage = new ConsoleMessage
+            {
+                Text = inst.JobHandle != nint.Zero
+                    ? $"[HighPop] Hard RAM cap active at {server.MaxRamMb:N0} MB. Windows can terminate Rust if this limit is exceeded."
+                    : OperatingSystem.IsWindows()
+                        ? $"[HighPop] Could not apply the configured {server.MaxRamMb:N0} MB RAM cap."
+                        : $"[HighPop] The {server.MaxRamMb:N0} MB RAM cap is only enforced on Windows. On Linux, limit memory with systemd (MemoryMax=) or cgroups.",
+                Type = inst.JobHandle != nint.Zero || !OperatingSystem.IsWindows()
+                    ? ConsoleMessageType.Warning
+                    : ConsoleMessageType.Error,
+                Source = "HighPop",
+            };
+            inst.AddToLog(ramMessage);
+            LogReceived?.Invoke(server.Id, ramMessage);
+        }
+
+        // Schedule daily restart if enabled
+        if (server.DailyRestartEnabled)
+            _ = RunDailyRestartAsync(server, inst);
+
+        // Register with bandwidth tracking
+        _network.RegisterServer(server.Id, proc.Id);
+
+        // Add firewall rules
+        if (server.FirewallAutoManage)
+        {
+            var firewall = FirewallService.AddRules(server);
+            if (!firewall.Success)
+                InjectLogLine(server.Id, $"[Firewall] {firewall.Message}",
+                    firewall.RequiresElevation || !OperatingSystem.IsWindows()
+                        ? ConsoleMessageType.Warning
+                        : ConsoleMessageType.Error);
+        }
+
+        SetStatus(server, ServerStatus.Running);
+        _lifecycle.MarkPhase(server, ServerLifecyclePhase.ProcessRunning,
+            operation.Initiator, "Rust process started", operation.OperationId);
+        _ = _telemetry.AppendAsync(
+            server,
+            "server.process_started",
+            "manager",
+            new Dictionary<string, string>
+            {
+                ["pid"] = proc.Id.ToString(),
+                ["port"] = server.ServerPort.ToString(),
+                ["rconPort"] = server.RconPort.ToString(),
+            });
+        }
+        catch
+        {
+            _running.TryRemove(server.Id, out _);
+            ClearRunningIdentity(server);
+            SetStatus(server, ServerStatus.Error);
+            if (_lifecycle.IsCurrent(server, operation.Generation))
+                _lifecycle.MarkPhase(server,
+                    operation.Initiator == LifecycleInitiator.AlwaysOn
+                        ? ServerLifecyclePhase.Recovering
+                        : ServerLifecyclePhase.Faulted,
+                    operation.Initiator, "Rust process failed to start", operation.OperationId);
+            throw;
+        }
+    }
+
+    public async Task StopAsync(
+        GameServer server,
+        string reason = "Requested from HighPop",
+        LifecycleInitiator initiator = LifecycleInitiator.Operator)
+    {
+        // Persist desired Stopped before waiting for any active lifecycle operation. A queued
+        // or stale Start observes the new generation and cannot resurrect this server.
+        var operation = _lifecycle.RequestStop(server, initiator, reason);
+        CancelRecovery(server.Id);
+        var escalation = new CancellationTokenSource();
+        _activeGracefulStops.AddOrUpdate(server.Id, escalation, (_, current) =>
+        {
+            current.Cancel();
+            return escalation;
+        });
+        var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try
+        {
+            if (!_lifecycle.IsCurrent(server, operation.Generation)) return;
+            await StopCoreAsync(server, reason, operation, escalation.Token);
+        }
+        finally
+        {
+            if (_activeGracefulStops.TryGetValue(server.Id, out var current)
+                && ReferenceEquals(current, escalation))
+                _activeGracefulStops.TryRemove(server.Id, out _);
+            escalation.Dispose();
+            gate.Release();
+        }
+    }
+
+    private async Task StopCoreAsync(
+        GameServer server,
+        string reason,
+        ServerLifecycleTransition operation,
+        CancellationToken escalationToken)
+    {
+        if (!_running.TryGetValue(server.Id, out var inst))
+        {
+            // HighPop may have been restarted while this server kept running — fall back
+            // to killing the orphaned PID we persisted to disk.
+            await KillOrphanedPidAsync(server);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
+                operation.Initiator, reason, operation.OperationId);
+            return;
+        }
+        inst.IntentionalStop = true;
+        inst.StopReason = reason;
+        inst.DailyRestartCts.Cancel();
+        SetStatus(server, ServerStatus.Stopping);
+        InjectLogLine(server.Id, $"[HighPop] Stop requested: {reason}", ConsoleMessageType.Warning);
+
+        var plugin = GameRegistry.Get(server.GameId);
+        var stopCmd = plugin?.GetStopCommand(server);
+
+        var gracefulCommandSent = false;
+        if (stopCmd != null && inst.Process?.HasExited == false)
+        {
+            using (var saveCommandCts = CancellationTokenSource.CreateLinkedTokenSource(escalationToken))
+            {
+                saveCommandCts.CancelAfter(TimeSpan.FromSeconds(8));
+                await TrySendServerCommandAsync(server, inst, "server.save",
+                    "Saving Rust world before shutdown", saveCommandCts.Token);
+            }
+            try { await Task.Delay(1000, escalationToken); }
+            catch (OperationCanceledException) { }
+            using (var stopCommandCts = CancellationTokenSource.CreateLinkedTokenSource(escalationToken))
+            {
+                stopCommandCts.CancelAfter(TimeSpan.FromSeconds(8));
+                gracefulCommandSent = await TrySendServerCommandAsync(server, inst, stopCmd,
+                    "Requesting clean Rust shutdown", stopCommandCts.Token);
+            }
+            try
+            {
+                var timeoutSeconds = ServerMaintenancePolicy.ClampGracefulStopTimeout(
+                    server.GracefulStopTimeoutSeconds);
+                using var gracefulStopCts = CancellationTokenSource.CreateLinkedTokenSource(escalationToken);
+                gracefulStopCts.CancelAfter(gracefulCommandSent
+                    ? TimeSpan.FromSeconds(timeoutSeconds)
+                    : TimeSpan.FromSeconds(2));
+                await inst.Process.WaitForExitAsync(gracefulStopCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                var timeoutSeconds = ServerMaintenancePolicy.ClampGracefulStopTimeout(
+                    server.GracefulStopTimeoutSeconds);
+                InjectLogLine(server.Id,
+                    escalationToken.IsCancellationRequested
+                        ? "[HighPop] Force Stop requested; escalating immediately to process-tree termination."
+                        : gracefulCommandSent
+                            ? $"[HighPop] Rust did not exit within {timeoutSeconds} seconds; forcing the process to close."
+                            : "[HighPop] No usable process-console or WebRCON shutdown channel was available; forcing the process to close.",
+                    ConsoleMessageType.Warning);
+            }
+        }
+
+        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(10)))
+        {
+            SetStatus(server, ServerStatus.Error);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
+                operation.Initiator,
+                "Rust could not be terminated; process tracking was retained for another Force Stop attempt",
+                operation.OperationId);
+            throw new InvalidOperationException(
+                "Rust is still running after the shutdown and termination attempts. " +
+                "HighPop kept the process attached; run HighPop as Administrator and use Force Stop again.");
+        }
+
+        FinalizeStoppedServer(server, inst, operation, reason);
+    }
+
+    /// <summary>
+    /// Kills a process by the PID persisted on the server model, used when HighPop lost its
+    /// in-memory ServerInstance (e.g. after HighPop itself was restarted) but the game server
+    /// process is still alive in the background.
+    /// </summary>
+    private async Task KillOrphanedPidAsync(GameServer server)
+    {
+        SetStatus(server, ServerStatus.Stopping);
+        var pid = server.RunningPid;
+        var stopped = pid <= 0 || await TerminateOwnedPidAsync(
+            server, pid, server.RunningProcessStartedUtc, TimeSpan.FromSeconds(10));
+        if (!stopped)
+        {
+            SetStatus(server, ServerStatus.Error);
+            throw new InvalidOperationException(
+                $"Rust PID {pid} is still running after forced termination. Run HighPop as Administrator and retry Force Stop.");
+        }
+        ClearRunningIdentity(server);
+        if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
+        SetStatus(server, ServerStatus.Stopped);
+    }
+
+    public async Task SendCommandAsync(string serverId, string command)
+    {
+        if (!_running.TryGetValue(serverId, out var inst)) return;
+        await TrySendServerCommandAsync(inst.Server, inst, command, $"Sent '{command}'");
+    }
+
+    public void SendCommand(string serverId, string command)
+        => _ = SendCommandAsync(serverId, command);
+
+    public void InjectLogLine(string serverId, string text, ConsoleMessageType type = ConsoleMessageType.System)
+    {
+        var msg = new ConsoleMessage { Text = text, Type = type };
+        if (_running.TryGetValue(serverId, out var inst))
+            inst.AddToLog(msg);
+        LogReceived?.Invoke(serverId, msg);
+    }
+
+    public bool IsRunning(string serverId)
+        => _running.TryGetValue(serverId, out var inst)
+           && inst.Process is { } process
+           && !SafeHasExited(process);
+
+    /// <summary>
+    /// Waits until a stopped server has fully released its process and network ports so a
+    /// restart doesn't race the old RustDedicated.exe (Oxide in particular can hold the game
+    /// and RCON ports for a few seconds after the process is asked to quit).
+    /// Returns false if the process or a port is still held when <paramref name="timeout"/> expires.
+    /// </summary>
+    public async Task<bool> WaitForServerReleasedAsync(
+        GameServer server,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        // Short grace period for the OS to tear down sockets after the process exits.
+        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+        while (true)
+        {
+            var processGone = !IsRunning(server.Id) && !IsPidAlive(server.RunningPid);
+            if (processGone
+                && PortCheckerService.CheckServerPorts(server).All(result => result.IsAvailable))
+                return true;
+            if (DateTime.UtcNow >= deadline) return false;
+            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsPidAlive(int pid)
+    {
+        if (pid <= 0) return false;
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !SafeHasExited(process);
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
+
+    public async Task ForceStopAsync(
+        GameServer server,
+        LifecycleInitiator initiator = LifecycleInitiator.Operator,
+        string reason = "Force Stop requested from HighPop")
+    {
+        var operation = _lifecycle.RequestStop(server, initiator, reason);
+        CancelRecovery(server.Id);
+        if (_activeGracefulStops.TryGetValue(server.Id, out var activeStop))
+            activeStop.Cancel();
+        var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
+        if (!await gate.WaitAsync(TimeSpan.FromSeconds(12)))
+        {
+            if (!_lifecycle.IsCurrent(server, operation.Generation)) return;
+            InjectLogLine(server.Id,
+                "[HighPop] The graceful-stop operation did not release its lifecycle lock; using emergency PID termination.",
+                ConsoleMessageType.Warning);
+            await EmergencyForceStopAsync(server, operation);
+            return;
+        }
+        try
+        {
+            if (!_lifecycle.IsCurrent(server, operation.Generation)) return;
+            await ForceStopCoreAsync(server, operation);
+        }
+        finally { gate.Release(); }
+    }
+
+    private async Task EmergencyForceStopAsync(
+        GameServer server,
+        ServerLifecycleTransition operation)
+    {
+        if (!_running.TryGetValue(server.Id, out var instance))
+        {
+            await KillOrphanedPidAsync(server);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
+                operation.Initiator, operation.Reason, operation.OperationId);
+            return;
+        }
+
+        instance.IntentionalStop = true;
+        instance.StopReason = operation.Reason;
+        instance.DailyRestartCts.Cancel();
+        SetStatus(server, ServerStatus.Stopping);
+        if (!await EnsureProcessTreeStoppedAsync(server, instance, TimeSpan.FromSeconds(10)))
+        {
+            SetStatus(server, ServerStatus.Error);
+            throw new InvalidOperationException(
+                $"Emergency Force Stop could not terminate tracked Rust PID {instance.OwnedProcessId}.");
+        }
+        FinalizeStoppedServer(server, instance, operation, operation.Reason);
+    }
+
+    private async Task ForceStopCoreAsync(
+        GameServer server,
+        ServerLifecycleTransition operation)
+    {
+        if (!_running.TryGetValue(server.Id, out var inst))
+        {
+            await KillOrphanedPidAsync(server);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
+                operation.Initiator, operation.Reason, operation.OperationId);
+            return;
+        }
+        SetStatus(server, ServerStatus.Stopping);
+        inst.IntentionalStop = true;
+        inst.StopReason = "Force Stop requested from HighPop";
+        inst.DailyRestartCts.Cancel();
+        InjectLogLine(server.Id,
+            "[HighPop] Force Stop requested — saving the Rust world, requesting exit, then enforcing shutdown.",
+            ConsoleMessageType.Warning);
+
+        if (inst.Process?.HasExited == false)
+        {
+            using var commandCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            await TrySendServerCommandAsync(server, inst, "server.save", "Force-saving Rust world", commandCts.Token);
+            await TrySendServerCommandAsync(server, inst, "quit", "Requesting immediate Rust exit", commandCts.Token);
+            try
+            {
+                using var exitCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                await inst.Process.WaitForExitAsync(exitCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                InjectLogLine(server.Id,
+                    "[HighPop] Rust did not exit after the force-save request; terminating the process tree.",
+                    ConsoleMessageType.Warning);
+            }
+        }
+
+        if (!await EnsureProcessTreeStoppedAsync(server, inst, TimeSpan.FromSeconds(10)))
+        {
+            SetStatus(server, ServerStatus.Error);
+            _lifecycle.MarkPhase(server, ServerLifecyclePhase.Faulted,
+                operation.Initiator,
+                "Force Stop could not terminate Rust; process tracking was retained",
+                operation.OperationId);
+            throw new InvalidOperationException(
+                "Force Stop could not terminate Rust. HighPop kept the process attached so the action can be retried.");
+        }
+
+        FinalizeStoppedServer(server, inst, operation, operation.Reason);
+    }
+
+    /// <summary>Compatibility alias for older call sites; Force Stop is the defined operation.</summary>
+    public Task KillAsync(GameServer server) => ForceStopAsync(server);
+
+    private async Task<bool> TrySendProcessCommandAsync(
+        ServerInstance instance,
+        string command)
+    {
+        if (instance.Process?.HasExited != false) return false;
+        try
+        {
+            await instance.Process.StandardInput.WriteLineAsync(command);
+            await instance.Process.StandardInput.FlushAsync();
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> TrySendServerCommandAsync(
+        GameServer server,
+        ServerInstance instance,
+        string command,
+        string description,
+        CancellationToken cancellationToken = default)
+    {
+        var isRust = server.GameId.Equals("rust", StringComparison.OrdinalIgnoreCase);
+
+        // Rust does not read commands from a redirected standard input: the pipe accepts the line
+        // and Rust silently drops it, so chat looked "sent" but never arrived in game. WebRCON is
+        // therefore the primary channel for Rust, and the process console only a last resort
+        // (for example before WebRCON has started, or after a reattachment without stdin).
+        if (!isRust
+            && !cancellationToken.IsCancellationRequested
+            && await TrySendProcessCommandAsync(instance, command))
+        {
+            InjectLogLine(server.Id, $"[HighPop] {description}.", ConsoleMessageType.System);
+            return true;
+        }
+
+        var rconProblem = string.Empty;
+        if (isRust
+            && server.RconPort > 0
+            && !string.IsNullOrWhiteSpace(server.RconPassword))
+        {
+            var host = string.IsNullOrWhiteSpace(server.ServerIp)
+                       || server.ServerIp is "0.0.0.0" or "::" or "[::]"
+                ? "127.0.0.1"
+                : server.ServerIp;
+            // One retry covers a shared channel that Rust closed since its last use.
+            for (var attempt = 0; attempt < 2 && !cancellationToken.IsCancellationRequested; attempt++)
+            {
+                try
+                {
+                    var rcon = await instance.GetRconAsync(
+                        host, server.RconPort, server.RconPassword, cancellationToken).ConfigureAwait(false);
+                    if (rcon == null)
+                    {
+                        rconProblem = instance.LastRconError;
+                        break;
+                    }
+                    var response = await rcon.SendCommandAsync(command, cancellationToken).ConfigureAwait(false);
+                    if (!rcon.IsConnected && response.StartsWith("[RCON]", StringComparison.Ordinal))
+                    {
+                        instance.ReleaseRcon(rcon);
+                        continue;
+                    }
+                    InjectLogLine(server.Id,
+                        $"[HighPop] {description} via WebRCON.", ConsoleMessageType.System);
+                    // Oxide's live log does not contain WebRCON command output, so surface it here
+                    // (e.g. RogueRust diagnostics). Commands without a reply return an empty string.
+                    if (!string.IsNullOrWhiteSpace(response))
+                        InjectLogLine(server.Id, UiTextSanitizer.Normalize(response),
+                            response.StartsWith("[RCON]", StringComparison.Ordinal)
+                                ? ConsoleMessageType.Warning
+                                : ConsoleMessageType.Info);
+                    return true;
+                }
+                catch (OperationCanceledException) { break; }
+                catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException)
+                {
+                    break;
+                }
+            }
+        }
+
+        // Writing to the pipe is instant, so this last resort runs even after a timeout.
+        if (isRust && await TrySendProcessCommandAsync(instance, command))
+        {
+            InjectLogLine(server.Id,
+                $"[HighPop] {description} through the process console because WebRCON is unavailable" +
+                (rconProblem.Length > 0 ? $" ({rconProblem})" : string.Empty) +
+                ". Rust usually ignores process input, so this may not reach the server.",
+                ConsoleMessageType.Warning);
+            return true;
+        }
+
+        InjectLogLine(server.Id,
+            $"[HighPop] Could not send '{command}' through WebRCON or the process console" +
+            (rconProblem.Length > 0 ? $": {rconProblem}" : "."),
+            ConsoleMessageType.Warning);
+        return false;
+    }
+
+    private async Task<bool> EnsureProcessTreeStoppedAsync(
+        GameServer server,
+        ServerInstance instance,
+        TimeSpan timeout)
+    {
+        var pid = instance.OwnedProcessId > 0
+            ? instance.OwnedProcessId
+            : server.RunningPid;
+        var startedUtc = instance.OwnedProcessStartedUtc
+            ?? server.RunningProcessStartedUtc;
+        JobObjectService.ReleaseJob(instance.JobHandle);
+        instance.JobHandle = nint.Zero;
+
+        if (pid <= 0) return instance.Process == null || SafeHasExited(instance.Process);
+        return await TerminateOwnedPidAsync(server, pid, startedUtc, timeout);
+    }
+
+    private async Task<bool> TerminateOwnedPidAsync(
+        GameServer server,
+        int pid,
+        DateTime? expectedStartedUtc,
+        TimeSpan timeout)
+    {
+        if (pid <= 0) return true;
+
+        InjectLogLine(server.Id,
+            $"[HighPop] Enforcing shutdown on tracked Rust PID {pid} and its process tree.",
+            ConsoleMessageType.Warning);
+
+        var deadline = DateTime.UtcNow + timeout;
+        for (var attempt = 1; attempt <= 2 && DateTime.UtcNow < deadline; attempt++)
+        {
+            Process process;
+            try { process = Process.GetProcessById(pid); }
+            catch (ArgumentException) { return true; }
+            using (process)
+            {
+
+                if (!IsExpectedOwnedProcess(process, expectedStartedUtc))
+                {
+                    InjectLogLine(server.Id,
+                        $"[HighPop] Refused to terminate recycled PID {pid}; its process start time no longer matches this server.",
+                        ConsoleMessageType.Error);
+                    return false;
+                }
+
+                try
+                {
+                    await Task.Run(() => process.Kill(entireProcessTree: true));
+                }
+                catch (InvalidOperationException) { return true; }
+                catch (Win32Exception ex)
+                {
+                    InjectLogLine(server.Id,
+                        $"[HighPop] Process-tree termination attempt {attempt} failed: {ex.Message}",
+                        ConsoleMessageType.Warning);
+                }
+            }
+
+            if (await WaitForPidExitAsync(pid, TimeSpan.FromSeconds(2))) return true;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                using (var verified = Process.GetProcessById(pid))
+                {
+                    if (!IsExpectedOwnedProcess(verified, expectedStartedUtc)) return false;
+                }
+                using var taskKill = Process.Start(new ProcessStartInfo
+                {
+                    FileName = "taskkill.exe",
+                    Arguments = $"/PID {pid} /T /F",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false,
+                });
+                if (taskKill != null)
+                    await taskKill.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(4));
+            }
+            catch (ArgumentException) { return true; }
+            catch (Exception ex) when (ex is Win32Exception
+                                       or InvalidOperationException
+                                       or TimeoutException) { }
+        }
+
+        return await WaitForPidExitAsync(pid, TimeSpan.FromSeconds(2));
+    }
+
+    internal static bool IsExpectedOwnedProcess(Process process, DateTime? expectedStartedUtc)
+    {
+        if (SafeHasExited(process)) return true;
+        if (expectedStartedUtc == null) return true;
+        try
+        {
+            return Math.Abs((process.StartTime.ToUniversalTime() - expectedStartedUtc.Value).TotalSeconds) <= 2;
+        }
+        catch { return false; }
+    }
+
+    private static async Task<bool> WaitForPidExitAsync(int pid, TimeSpan timeout)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return await WaitForProcessExitAsync(process, timeout);
+        }
+        catch (ArgumentException) { return true; }
+    }
+
+    private static bool SafeHasExited(Process process)
+    {
+        try { return process.HasExited; }
+        catch (InvalidOperationException) { return true; }
+    }
+
+    private static async Task<bool> WaitForProcessExitAsync(Process process, TimeSpan timeout)
+    {
+        if (SafeHasExited(process)) return true;
+        try
+        {
+            await process.WaitForExitAsync().WaitAsync(timeout);
+            return true;
+        }
+        catch (TimeoutException) { return SafeHasExited(process); }
+        catch (InvalidOperationException) { return true; }
+    }
+
+    private void FinalizeStoppedServer(
+        GameServer server,
+        ServerInstance instance,
+        ServerLifecycleTransition operation,
+        string reason)
+    {
+        RemoveInstanceIfCurrent(server.Id, instance);
+        _network.UnregisterServer(server.Id);
+        if (server.FirewallAutoManage) FirewallService.RemoveRules(server);
+        ClearRunningIdentity(server);
+        SetStatus(server, ServerStatus.Stopped);
+        _lifecycle.MarkPhase(server, ServerLifecyclePhase.StoppedByOperator,
+            operation.Initiator, reason, operation.OperationId);
+    }
+
+    /// <summary>
+    /// Releases HighPop-owned monitoring resources while leaving every live Rust process alone.
+    /// The persisted process identity is retained so the next manager instance can verify and
+    /// reattach. Explicit Stop and Force Stop remain the only operations that terminate Rust.
+    /// </summary>
+    public void DetachAllForManagerExit()
+    {
+        foreach (var id in _recoveryGenerations.Keys)
+            CancelRecovery(id);
+        foreach (var id in _running.Keys.ToList())
+        {
+            try
+            {
+                var instance = _running[id];
+                instance.IntentionalStop = true;
+                instance.DailyRestartCts.Cancel();
+                instance.CancelAuxiliaryMonitoring();
+                JobObjectService.ReleaseJob(instance.JobHandle);
+                instance.JobHandle = nint.Zero;
+
+                if (instance.Process?.HasExited == false)
+                    RememberRunningIdentity(instance.Server, instance.Process);
+                else
+                    ClearRunningIdentity(instance.Server);
+            }
+            catch { }
+        }
+        _running.Clear();
+    }
+
+    private static void RememberRunningIdentity(GameServer server, Process process)
+    {
+        server.RunningPid = process.Id;
+        server.RunningProcessStartedUtc = SafeStartTime(process)?.ToUniversalTime();
+        try { server.RunningExecutablePath = process.MainModule?.FileName ?? string.Empty; }
+        catch { server.RunningExecutablePath = string.Empty; }
+    }
+
+    private static void ClearRunningIdentity(GameServer server)
+    {
+        server.RunningPid = 0;
+        server.RunningProcessStartedUtc = null;
+        server.RunningExecutablePath = string.Empty;
+    }
+
+    private void CancelRecovery(string serverId)
+        => _recoveryGenerations.AddOrUpdate(serverId, 1, (_, current) => current + 1);
+
+    public void QueueAlwaysOnRecovery(GameServer server, string reason, int initialDelaySeconds = 10)
+    {
+        if (!ServerLifecycleRules.CanRecover(server) || IsRunning(server.Id)) return;
+        var recovery = _lifecycle.BeginRecovery(server, reason);
+        var generation = _recoveryGenerations.AddOrUpdate(server.Id, 1, (_, current) => current + 1);
+        InjectLogLine(
+            server.Id,
+            $"[HighPop] Always-on recovery queued after {reason}.",
+            ConsoleMessageType.Warning);
+        _ = RecoverUnexpectedExitAsync(server, generation, recovery, initialDelaySeconds);
+    }
+
+    private async Task RecoverUnexpectedExitAsync(
+        GameServer server,
+        long generation,
+        ServerLifecycleTransition recovery,
+        int initialDelaySeconds)
+    {
+        var delay = TimeSpan.FromSeconds(Math.Clamp(initialDelaySeconds, 1, 300));
+        while (_recoveryGenerations.TryGetValue(server.Id, out var current)
+               && current == generation
+               && _lifecycle.IsCurrent(server, recovery.Generation)
+               && ServerLifecycleRules.CanRecover(server))
+        {
+            await Task.Delay(delay);
+            if (!_recoveryGenerations.TryGetValue(server.Id, out current) || current != generation)
+                return;
+            if (!_lifecycle.IsCurrent(server, recovery.Generation)
+                || !ServerLifecycleRules.CanRecover(server))
+                return;
+
+            try
+            {
+                var gate = _lifecycleGates.GetOrAdd(server.Id, _ => new SemaphoreSlim(1, 1));
+                await gate.WaitAsync();
+                try
+                {
+                    if (!_lifecycle.IsCurrent(server, recovery.Generation)
+                        || !ServerLifecycleRules.CanRecover(server))
+                        return;
+                    await StartCoreAsync(server, recovery);
+                }
+                finally { gate.Release(); }
+                return;
+            }
+            catch (Exception ex)
+            {
+                SetStatus(server, ServerStatus.Error);
+                InjectLogLine(
+                    server.Id,
+                    $"[HighPop] Recovery start failed: {ex.Message}. Retrying in {Math.Min(300, delay.TotalSeconds * 2):0}s.",
+                    ConsoleMessageType.Error);
+                delay = TimeSpan.FromSeconds(Math.Min(300, delay.TotalSeconds * 2));
+            }
+        }
+    }
+
+
+    private static async Task ApplyWindowStyleAsync(System.Diagnostics.Process proc, int showCmd, int maxAttempts)
+    {
+        if (!OperatingSystem.IsWindows()) return; // no console window to hide on Linux
+        try
+        {
+            for (int i = 0; i < maxAttempts && !proc.HasExited; i++)
+            {
+                try
+                {
+                    proc.Refresh();
+                    var hwnd = proc.MainWindowHandle;
+                    if (hwnd != IntPtr.Zero) { ShowWindow(hwnd, showCmd); return; }
+                }
+                catch { return; }
+                await Task.Delay(i < 5 ? 100 : 500);
+            }
+        }
+        catch { }
+    }
+
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    private const int SW_HIDE    = 0; // hide window completely
+    private const int SW_RESTORE = 9;
+
+    public void ShowWindow(GameServer server)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        if (!_running.TryGetValue(server.Id, out var inst)) return;
+        var proc = inst.Process;
+        if (proc == null || proc.HasExited) return;
+        try
+        {
+            var hwnd = proc.MainWindowHandle;
+            if (hwnd == IntPtr.Zero) return;
+            ShowWindow(hwnd, SW_RESTORE);
+            SetForegroundWindow(hwnd);
+        }
+        catch { }
+    }
+
+    private static readonly (int minutesBefore, string label)[] RestartWarnings =
+    [
+        (10, "10 minutes"),
+        (5,  "5 minutes"),
+        (1,  "1 minute"),
+    ];
+
+    /// <summary>
+    /// Sends a broadcast message to in-game players via the game's console/RCON/REST
+    /// broadcast command, if supported. No-ops silently for games with no known way to
+    /// broadcast (most plugins' GetBroadcastCommand returns null in that case).
+    /// </summary>
+    public async Task WarnPlayersAsync(GameServer server, string message)
+    {
+        var plugin = GameRegistry.Get(server.GameId);
+        var cmd = plugin?.GetBroadcastCommand(message);
+        if (cmd == null) return;
+        try { await SendCommandAsync(server.Id, cmd); } catch { }
+
+        if (_running.TryGetValue(server.Id, out var inst))
+        {
+            var msg = new ConsoleMessage { Text = $"[HighPop] {message}", Type = ConsoleMessageType.Warning };
+            inst.AddToLog(msg);
+            LogReceived?.Invoke(server.Id, msg);
+        }
+    }
+
+    private async Task RunDailyRestartAsync(GameServer server, ServerInstance inst)
+    {
+        while (_running.TryGetValue(server.Id, out var current) && current == inst && server.DailyRestartEnabled)
+        {
+            var now = DateTime.Now;
+            var target = now.Date + server.DailyRestartTime;
+            if (target <= now)
+                target = target.AddDays(1);
+
+            try
+            {
+                foreach (var (minutesBefore, label) in RestartWarnings)
+                {
+                    var warnAt = target.AddMinutes(-minutesBefore);
+                    if (warnAt <= DateTime.Now) continue;
+                    await Task.Delay(warnAt - DateTime.Now, inst.DailyRestartCts.Token);
+                    if (!_running.TryGetValue(server.Id, out var c1) || c1 != inst || !server.DailyRestartEnabled)
+                        return;
+                    await WarnPlayersAsync(server, $"Server restarting in {label}");
+                }
+
+                var finalDelay = target - DateTime.Now;
+                if (finalDelay > TimeSpan.Zero)
+                    await Task.Delay(finalDelay, inst.DailyRestartCts.Token);
+            }
+            catch (TaskCanceledException) { return; }
+
+            if (!_running.TryGetValue(server.Id, out var c) || c != inst || !server.DailyRestartEnabled)
+                return;
+
+            var msg = new ConsoleMessage
+            {
+                Text = $"[HighPop] Daily restart triggered at {server.DailyRestartTime:hh\\:mm}",
+                Type = ConsoleMessageType.Warning
+            };
+            inst.AddToLog(msg);
+            LogReceived?.Invoke(server.Id, msg);
+
+            try
+            {
+                await SendCommandAsync(server.Id, "server.save");
+                await Task.Delay(1000);
+                await StopAsync(server, "Scheduled daily restart", LifecycleInitiator.Scheduler);
+                var stoppedGeneration = server.LifecycleGeneration;
+                await WaitForServerReleasedAsync(server, TimeSpan.FromSeconds(30));
+                if (!ServerLifecycleRules.IsCurrent(server, stoppedGeneration)
+                    || server.DesiredState != ServerDesiredState.Stopped)
+                    return;
+                await StartAsync(server, LifecycleInitiator.Scheduler, "Scheduled daily restart");
+            }
+            catch (Exception ex)
+            {
+                var error = new ConsoleMessage
+                {
+                    Text = $"[HighPop] Daily restart failed: {ex.Message}",
+                    Type = ConsoleMessageType.Error,
+                };
+                inst.AddToLog(error);
+                try { LogReceived?.Invoke(server.Id, error); } catch { }
+            }
+            return; // new instance will spawn its own RunDailyRestartAsync
+        }
+    }
+
+    private void SetStatus(GameServer server, ServerStatus status)
+    {
+        // Stop/Kill set Stopped explicitly, and the process's own Exited handler also sets
+        // Stopped when it fires (race ordering varies) — skip the no-op transition so only
+        // one StatusChanged event (and one Discord notification) fires per real change.
+        if (server.Status == status) return;
+        server.Status = status;
+        var handlers = StatusChanged?.GetInvocationList();
+        if (handlers == null) return;
+        foreach (var handler in handlers)
+        {
+            try { ((Action<string, ServerStatus>)handler)(server.Id, status); }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ServerManager] StatusChanged subscriber failed: {ex}");
+            }
+        }
+    }
+
+    private void MarkServerReady(GameServer server, ServerInstance inst, string source)
+    {
+        if (!IsCurrentInstance(server.Id, inst)) return;
+        var phase = source.Contains("WebRCON", StringComparison.OrdinalIgnoreCase)
+            ? ServerLifecyclePhase.RconReady
+            : ServerLifecyclePhase.RustReady;
+        _lifecycle.MarkPhase(server, phase, server.LastLifecycleInitiator, source,
+            server.LastLifecycleOperationId);
+        if (!inst.TryMarkReady(source)) return;
+        var elapsed = inst.Uptime;
+        var msg = new ConsoleMessage
+        {
+            Text = $"[HighPop] Rust is ready after {FormatDuration(elapsed)} ({source}). Automated health and idle checks are now active.",
+            Type = ConsoleMessageType.System,
+        };
+        inst.AddToLog(msg);
+        LogReceived?.Invoke(server.Id, msg);
+        _ = _telemetry.AppendAsync(
+            server,
+            "server.ready",
+            source,
+            new Dictionary<string, string>
+            {
+                ["startupSeconds"] = Math.Max(0, (int)elapsed.TotalSeconds).ToString(),
+            });
+    }
+
+    private void RecordProcessExit(GameServer server, ServerInstance inst, int? exitCode, bool intentional)
+    {
+        var reason = intentional
+            ? (string.IsNullOrWhiteSpace(inst.StopReason) ? "Intentional stop" : inst.StopReason)
+            : $"RustDedicated exited unexpectedly with code {(exitCode?.ToString() ?? "unknown")}";
+        server.LastExitAt = DateTime.Now;
+        server.LastExitCode = exitCode;
+        server.LastExitReason = reason;
+
+        var capHint = !intentional && server.MaxRamMb > 0
+            ? $" A hard RAM cap of {server.MaxRamMb:N0} MB is configured; check whether Rust exceeded it."
+            : string.Empty;
+        var msg = new ConsoleMessage
+        {
+            Text = $"[HighPop] {reason} after {FormatDuration(inst.Uptime)}.{capHint}",
+            Type = intentional ? ConsoleMessageType.System : ConsoleMessageType.Error,
+        };
+        inst.AddToLog(msg);
+        LogReceived?.Invoke(server.Id, msg);
+        _ = _telemetry.AppendAsync(
+            server,
+            intentional ? "server.stopped" : "server.exited",
+            "manager",
+            new Dictionary<string, string>
+            {
+                ["intentional"] = intentional.ToString(),
+                ["exitCode"] = exitCode?.ToString() ?? "unknown",
+                ["reason"] = reason,
+                ["uptimeSeconds"] = Math.Max(0, (int)inst.Uptime.TotalSeconds).ToString(),
+            });
+    }
+
+    private bool IsCurrentInstance(string serverId, ServerInstance instance)
+        => _running.TryGetValue(serverId, out var current) && ReferenceEquals(current, instance);
+
+    internal static bool ShouldUseRustLiveLog(bool carbonInstalled)
+        => !carbonInstalled;
+
+    private static string FormatByteCount(long bytes)
+        => bytes >= 1024L * 1024 * 1024
+            ? $"{bytes / (1024d * 1024 * 1024):F2} GB"
+            : bytes >= 1024L * 1024
+                ? $"{bytes / (1024d * 1024):F1} MB"
+                : $"{bytes / 1024d:F1} KB";
+
+    private bool RemoveInstanceIfCurrent(string serverId, ServerInstance instance)
+    {
+        var removed = ((ICollection<KeyValuePair<string, ServerInstance>>)_running)
+            .Remove(new KeyValuePair<string, ServerInstance>(serverId, instance));
+        if (removed) instance.CancelAuxiliaryMonitoring();
+        return removed;
+    }
+
+    private async Task TailRustLogAsync(
+        GameServer server,
+        ServerInstance instance,
+        bool includeRecentHistory,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(server.GameId, "rust", StringComparison.OrdinalIgnoreCase)) return;
+        var logPath = Path.Combine(RustPlugin.GetEffectiveLogDirectory(server), "RustDedicated.log");
+        long position = 0;
+        var initialized = false;
+        var previousType = ConsoleMessageType.Info;
+
+        // A newly launched Vanilla/Oxide server receives a freshly rotated logfile, so consume
+        // it from byte zero. Reattachment instead loads a bounded recent history below.
+        if (!includeRecentHistory)
+        {
+            position = 0;
+            initialized = true;
+        }
+
+        while (!cancellationToken.IsCancellationRequested
+               && IsCurrentInstance(server.Id, instance)
+               && instance.Process?.HasExited == false)
+        {
+            try
+            {
+                if (!File.Exists(logPath))
+                {
+                    await Task.Delay(750, cancellationToken);
+                    continue;
+                }
+
+                await using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete, 4096, useAsync: true);
+                var discardPartialLine = false;
+                if (!initialized)
+                {
+                    position = includeRecentHistory
+                        ? Math.Max(0, stream.Length - 64 * 1024)
+                        : stream.Length;
+                    stream.Seek(position, SeekOrigin.Begin);
+                    discardPartialLine = position > 0;
+                    initialized = true;
+                }
+                else
+                {
+                    if (stream.Length < position) position = 0;
+                    stream.Seek(position, SeekOrigin.Begin);
+                }
+
+                using var reader = new StreamReader(stream, leaveOpen: true);
+                if (discardPartialLine) await reader.ReadLineAsync(cancellationToken);
+                string? line;
+                while ((line = await reader.ReadLineAsync(cancellationToken)) != null)
+                {
+                    var parsed = ConsoleOutputParser.Parse(line, fromStandardError: false, previousType);
+                    if (parsed == null) continue;
+                    previousType = parsed.Type;
+                    instance.MarkRustLogActive();
+                    if (!instance.TryAcceptConsoleLine(parsed.Text, "logfile")) continue;
+                    var message = new ConsoleMessage
+                    {
+                        Text = parsed.Text,
+                        Type = parsed.Type,
+                        Source = parsed.Source,
+                    };
+                    instance.AddToLog(message);
+                    LogReceived?.Invoke(server.Id, message);
+                    if (parsed.Text.Contains("Server startup complete", StringComparison.OrdinalIgnoreCase))
+                        MarkServerReady(server, instance, "Rust logfile");
+                }
+                position = stream.Position;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            try { await Task.Delay(750, cancellationToken); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
+
+    private static int? SafeExitCode(Process process)
+    {
+        try { return process.ExitCode; }
+        catch { return null; }
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+        => duration.TotalHours >= 1
+            ? $"{(int)duration.TotalHours}h {duration.Minutes}m {duration.Seconds}s"
+            : duration.TotalMinutes >= 1
+                ? $"{duration.Minutes}m {duration.Seconds}s"
+                : $"{Math.Max(0, (int)duration.TotalSeconds)}s";
+
+    /// <summary>
+    /// Facepunch's Linux start instructions put the bundled native libraries on the library path;
+    /// without it RustDedicated fails to load its plugins.
+    /// </summary>
+    internal static void ConfigureLinuxLaunch(ProcessStartInfo psi, string exeDir)
+    {
+        var native = Path.Combine(exeDir, "RustDedicated_Data", "Plugins", "x86_64");
+        var existing = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH");
+        psi.Environment["LD_LIBRARY_PATH"] = string.IsNullOrEmpty(existing) ? native : native + ":" + existing;
+    }
+
+    private static string? TryFindExecutable(string installPath, string hintExe)
+    {
+        if (!Directory.Exists(installPath)) return null;
+
+        // 1. exact in root
+        var root = Path.Combine(installPath, hintExe);
+        if (File.Exists(root)) return root;
+
+        // Linux binaries have no extension, so only the exact name is accepted there:
+        // guessing "any executable" could start the wrong file.
+        if (!OperatingSystem.IsWindows())
+        {
+            foreach (var dir in Directory.GetDirectories(installPath))
+            {
+                var sub = Path.Combine(dir, hintExe);
+                if (File.Exists(sub)) return sub;
+            }
+            return null;
+        }
+
+        // 2. any *server*.exe or *dedicated*.exe in root
+        foreach (var f in Directory.GetFiles(installPath, "*.exe"))
+        {
+            var n = Path.GetFileNameWithoutExtension(f).ToLowerInvariant();
+            if (n.Contains("server") || n.Contains("dedicated")) return f;
+        }
+
+        // 3. recurse one level
+        foreach (var dir in Directory.GetDirectories(installPath))
+        {
+            var sub = Path.Combine(dir, hintExe);
+            if (File.Exists(sub)) return sub;
+            foreach (var f in Directory.GetFiles(dir, "*.exe"))
+            {
+                var n = Path.GetFileNameWithoutExtension(f).ToLowerInvariant();
+                if (n.Contains("server") || n.Contains("dedicated")) return f;
+            }
+        }
+
+        // 4. any .exe at all
+        var any = Directory.GetFiles(installPath, "*.exe").FirstOrDefault();
+        return any;
+    }
+
+}

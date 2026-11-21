@@ -1,0 +1,78 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HighPop.Desktop.Views.AddScheduleTaskWindow"
+        Title="Add scheduled task" Width="460" SizeToContent="Height" CanResize="False">
+  <StackPanel Margin="24" Spacing="6">
+    <TextBlock Text="Scheduled task" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+
+    <TextBlock Text="Action" FontSize="12" Opacity="0.7" />
+    <ComboBox x:Name="CbAction" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="CbAction_Changed">
+      <ComboBoxItem Content="Restart" />
+      <ComboBoxItem Content="Stop" />
+      <ComboBoxItem Content="Start" />
+      <ComboBoxItem Content="Backup" />
+      <ComboBoxItem Content="Update" />
+      <ComboBoxItem Content="Quick command" />
+      <ComboBoxItem Content="Wipe (full: map + player data)" />
+      <ComboBoxItem Content="Wipe (map only)" />
+      <ComboBoxItem Content="Broadcast message to players" />
+    </ComboBox>
+
+    <StackPanel x:Name="CommandPanel" IsVisible="False" Spacing="6">
+      <TextBlock Text="Saved quick command (optional)" FontSize="12" Opacity="0.7" />
+      <ComboBox x:Name="CbQuickCommand" HorizontalAlignment="Stretch" SelectionChanged="CbQuick_Changed" />
+      <TextBlock Text="Console command to send" FontSize="12" Opacity="0.7" />
+      <TextBox x:Name="TbCommand" FontFamily="Consolas,Menlo,monospace" />
+    </StackPanel>
+
+    <StackPanel x:Name="BroadcastPanel" IsVisible="False" Spacing="6">
+      <TextBlock Text="Message to broadcast to all players" FontSize="12" Opacity="0.7" />
+      <TextBox x:Name="TbBroadcast" />
+      <TextBlock Text="HighPop wraps this in the game's broadcast command." FontSize="11" Opacity="0.6" />
+    </StackPanel>
+
+    <TextBlock Text="Frequency" FontSize="12" Opacity="0.7" Margin="0,8,0,0" />
+    <ComboBox x:Name="CbFreq" SelectedIndex="0" HorizontalAlignment="Stretch" SelectionChanged="CbFreq_Changed">
+      <ComboBoxItem Content="Daily" />
+      <ComboBoxItem Content="Weekly" />
+      <ComboBoxItem Content="Once (next occurrence)" />
+      <ComboBoxItem Content="Every X minutes/hours" />
+    </ComboBox>
+
+    <StackPanel x:Name="DayPanel" IsVisible="False" Spacing="6">
+      <TextBlock Text="Day of week" FontSize="12" Opacity="0.7" />
+      <ComboBox x:Name="CbDay" SelectedIndex="0" HorizontalAlignment="Stretch">
+        <ComboBoxItem Content="Monday" />
+        <ComboBoxItem Content="Tuesday" />
+        <ComboBoxItem Content="Wednesday" />
+        <ComboBoxItem Content="Thursday" />
+        <ComboBoxItem Content="Friday" />
+        <ComboBoxItem Content="Saturday" />
+        <ComboBoxItem Content="Sunday" />
+      </ComboBox>
+    </StackPanel>
+
+    <StackPanel x:Name="IntervalPanel" IsVisible="False" Spacing="6">
+      <TextBlock Text="Repeat every" FontSize="12" Opacity="0.7" />
+      <Grid ColumnDefinitions="*,140" ColumnSpacing="8">
+        <TextBox x:Name="TbInterval" Text="60" FontFamily="Consolas,Menlo,monospace" />
+        <ComboBox x:Name="CbIntervalUnit" Grid.Column="1" SelectedIndex="0" HorizontalAlignment="Stretch">
+          <ComboBoxItem Content="Minutes" />
+          <ComboBoxItem Content="Hours" />
+        </ComboBox>
+      </Grid>
+    </StackPanel>
+
+    <StackPanel x:Name="TimePanel" Spacing="6">
+      <TextBlock Text="Time (HH:mm)" FontSize="12" Opacity="0.7" />
+      <TextBox x:Name="TbTime" Text="04:00" FontFamily="Consolas,Menlo,monospace" />
+    </StackPanel>
+
+    <TextBlock x:Name="ErrorText" Foreground="{DynamicResource AccentRedBrush}" TextWrapping="Wrap" IsVisible="False" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,14,0,0">
+      <Button Content="Cancel" Click="Cancel_Click" />
+      <Button Content="Add task" Click="Add_Click" />
+    </StackPanel>
+  </StackPanel>
+</Window>

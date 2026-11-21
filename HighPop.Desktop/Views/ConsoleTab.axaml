@@ -1,0 +1,142 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:models="using:HighPop.Models"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             x:Class="HighPop.Desktop.Views.ConsoleTab"
+             x:DataType="vm:ServerViewModel">
+  <UserControl.Resources>
+    <conv:ConsoleTypeBrushConverter x:Key="TypeBrush" />
+  </UserControl.Resources>
+
+  <!-- Full width like the Windows console. -->
+  <DockPanel Background="{DynamicResource BgDeepBrush}">
+
+    <!-- RCON bar -->
+    <Border DockPanel.Dock="Top" Background="{DynamicResource BgSurface2Brush}" BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0,0,0,1" Padding="12,7" IsVisible="{Binding HasRcon}">
+      <Grid ColumnDefinitions="Auto,*">
+        <CheckBox Content="Auto-connect WebRCON when Rust starts" IsChecked="{Binding AutoConnectRcon}"
+                  ToolTip.Tip="Waits for the configured slow-start delay, then retries WebRCON for the configured connection window." />
+        <TextBlock Grid.Column="1" Text="{Binding RconStatusText}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                   FontSize="11" Foreground="{DynamicResource TextMutedBrush}" />
+      </Grid>
+    </Border>
+
+    <!-- Filter bar -->
+    <Border DockPanel.Dock="Top" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0,0,0,1" Padding="12,8">
+      <Grid ColumnDefinitions="Auto,200,*,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,8,0" TextElement.Foreground="{DynamicResource TextMutedBrush}">
+          <ctl:StrokeIcon Data="{StaticResource IconSearch}" Width="12" Height="12" /><TextBlock Text="Filter:" FontSize="12" />
+        </StackPanel>
+        <TextBox Grid.Column="1" Text="{Binding ConsoleFilter}" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" Margin="12,0,0,0">
+          <ToggleButton Content="Info" IsChecked="{Binding ShowConsoleInfo}" Padding="9,3" />
+          <ToggleButton Content="Warnings" IsChecked="{Binding ShowConsoleWarnings}" Padding="9,3" />
+          <ToggleButton Content="Errors" IsChecked="{Binding ShowConsoleErrors}" Padding="9,3" />
+        </StackPanel>
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
+          <ToggleButton IsChecked="{Binding IsConsolePaused}" Padding="9,3"
+                        ToolTip.Tip="Pause screen updates while the complete log continues recording">
+            <StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconPause}" Width="12" Height="12" /><TextBlock Text="Pause" /></StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="AutoScrollToggle" IsChecked="True"
+                        ToolTip.Tip="Scroll to latest output automatically">
+            <StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconArrowDown}" Width="12" Height="12" /><TextBlock Text="Auto scroll" /></StackPanel>
+          </ToggleButton>
+          <Button Content="Export" Command="{Binding ExportConsoleCommand}" />
+          <Button Content="{Binding Loc.ConsoleClear}" Command="{Binding ClearConsoleCommand}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Command input -->
+    <Border DockPanel.Dock="Bottom" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0,1,0,0" Padding="12,10">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <ToggleButton Margin="0,0,8,0" Padding="10,4" IsChecked="{Binding ConsoleChatMode}" IsVisible="{Binding IsRust}"
+                      ToolTip.Tip="Off: the box runs Rust console commands (to chat, type say your message). On: everything you type is sent to all players as in-game chat.">
+          <Panel>
+            <TextBlock Text="&gt; Command" IsVisible="{Binding !ConsoleChatMode}" />
+            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ConsoleChatMode}"><ctl:StrokeIcon Data="{StaticResource IconChat}" Width="13" Height="13" /><TextBlock Text="Chat" /></StackPanel>
+          </Panel>
+        </ToggleButton>
+        <TextBox Grid.Column="1" x:Name="CommandBox" Text="{Binding ConsoleInput}" FontFamily="Cascadia Code,Consolas,Menlo,monospace"
+                 ToolTip.Tip="Command mode: Rust console commands, for example say Hello, kick Name, server.save. Chat mode: a message for all players.">
+          <TextBox.KeyBindings>
+            <KeyBinding Gesture="Enter" Command="{Binding SendConsoleCommandCommand}" />
+          </TextBox.KeyBindings>
+        </TextBox>
+        <Panel Grid.Column="2" Margin="8,0,0,0" IsVisible="{Binding HasRcon}">
+          <Button Padding="12,6" Content="RCON: Connect" Command="{Binding ConnectRconCommand}" IsVisible="{Binding !RconConnected}" />
+          <Button Padding="12,6" Content="RCON: Disconnect" Command="{Binding DisconnectRconCommand}" IsVisible="{Binding RconConnected}" />
+        </Panel>
+        <Button Grid.Column="3" Classes="primary" Content="{Binding Loc.ConsoleSend}" Margin="8,0,0,0"
+                Command="{Binding SendConsoleCommandCommand}" />
+      </Grid>
+    </Border>
+
+    <!-- Quick commands -->
+    <Border DockPanel.Dock="Bottom" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0,1,0,0" Padding="12,8">
+      <StackPanel Spacing="4">
+        <TextBlock Text="Quick Commands" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}"
+                   ToolTip.Tip="One-click console command shortcuts you save below. Click a button to send its command instantly — hover a button to see exactly what it sends. Click ✕ to remove one. These can also be scheduled to run automatically from the Schedule tab." />
+        <ItemsControl ItemsSource="{Binding QuickCommands}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:QuickCommand">
+              <Border Background="{DynamicResource BgSurface2Brush}" CornerRadius="4" Margin="0,0,6,6">
+                <StackPanel Orientation="Horizontal">
+                  <Button Content="{Binding Label}" Padding="8,4" ToolTip.Tip="{Binding Command}"
+                          Command="{ReflectionBinding $parent[UserControl].DataContext.RunQuickCommandCommand}"
+                          CommandParameter="{Binding}" />
+                  <Button Content="✕" Width="22" Padding="0" FontSize="10" HorizontalContentAlignment="Center"
+                          Command="{ReflectionBinding $parent[UserControl].DataContext.RemoveQuickCommandCommand}"
+                          CommandParameter="{Binding}" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <TextBox Width="100" Text="{Binding NewQuickCommandLabel}" PlaceholderText="Label"
+                   ToolTip.Tip="Button label, e.g. Welcome message" />
+          <TextBox Width="220" FontFamily="Consolas,Menlo,monospace" Text="{Binding NewQuickCommandCommand}" PlaceholderText="Command"
+                   ToolTip.Tip="Console command, e.g. say Welcome to the server!" />
+          <Button Content="+ Add" Padding="10,4" Command="{Binding AddQuickCommandCommand}" />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- Log -->
+    <ListBox x:Name="LogList" ItemsSource="{Binding FilteredLog}" Background="{DynamicResource BgDeepBrush}"
+             BorderThickness="0" Padding="8">
+      <ListBox.Styles>
+        <Style Selector="ListBoxItem">
+          <Setter Property="Padding" Value="0" />
+          <Setter Property="MinHeight" Value="0" />
+          <Setter Property="Focusable" Value="False" />
+        </Style>
+      </ListBox.Styles>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="models:ConsoleMessage">
+          <Grid ColumnDefinitions="65,82,*">
+            <TextBlock Text="{Binding FormattedTime}" FontFamily="Consolas,Menlo,monospace" FontSize="11"
+                       Foreground="{DynamicResource TextMutedBrush}" Padding="4,1" VerticalAlignment="Top" />
+            <TextBlock Grid.Column="1" Text="{Binding SourceLabel}" FontFamily="Consolas,Menlo,monospace" FontSize="10"
+                       Foreground="{DynamicResource TextMutedBrush}" Padding="4,2" VerticalAlignment="Top"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="2" Text="{Binding Text}" FontFamily="Consolas,Menlo,monospace" FontSize="12"
+                       TextWrapping="Wrap" Padding="4,1"
+                       Foreground="{Binding Type, Converter={StaticResource TypeBrush}}" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </DockPanel>
+</UserControl>

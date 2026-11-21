@@ -4,7 +4,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $xamlFiles = @(
     Join-Path $repoRoot 'HighPop\MainWindow.xaml'
 ) + @(Get-ChildItem (Join-Path $repoRoot 'HighPop\Views') -Filter '*.xaml' -Recurse | ForEach-Object FullName)
-$viewModelSource = (Get-ChildItem (Join-Path $repoRoot 'HighPop\ViewModels') -Filter '*.cs' -Recurse |
+$viewModelSource = (Get-ChildItem (Join-Path $repoRoot 'HighPop.UI\ViewModels') -Filter '*.cs' -Recurse |
     Get-Content -Raw) -join "`n"
 $issues = [System.Collections.Generic.List[string]]::new()
 $bindingCount = 0

@@ -1,0 +1,32 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HighPop.Desktop.App"
+             RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://HighPop.Desktop/Themes/Colors.axaml" />
+        <ResourceInclude Source="avares://HighPop.Desktop/Themes/Icons.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <!-- The Windows palette: deep blue-black surfaces, cool grey text, cyan accent. -->
+        <ColorPaletteResources x:Key="Dark"
+                               Accent="#38BDF8"
+                               RegionColor="#0B0D14"
+                               ErrorText="#F06A6A"
+                               AltHigh="#0B0D14" AltMedium="#0B0D14" AltMediumHigh="#0B0D14" AltMediumLow="#0B0D14" AltLow="#0B0D14"
+                               BaseHigh="#EEF1F8" BaseMediumHigh="#D3D9E6" BaseMedium="#AEB6C8" BaseMediumLow="#7A8398" BaseLow="#2A3042"
+                               ChromeHigh="#3A4256" ChromeMedium="#1E2331" ChromeMediumLow="#161A25" ChromeLow="#10131C"
+                               ChromeAltLow="#AEB6C8" ChromeDisabledLow="#4A5266" ChromeDisabledHigh="#252B3A"
+                               ChromeBlackLow="#10131C" ChromeBlackMedium="#161A25" ChromeBlackHigh="#0B0D14" ChromeBlackMediumLow="#161A25"
+                               ListLow="#1E2331" ListMedium="#252B3A" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://OxyPlot.Avalonia/Themes/Default.axaml" />
+    <StyleInclude Source="avares://HighPop.Desktop/Themes/Styles.axaml" />
+  </Application.Styles>
+</Application>

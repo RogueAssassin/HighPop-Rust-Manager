@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
+             x:Class="HighPop.Desktop.Views.ScheduleTab"
+             x:DataType="vm:ServerViewModel">
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource BgDeepBrush}">
+    <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="24,12">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock Text="Reliable scheduled Rust operations" FontWeight="SemiBold" />
+          <TextBlock Text="Actions for the same server are serialized. Restarts warn players, save, stop, back up when configured, and start again."
+                     FontSize="11" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Content="↻ Refresh" Command="{Binding Automation.RefreshScheduledTasksCommand}" />
+          <Button Classes="primary" Content="+ Add task" Click="AddTask_Click" />
+        </StackPanel>
+      </Grid>
+    </Border>
+    <ScrollViewer Grid.Row="1" Padding="16">
+      <StackPanel>
+        <TextBlock Text="No scheduled tasks." FontSize="13" Foreground="{DynamicResource TextMutedBrush}" Margin="0,12,0,0"
+                   IsVisible="{Binding Automation.ScheduledTasks.Count, Converter={x:Static conv:NoItemsConverter.Instance}}" />
+        <ItemsControl ItemsSource="{Binding Automation.ScheduledTasks}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="svc:ScheduledTask">
+              <Border Classes="card" Margin="0,0,0,8">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                      <TextBlock Text="{Binding ActionText}" FontWeight="SemiBold" FontSize="13" />
+                      <TextBlock Text="—" FontWeight="SemiBold" FontSize="13" />
+                      <TextBlock Text="{Binding FrequencyText}" FontWeight="SemiBold" FontSize="13" />
+                    </StackPanel>
+                    <TextBlock Foreground="{DynamicResource TextMutedBrush}" FontSize="12">
+                      <Run Text="Last: " /><Run Text="{Binding LastRun, StringFormat='dd.MM HH:mm', FallbackValue=Never, TargetNullValue=Never}" /><Run Text="  Next: " /><Run Text="{Binding NextRun, StringFormat='dd.MM HH:mm', FallbackValue=—, TargetNullValue=—}" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding LastResult}" FontSize="11" Margin="0,3,0,0" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock FontSize="10" Foreground="{DynamicResource TextMutedBrush}">
+                      <Run Text="Duration: " /><Run Text="{Binding LastDurationMilliseconds}" /><Run Text=" ms  Consecutive failures: " /><Run Text="{Binding ConsecutiveFailures}" />
+                    </TextBlock>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Button Content="▶ Run now" CommandParameter="{Binding}" IsEnabled="{Binding !IsRunning}"
+                            Command="{ReflectionBinding $parent[UserControl].DataContext.Automation.RunScheduledTaskNowCommand}" />
+                    <Button Classes="danger" Content="✕" Width="32" Padding="0" HorizontalContentAlignment="Center" CommandParameter="{Binding}"
+                            Command="{ReflectionBinding $parent[UserControl].DataContext.Automation.RemoveScheduledTaskCommand}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid></UserControl>

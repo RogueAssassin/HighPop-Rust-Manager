@@ -1,0 +1,29 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
+             x:Class="HighPop.Desktop.Views.ActionLogTab"
+             x:DataType="vm:ServerViewModel">
+  <Grid RowDefinitions="Auto,*" Background="{DynamicResource BgDeepBrush}">
+    <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+      <StackPanel>
+        <TextBlock Text="Operational audit trail" FontWeight="SemiBold" />
+        <TextBlock Text="Tracks lifecycle requests, scheduled results, backups, RCON state, console commands, moderation, mod installs, configuration changes, and Rust settings."
+                   FontSize="11" Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+    <ListBox Grid.Row="1" ItemsSource="{Binding ActionLog}" Background="Transparent" BorderThickness="0"
+             FontFamily="Consolas,Menlo,monospace" FontSize="12" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.Styles>
+        <Style Selector="ListBoxItem"><Setter Property="Padding" Value="12,3" /><Setter Property="MinHeight" Value="0" /></Style>
+      </ListBox.Styles>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="x:String">
+          <TextBlock Text="{Binding}" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </Grid></UserControl>

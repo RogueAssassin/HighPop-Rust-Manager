@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             x:Class="HighPop.Desktop.Views.DashboardView"
+             x:DataType="vm:DashboardViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource BgSurface2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="20" />
+      <Setter Property="Margin" Value="0,0,16,16" />
+    </Style>
+    <Style Selector="TextBlock.head"><Setter Property="FontSize" Value="11" /><Setter Property="FontWeight" Value="Bold" /><Setter Property="Opacity" Value="0.6" /><Setter Property="Margin" Value="0,0,0,8" /></Style>
+    <Style Selector="TextBlock.big"><Setter Property="FontSize" Value="36" /><Setter Property="FontWeight" Value="Bold" /></Style>
+    <Style Selector="TextBlock.unit"><Setter Property="FontSize" Value="14" /><Setter Property="Opacity" Value="0.75" /><Setter Property="VerticalAlignment" Value="Bottom" /><Setter Property="Margin" Value="4,0,0,6" /></Style>
+    <Style Selector="TextBlock.section"><Setter Property="FontSize" Value="10" /><Setter Property="FontWeight" Value="Bold" /><Setter Property="Opacity" Value="0.6" /><Setter Property="Margin" Value="0,0,0,12" /></Style>
+  </UserControl.Styles>
+
+  <ScrollViewer Padding="24">
+    <StackPanel>
+
+      <TextBlock Text="SYSTEM" Classes="section" />
+      <WrapPanel Margin="0,0,0,12">
+
+        <Border Classes="card" Width="220">
+          <StackPanel>
+            <TextBlock Text="CPU" Classes="head" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <TextBlock Text="{Binding CpuPercent, StringFormat={}{0:F1}}" Classes="big" />
+              <TextBlock Text="%" Classes="unit" FontSize="18" />
+            </StackPanel>
+            <ProgressBar Value="{Binding CpuPercent}" Maximum="100" Height="6"
+                         Foreground="{Binding CpuPercent, Converter={x:Static conv:PercentBrushConverter.Instance}}" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="260">
+          <StackPanel>
+            <TextBlock Text="MEMORY (RAM)" Classes="head" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+              <TextBlock Text="{Binding RamUsedGb, StringFormat={}{0:F1}}" Classes="big" />
+              <TextBlock Text="GB" Classes="unit" />
+              <TextBlock Text=" / " Classes="unit" Margin="0,0,0,6" />
+              <TextBlock Text="{Binding RamTotalGb, StringFormat={}{0:F1}}" Classes="unit" Margin="0,0,0,6" />
+              <TextBlock Text="GB" Classes="unit" Margin="2,0,0,6" />
+            </StackPanel>
+            <ProgressBar Value="{Binding RamPercent}" Maximum="100" Height="6"
+                         Foreground="{Binding RamPercent, Converter={x:Static conv:PercentBrushConverter.Instance}}" />
+            <TextBlock Text="{Binding RamPercent, StringFormat={}({0:F0}% used)}" FontSize="11" Opacity="0.6" Margin="0,4,0,0" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Width="220">
+          <StackPanel>
+            <TextBlock Text="NETWORK" Classes="head" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="In" Opacity="0.6" />
+              <TextBlock Text="{Binding NetworkIn}" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+              <TextBlock Text="Out" Opacity="0.6" />
+              <TextBlock Text="{Binding NetworkOut}" FontWeight="SemiBold" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Drives}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="svc:DriveStats">
+              <Border Classes="card" Width="220">
+                <StackPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="DISK " FontSize="11" FontWeight="Bold" Opacity="0.6" />
+                    <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentBlueBrush}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="{Binding UsedGb, StringFormat={}{0:F1}}" Classes="big" />
+                    <TextBlock Text="GB" Classes="unit" />
+                    <TextBlock Text=" / " Classes="unit" Margin="0,0,0,6" />
+                    <TextBlock Text="{Binding TotalGb, StringFormat={}{0:F1}}" Classes="unit" Margin="0,0,0,6" />
+                    <TextBlock Text="GB" Classes="unit" Margin="2,0,0,6" />
+                  </StackPanel>
+                  <ProgressBar Value="{Binding UsedPercent}" Maximum="100" Height="6"
+                               Foreground="{Binding UsedPercent, Converter={x:Static conv:PercentBrushConverter.Instance}}" />
+                  <TextBlock Text="{Binding UsedPercent, StringFormat={}({0:F0}% used)}" FontSize="11" Opacity="0.6" Margin="0,4,0,0" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </WrapPanel>
+
+      <TextBlock Text="SERVERS" Classes="section" />
+      <WrapPanel>
+        <Border Classes="card" Width="160">
+          <StackPanel>
+            <TextBlock Text="TOTAL" Classes="head" />
+            <TextBlock Text="{Binding ServerCount}" FontSize="48" FontWeight="Bold" HorizontalAlignment="Center" />
+            <TextBlock Text="servers" FontSize="12" Opacity="0.75" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <Border Classes="card" Width="160">
+          <StackPanel>
+            <TextBlock Text="RUNNING" Classes="head" />
+            <TextBlock Text="{Binding OnlineCount}" FontSize="48" FontWeight="Bold" Foreground="{DynamicResource AccentGreenBrush}" HorizontalAlignment="Center" />
+            <TextBlock Text="active" FontSize="12" Opacity="0.75" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <Border Classes="card" Width="160">
+          <StackPanel>
+            <TextBlock Text="STOPPED" Classes="head" />
+            <TextBlock Text="{Binding StoppedCount}" FontSize="48" FontWeight="Bold" Opacity="0.75" HorizontalAlignment="Center" />
+            <TextBlock Text="stopped" FontSize="12" Opacity="0.75" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </WrapPanel>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

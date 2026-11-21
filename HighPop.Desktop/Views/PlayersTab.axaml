@@ -1,0 +1,384 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:models="using:HighPop.Models"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             x:Class="HighPop.Desktop.Views.PlayersTab"
+             x:DataType="vm:ServerViewModel">
+  <UserControl.Styles>
+    <Style Selector="Border.pill">
+      <Setter Property="Background" Value="{DynamicResource BgSurface2Brush}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="10,5" />
+      <Setter Property="Margin" Value="0,0,6,4" />
+    </Style>
+    <Style Selector="Border.row">
+      <Setter Property="Background" Value="{DynamicResource BgSurface2Brush}" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="12,8" />
+      <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+    <Style Selector="TextBlock.sub"><Setter Property="FontSize" Value="10" /><Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" /></Style>
+    <Style Selector="TextBlock.mono"><Setter Property="FontFamily" Value="Consolas,Menlo,monospace" /></Style>
+    <Style Selector="TextBlock.fl"><Setter Property="FontSize" Value="11" /><Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" /><Setter Property="Margin" Value="0,0,0,4" /></Style>
+  </UserControl.Styles>
+
+  <Grid Background="{DynamicResource BgDeepBrush}" RowDefinitions="Auto,*">
+    <!-- Rust moderation workspace -->
+    <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+      <StackPanel>
+        <WrapPanel Margin="0,0,0,10" IsVisible="{Binding ServerInfo, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <Border Classes="pill"><StackPanel><TextBlock Classes="sub" Text="Players" /><TextBlock Text="{Binding ServerInfo.PlayersText}" FontSize="13" FontWeight="SemiBold" /></StackPanel></Border>
+          <Border Classes="pill"><StackPanel><TextBlock Classes="sub" Text="Server FPS" /><TextBlock Classes="mono" Text="{Binding ServerInfo.Framerate}" FontSize="13" /></StackPanel></Border>
+          <Border Classes="pill"><StackPanel><TextBlock Classes="sub" Text="Entities" /><TextBlock Classes="mono" Text="{Binding ServerInfo.EntityCount, StringFormat='{}{0:N0}'}" FontSize="13" /></StackPanel></Border>
+          <Border Classes="pill"><StackPanel><TextBlock Classes="sub" Text="Memory" /><TextBlock Classes="mono" Text="{Binding ServerInfo.MemoryMb, StringFormat='{}{0:N0} MB'}" FontSize="13" /></StackPanel></Border>
+          <Border Classes="pill"><StackPanel><TextBlock Classes="sub" Text="Uptime" /><TextBlock Classes="mono" Text="{Binding ServerInfo.UptimeText}" FontSize="13" /></StackPanel></Border>
+          <Border Classes="pill"><StackPanel><TextBlock Classes="sub" Text="In-game time" /><TextBlock Classes="mono" Text="{Binding ServerInfo.GameTimeText}" FontSize="13" /></StackPanel></Border>
+        </WrapPanel>
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8" Spacing="6">
+          <Button Content="↻ Refresh" Command="{Binding RefreshPlayersCommand}" />
+          <Button Content="Select all online" Command="{Binding Players.SelectAllPlayersCommand}" />
+          <Button Content="Clear selection" Command="{Binding Players.ClearPlayerSelectionCommand}" />
+          <Button Content="Bulk kick" Margin="6,0,0,0" Command="{Binding Players.BulkKickPlayersCommand}" IsEnabled="{Binding Players.IsRunning}" />
+          <Button Content="Bulk ban" Classes="danger" Command="{Binding Players.BulkBanPlayersCommand}" IsEnabled="{Binding Players.IsRunning}" />
+        </StackPanel>
+        <WrapPanel IsVisible="{Binding Players.HasPlayerCommands}">
+          <StackPanel Margin="0,0,6,0"><TextBlock Classes="fl" Text="Name or SteamID" /><TextBox Width="180" Text="{Binding Players.PlayerInput}" /></StackPanel>
+          <StackPanel Margin="0,0,6,0"><TextBlock Classes="fl" Text="Kick reason (optional)" /><TextBox Width="170" Text="{Binding Players.KickReason}" /></StackPanel>
+          <Button Content="Kick" Margin="0,0,4,0" VerticalAlignment="Bottom" Command="{Binding Players.KickPlayerCommand}" IsEnabled="{Binding Players.IsRunning}" />
+          <StackPanel Margin="10,0,6,0"><TextBlock Classes="fl" Text="Ban reason (optional)" /><TextBox Width="170" Text="{Binding Players.BanReason}" /></StackPanel>
+          <StackPanel Margin="0,0,6,0"><TextBlock Classes="fl" Text="Duration (blank = permanent)" /><TextBox Width="145" ToolTip.Tip="Examples: 30m, 12h, 7d, 1M7d" Text="{Binding Players.BanDuration}" /></StackPanel>
+          <Button Content="Ban / timed ban" Classes="danger" VerticalAlignment="Bottom" Command="{Binding Players.BanPlayerCommand}" IsEnabled="{Binding Players.IsRunning}" />
+          <Button Content="Unban" Margin="6,0,0,0" VerticalAlignment="Bottom" Command="{Binding Players.UnbanPlayerCommand}" IsEnabled="{Binding Players.IsRunning}" />
+        </WrapPanel>
+        <WrapPanel Margin="0,10,0,0">
+          <StackPanel Margin="0,0,6,0"><TextBlock Classes="fl" Text="Persistent staff note" /><TextBox Width="420" Text="{Binding Players.PlayerNote}" /></StackPanel>
+          <Button Content="Save note" Classes="primary" VerticalAlignment="Bottom" Command="{Binding Players.SavePlayerNoteCommand}" />
+          <Button Content="Allow whitelist" Margin="10,0,0,0" VerticalAlignment="Bottom" ToolTip.Tip="Requires Carbon or Oxide and the Whitelist plugin" Command="{Binding Players.GrantWhitelistCommand}" IsEnabled="{Binding Players.IsRunning}" />
+          <Button Content="Remove whitelist" Margin="6,0,0,0" VerticalAlignment="Bottom" ToolTip.Tip="Requires Carbon or Oxide and the Whitelist plugin" Command="{Binding Players.RevokeWhitelistCommand}" IsEnabled="{Binding Players.IsRunning}" />
+        </WrapPanel>
+        <TextBlock Classes="sub" Text="Whitelist controls require Carbon/Oxide plus the Whitelist plugin. Timed bans use Rust's native banid duration format." Margin="0,7,0,0" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Players.ModerationStatus}" FontSize="11" Foreground="{DynamicResource AccentBlueBrush}" Margin="0,5,0,0" TextWrapping="Wrap" />
+      </StackPanel>
+    </Border>
+
+    <TabControl Grid.Row="1" Classes="subtabs">
+      <!-- Playing now -->
+      <TabItem Header="Playing now">
+        <Grid RowDefinitions="Auto,*">
+          <Border Padding="16,8" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"><Run Text="{Binding OnlinePlayers.Count, Mode=OneWay}" /><Run Text=" players online" /></TextBlock>
+              <TextBlock Text="  • updates every 15 s" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding PlayerQueryStatus}" FontSize="11" Margin="12,0,0,0" Foreground="{DynamicResource AccentBlueBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Border>
+          <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16,8">
+              <TextBlock Text="No players online." FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                         IsVisible="{Binding OnlinePlayers.Count, Converter={x:Static conv:NoItemsConverter.Instance}}" />
+              <ItemsControl ItemsSource="{Binding OnlinePlayers}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:OnlinePlayer">
+                    <Border Classes="row">
+                      <Grid ColumnDefinitions="34,*,72,80,72,120,150,Auto">
+                        <CheckBox IsChecked="{Binding IsSelected}" VerticalAlignment="Center" ToolTip.Tip="Select for a bulk action" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" />
+                          <TextBlock Classes="sub mono" Text="{Binding SteamIdShort}" />
+                          <TextBlock Classes="sub" Text="{Binding FlagsText}" Foreground="{DynamicResource AccentOrangeBrush}" TextWrapping="Wrap"
+                                     IsVisible="{Binding FlagsText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                     ToolTip.Tip="Family share: the game is borrowed from another Steam account, which shares its bans. Violations: Rust anti-hack kick score." />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Ping" /><TextBlock Classes="mono" Text="{Binding PingText}" FontSize="13" /></StackPanel>
+                        <StackPanel Grid.Column="3" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Play time" /><TextBlock Classes="mono" Text="{Binding ConnectedText}" FontSize="13" Foreground="{DynamicResource AccentGreenBrush}" /></StackPanel>
+                        <StackPanel Grid.Column="4" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Health" /><TextBlock Classes="mono" Text="{Binding HealthText}" FontSize="13" /></StackPanel>
+                        <StackPanel Grid.Column="5" VerticalAlignment="Center" Margin="4,0"><TextBlock Classes="sub" Text="IP address" /><TextBlock Classes="mono" Text="{Binding Address}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Address}" /></StackPanel>
+                        <StackPanel Grid.Column="6" Margin="4,0" VerticalAlignment="Center">
+                          <TextBlock Classes="sub" Text="{Binding StaffNotesPreview}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StaffNotes}" />
+                          <TextBlock Classes="sub" Text="{Binding AccessText}" Foreground="{DynamicResource AccentGreenBrush}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+                          <Button Content="🌐" Width="34" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Open Steam profile" CommandParameter="{Binding}" Command="{ReflectionBinding $parent[UserControl].DataContext.Players.OpenSteamProfileCommand}" />
+                          <Button Content="⧉" Width="34" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Copy Steam64 ID" CommandParameter="{Binding}" Command="{ReflectionBinding $parent[UserControl].DataContext.Players.CopyPlayerSteamIdCommand}" />
+                          <Button Content="📍" Width="34" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Use as the teleport destination in Player tools" CommandParameter="{Binding}" Command="{ReflectionBinding $parent[UserControl].DataContext.Players.UseAsTeleportDestinationCommand}" />
+                          <Button Content="✎" Width="34" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Select this player for moderation and Player tools" CommandParameter="{Binding}" Command="{ReflectionBinding $parent[UserControl].DataContext.Players.UsePlayerForModerationCommand}" />
+                          <Button Content="👢" Width="34" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Kick" CommandParameter="{Binding}" Command="{ReflectionBinding $parent[UserControl].DataContext.Players.KickOnlinePlayerCommand}" />
+                          <Button Classes="danger" Content="🚫" Width="34" Padding="0" HorizontalContentAlignment="Center" ToolTip.Tip="Ban" CommandParameter="{Binding}" Command="{ReflectionBinding $parent[UserControl].DataContext.Players.BanOnlinePlayerCommand}" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+
+      <!-- Player tools -->
+      <TabItem Header="Player tools" IsVisible="{Binding IsRust}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="16,10">
+            <Border Classes="row" Margin="0,0,0,10"><StackPanel>
+              <TextBlock FontSize="12" TextWrapping="Wrap"><Run Text="Target: " Foreground="{DynamicResource TextMutedBrush}" /><Run Text="{Binding Players.PlayerInput, Mode=OneWay}" FontWeight="SemiBold" /></TextBlock>
+              <TextBlock Classes="sub" Margin="0,3,0,0" TextWrapping="Wrap" Text="Pick a player with ✎ on Playing now, or type a name or Steam64 ID in the Name or SteamID box above. Commands go through WebRCON and Rust's reply shows below." />
+              <TextBlock Classes="mono" Text="{Binding Players.PlayerToolOutput}" FontSize="11" Foreground="{DynamicResource AccentBlueBrush}" TextWrapping="Wrap" Margin="0,6,0,0"
+                         IsVisible="{Binding Players.PlayerToolOutput, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel></Border>
+
+            <TextBlock Classes="section" Text="Give items" Margin="0,0,0,8" />
+            <Grid ColumnDefinitions="320,*" Margin="0,0,0,14">
+              <StackPanel Margin="0,0,14,0">
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,6">
+                  <ComboBox Width="130" ItemsSource="{Binding Players.GiveCategories}" SelectedItem="{Binding Players.GiveCategory}" />
+                  <TextBox Width="184" ToolTip.Tip="Search by name or short name" Text="{Binding Players.GiveSearch}" />
+                </StackPanel>
+                <ListBox Height="230" ItemsSource="{Binding Players.GiveItems}" SelectedItem="{Binding Players.SelectedGiveItem}"
+                         Background="{DynamicResource BgDeepBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="svc:RustCatalogItem">
+                      <StackPanel Margin="2,1">
+                        <TextBlock Text="{Binding DisplayName}" FontSize="12" />
+                        <TextBlock Classes="sub mono"><Run Text="{Binding ShortName, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Category, Mode=OneWay}" /></TextBlock>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <WrapPanel>
+                  <StackPanel Margin="0,0,8,8"><TextBlock Classes="fl" Text="Item short name" /><TextBox Width="190" FontFamily="Consolas,Menlo,monospace" ToolTip.Tip="Any Rust item short name works, for example rifle.ak or metal.fragments" Text="{Binding Players.GiveShortName}" /></StackPanel>
+                  <StackPanel Margin="0,0,8,8"><TextBlock Classes="fl" Text="Amount" /><TextBox Width="90" Text="{Binding Players.GiveAmount}" /></StackPanel>
+                  <StackPanel Margin="0,0,8,8"><TextBlock Classes="fl" Text="Skin ID (optional)" /><TextBox Width="140" FontFamily="Consolas,Menlo,monospace" ToolTip.Tip="Steam Workshop skin ID" Text="{Binding Players.GiveSkin}" /></StackPanel>
+                </WrapPanel>
+                <WrapPanel>
+                  <TextBlock Text="Quick amount:" FontSize="11" Foreground="{DynamicResource TextMutedBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                  <Button Content="1" Padding="8,2" MinHeight="0" Margin="0,0,4,0" Click="GiveAmountPreset_Click" />
+                  <Button Content="10" Padding="8,2" MinHeight="0" Margin="0,0,4,0" Click="GiveAmountPreset_Click" />
+                  <Button Content="100" Padding="8,2" MinHeight="0" Margin="0,0,4,0" Click="GiveAmountPreset_Click" />
+                  <Button Content="1000" Padding="8,2" MinHeight="0" Margin="0,0,4,0" Click="GiveAmountPreset_Click" />
+                  <Button Content="10000" Padding="8,2" MinHeight="0" Margin="0,0,4,0" Click="GiveAmountPreset_Click" />
+                </WrapPanel>
+                <WrapPanel Margin="0,10,0,0">
+                  <Button Content="Give to target" Classes="primary" Margin="0,0,6,0" Command="{Binding Players.GiveItemCommand}" IsEnabled="{Binding Players.IsRunning}" />
+                  <Button Content="Give to everyone online" Command="{Binding Players.GiveItemToAllCommand}" IsEnabled="{Binding Players.IsRunning}" />
+                </WrapPanel>
+                <TextBlock Classes="sub" TextWrapping="Wrap" Margin="0,8,0,0" Text="Uses Rust's inventory.giveto. Items go into the player's inventory, or drop at their feet when it is full." />
+              </StackPanel>
+            </Grid>
+
+            <TextBlock Classes="section" Text="Player actions" Margin="0,0,0,8" />
+            <WrapPanel Margin="0,0,0,14">
+              <Button Content="🔇 Mute chat" Margin="0,0,6,6" Command="{Binding Players.PlayerActionCommand}" CommandParameter="Mute" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="🔊 Unmute" Margin="0,0,6,6" Command="{Binding Players.PlayerActionCommand}" CommandParameter="Unmute" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="👥 Team info" Margin="0,0,6,6" Command="{Binding Players.PlayerActionCommand}" CommandParameter="TeamInfo" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="📘 Unlock all blueprints" Margin="0,0,6,6" Command="{Binding Players.PlayerActionCommand}" CommandParameter="UnlockBlueprints" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="Reset blueprints" Margin="0,0,6,6" Command="{Binding Players.PlayerActionCommand}" CommandParameter="ResetBlueprints" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Classes="danger" Content="🧹 Clear inventory" Margin="0,0,6,6" Command="{Binding Players.PlayerActionCommand}" CommandParameter="ClearInventory" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Classes="danger" Content="💀 Kill" Margin="0,0,6,6" Command="{Binding Players.PlayerActionCommand}" CommandParameter="Kill" IsEnabled="{Binding Players.IsRunning}" />
+            </WrapPanel>
+
+            <TextBlock Classes="section" Text="Teleport" Margin="0,0,0,8" />
+            <WrapPanel Margin="0,0,0,14">
+              <StackPanel Margin="0,0,8,0"><TextBlock Classes="fl" Text="Move the target to player (name or Steam64 ID, or 📍 on Playing now)" /><TextBox Width="300" Text="{Binding Players.TeleportDestination}" /></StackPanel>
+              <Button Content="Teleport" Classes="primary" VerticalAlignment="Bottom" Command="{Binding Players.TeleportPlayerCommand}" IsEnabled="{Binding Players.IsRunning}" />
+            </WrapPanel>
+
+            <TextBlock Classes="section" Text="Roles and access" Margin="0,0,0,8" />
+            <WrapPanel Margin="0,0,0,4">
+              <Button Content="Make moderator" Margin="0,0,6,6" Command="{Binding Players.SetModeratorCommand}" CommandParameter="True" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="Remove moderator" Margin="0,0,6,6" Command="{Binding Players.SetModeratorCommand}" CommandParameter="False" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="⏭ Skip queue" Margin="0,0,6,6" ToolTip.Tip="Lets this Steam64 ID skip the join queue" Command="{Binding Players.SkipQueueCommand}" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="List mutes" Margin="12,0,6,6" Command="{Binding Players.ListMutesCommand}" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="List Rust bans" Margin="0,0,6,6" Command="{Binding Players.ListBansCommand}" IsEnabled="{Binding Players.IsRunning}" />
+            </WrapPanel>
+            <TextBlock Classes="sub" Margin="0,0,0,14" Text="Moderator changes are saved with server.writecfg so they survive a restart." />
+
+            <TextBlock Classes="section" Text="Loadouts" Margin="0,0,0,8" />
+            <WrapPanel>
+              <StackPanel Margin="0,0,8,0"><TextBlock Classes="fl" Text="Loadout name" /><TextBox Width="180" Text="{Binding Players.LoadoutName}" /></StackPanel>
+              <Button Content="Deploy to target" Classes="primary" VerticalAlignment="Bottom" Margin="0,0,6,0" Command="{Binding Players.DeployLoadoutCommand}" IsEnabled="{Binding Players.IsRunning}" />
+              <Button Content="List loadouts" VerticalAlignment="Bottom" Command="{Binding Players.ListLoadoutsCommand}" IsEnabled="{Binding Players.IsRunning}" />
+            </WrapPanel>
+            <TextBlock Classes="sub" Margin="0,6,0,0" TextWrapping="Wrap" Text="Save a loadout in game with inventory.saveloadout &lt;name&gt; while wearing and holding the kit." />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Chat & reports -->
+      <TabItem Header="Chat &amp; reports" IsVisible="{Binding IsRust}">
+        <Grid RowDefinitions="Auto,*" ColumnDefinitions="2*,*">
+          <Border Grid.ColumnSpan="2" Padding="16,8" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel>
+                <TextBox MaxLength="256" ToolTip.Tip="Message every player in global chat (Rust say)" Text="{Binding BroadcastMessage}">
+                  <TextBox.KeyBindings><KeyBinding Gesture="Enter" Command="{Binding SendBroadcastCommand}" /></TextBox.KeyBindings>
+                </TextBox>
+                <TextBlock Classes="sub" Text="{Binding BroadcastStatus}" Margin="0,4,0,0" Foreground="{DynamicResource AccentBlueBrush}" TextWrapping="Wrap"
+                           IsVisible="{Binding BroadcastStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+              <Button Grid.Column="1" Classes="primary" Margin="8,0,0,0" VerticalAlignment="Top" Command="{Binding SendBroadcastCommand}" IsEnabled="{Binding Players.IsRunning}">
+                <StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconChat}" Width="13" Height="13" /><TextBlock Text="Send to all players" /></StackPanel>
+              </Button>
+            </Grid>
+          </Border>
+          <ListBox Grid.Row="1" x:Name="ChatList" ItemsSource="{Binding ChatLog}" Background="{DynamicResource BgDeepBrush}" BorderThickness="0" Padding="12,6"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="svc:RconChatMessage">
+                <TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,1">
+                  <Run Text="{Binding TimeText, Mode=OneWay}" FontFamily="Consolas,Menlo,monospace" FontSize="10" Foreground="{DynamicResource TextMutedBrush}" /><Run Text=" " /><Run Text="{Binding ChannelText, Mode=OneWay}" FontSize="10" Foreground="{DynamicResource AccentVioletBrush}" /><Run Text=" " /><Run Text="{Binding Username, Mode=OneWay}" FontWeight="SemiBold" Foreground="{DynamicResource AccentBlueBrush}" /><Run Text=" " /><Run Text="{Binding Message, Mode=OneWay}" />
+                </TextBlock>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock Grid.Row="1" Margin="16,12" FontSize="12" TextWrapping="Wrap" IsHitTestVisible="False" Foreground="{DynamicResource TextMutedBrush}"
+                     Text="No chat yet. Chat appears here live while WebRCON is connected, starting with the last 50 lines."
+                     IsVisible="{Binding ChatLog.Count, Converter={x:Static conv:NoItemsConverter.Instance}}" />
+          <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <StackPanel Margin="12,8">
+                <TextBlock Classes="section" Text="F7 reports" Margin="0,0,0,8" />
+                <TextBlock Text="No reports since WebRCON connected." FontSize="11" Foreground="{DynamicResource TextMutedBrush}"
+                           IsVisible="{Binding PlayerReports.Count, Converter={x:Static conv:NoItemsConverter.Instance}}" />
+                <ItemsControl ItemsSource="{Binding PlayerReports}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="svc:PlayerReport">
+                      <Border Background="{DynamicResource BgSurface2Brush}" CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
+                        <StackPanel>
+                          <TextBlock FontSize="11" TextWrapping="Wrap" FontWeight="SemiBold"><Run Text="{Binding TimeText, Mode=OneWay}" Foreground="{DynamicResource TextMutedBrush}" /><Run Text=" " /><Run Text="{Binding Summary, Mode=OneWay}" /></TextBlock>
+                          <TextBlock Text="{Binding Message}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondaryBrush}" />
+                          <TextBlock Classes="sub mono" Text="{Binding TargetId}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+        </Grid>
+      </TabItem>
+
+      <!-- Moderation -->
+      <TabItem Header="Moderation">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="16,8">
+            <TextBlock Classes="section" Text="Local Rust moderation records" Margin="0,0,0,8" />
+            <TextBlock Classes="sub" FontSize="11" Margin="0,0,0,12" TextWrapping="Wrap" Text="Staff notes, whitelist state, and bans issued through HighPop are stored locally under assets/data. Rust remains the authority for live bans and permissions." />
+            <TextBlock Text="No moderation records yet." FontSize="12" Foreground="{DynamicResource TextMutedBrush}"
+                       IsVisible="{Binding ModerationProfiles.Count, Converter={x:Static conv:NoItemsConverter.Instance}}" />
+            <ItemsControl ItemsSource="{Binding ModerationProfiles}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="svc:RustPlayerModerationRecord">
+                  <Border Classes="row">
+                    <Grid ColumnDefinitions="*,150,190,2*,130">
+                      <StackPanel><TextBlock Text="{Binding LastKnownName}" FontWeight="SemiBold" FontSize="12" /><TextBlock Classes="sub mono" Text="{Binding SteamId}" /></StackPanel>
+                      <TextBlock Grid.Column="1" Text="{Binding WhitelistText}" FontSize="11" Foreground="{DynamicResource AccentGreenBrush}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="2" Text="{Binding BanStatusText}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="3" Text="{Binding NotesPreview}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="8,0" />
+                      <TextBlock Grid.Column="4" Classes="sub" Text="{Binding UpdatedAtUtc, StringFormat='{}{0:g} UTC'}" VerticalAlignment="Center" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- History -->
+      <TabItem Header="History">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="16,8">
+            <TextBlock Classes="section" Text="Recent sessions" Margin="0,0,0,8" />
+            <ItemsControl ItemsSource="{Binding PlayerHistory}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="svc:PlayerSession">
+                  <Border Classes="row" Padding="12,6" Margin="0,0,0,3">
+                    <Grid ColumnDefinitions="*,120,90,80">
+                      <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding PlayerName}" FontWeight="SemiBold" FontSize="12" /><TextBlock Classes="sub mono" Text="{Binding SteamId}" /></StackPanel>
+                      <TextBlock Grid.Column="1" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" Text="{Binding JoinTime, StringFormat='dd.MM HH:mm'}" />
+                      <TextBlock Grid.Column="2" Classes="mono" FontSize="12" Text="{Binding DurationText}" VerticalAlignment="Center" Foreground="{DynamicResource AccentGreenBrush}" />
+                      <Border Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Left" Background="#1A3A2A" CornerRadius="4" Padding="6,2" IsVisible="{Binding IsOnline}">
+                        <TextBlock Text="● Online" FontSize="10" Foreground="{DynamicResource AccentGreenBrush}" />
+                      </Border>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Statistics -->
+      <TabItem Header="Statistics">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="16,8">
+            <TextBlock Classes="section" Text="Player statistics (top 50)" Margin="0,0,0,8" />
+            <ItemsControl ItemsSource="{Binding PlayerStatsList}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="svc:PlayerStats">
+                  <Border Classes="row" Padding="12,6" Margin="0,0,0,3">
+                    <Grid ColumnDefinitions="*,68,95,88,88,112,112">
+                      <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding PlayerName}" FontWeight="SemiBold" FontSize="12" /><TextBlock Classes="sub mono" Text="{Binding SteamId}" /></StackPanel>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Sessions" /><TextBlock Text="{Binding SessionCount}" FontSize="13" FontWeight="SemiBold" /></StackPanel>
+                      <StackPanel Grid.Column="2" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Total play time" /><TextBlock Classes="mono" Text="{Binding TotalTimeText}" FontSize="13" Foreground="{DynamicResource AccentGreenBrush}" /></StackPanel>
+                      <StackPanel Grid.Column="3" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Average" /><TextBlock Classes="mono" Text="{Binding AverageSessionText}" FontSize="12" /></StackPanel>
+                      <StackPanel Grid.Column="4" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Longest" /><TextBlock Classes="mono" Text="{Binding LongestSessionText}" FontSize="12" /></StackPanel>
+                      <StackPanel Grid.Column="5" VerticalAlignment="Center"><TextBlock Classes="sub" Text="First seen" /><TextBlock Text="{Binding FirstSeen, StringFormat='dd.MM.yyyy HH:mm'}" FontSize="10" /></StackPanel>
+                      <StackPanel Grid.Column="6" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Last seen" /><TextBlock Text="{Binding LastSeen, StringFormat='dd.MM.yyyy HH:mm'}" FontSize="10" /></StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Activity -->
+      <TabItem Header="Activity">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="16,8">
+            <TextBlock Classes="section" Text="Activity by hour of day" Margin="0,0,0,8" />
+            <TextBlock Classes="sub" FontSize="11" Margin="0,0,0,10" Text="How many sessions started in each hour, all-time. Useful for scheduling restarts/updates during quiet hours." />
+            <ItemsControl ItemsSource="{Binding HourlyActivity}">
+              <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ServerViewModel+HourBar">
+                  <StackPanel Width="24" Margin="1,0" VerticalAlignment="Bottom">
+                    <Border Height="80" Background="Transparent">
+                      <Border VerticalAlignment="Bottom" Background="{DynamicResource AccentBlueBrush}" CornerRadius="2" ToolTip.Tip="{Binding Count}"
+                              Height="{Binding HeightFraction, Converter={x:Static conv:FractionToHeightConverter.Instance}}" />
+                    </Border>
+                    <TextBlock Text="{Binding Label}" FontSize="8" HorizontalAlignment="Center" Foreground="{DynamicResource TextMutedBrush}" Margin="0,2,0,0" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Classes="section" Text="Most active players (last 30 days)" Margin="0,24,0,8" />
+            <ItemsControl ItemsSource="{Binding MostActivePlayers}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="svc:PlayerStats">
+                  <Border Classes="row" Padding="12,6" Margin="0,0,0,3">
+                    <Grid ColumnDefinitions="*,80,100">
+                      <TextBlock Text="{Binding PlayerName}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Sessions" /><TextBlock Text="{Binding SessionCount}" FontSize="13" FontWeight="SemiBold" /></StackPanel>
+                      <StackPanel Grid.Column="2" VerticalAlignment="Center"><TextBlock Classes="sub" Text="Play time" /><TextBlock Classes="mono" Text="{Binding TotalTimeText}" FontSize="13" Foreground="{DynamicResource AccentGreenBrush}" /></StackPanel>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</UserControl>

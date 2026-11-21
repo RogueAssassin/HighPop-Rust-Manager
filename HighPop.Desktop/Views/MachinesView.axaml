@@ -1,0 +1,109 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             x:Class="HighPop.Desktop.Views.MachinesView"
+             x:DataType="vm:MainViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="24" Spacing="14">
+
+      <StackPanel Spacing="4">
+        <TextBlock Text="Remote machines" FontSize="22" FontWeight="SemiBold" />
+        <TextBlock Opacity="0.65" FontSize="12"
+                   Text="Master control panel: add slave machines and manage their servers remotely." />
+      </StackPanel>
+
+      <Border Background="{DynamicResource BgSurface2Brush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="16">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Add slave machine" FontSize="15" FontWeight="SemiBold" />
+          <Grid ColumnDefinitions="160,240,*,Auto" ColumnSpacing="12">
+            <StackPanel Spacing="4">
+              <TextBlock Text="Name" FontSize="12" Opacity="0.7" />
+              <TextBox Text="{Binding NewMachineName}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="4">
+              <TextBlock Text="URL (http://ip:port)" FontSize="12" Opacity="0.7" />
+              <TextBox Text="{Binding NewMachineUrl}" FontFamily="Consolas,Menlo,monospace" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Spacing="4">
+              <TextBlock Text="Token (from slave settings)" FontSize="12" Opacity="0.7" />
+              <TextBox Text="{Binding NewMachineToken}" PasswordChar="●" FontFamily="Consolas,Menlo,monospace" />
+            </StackPanel>
+            <Button Grid.Column="3" Content="Add" Command="{Binding AddMachineCommand}" VerticalAlignment="Bottom" />
+          </Grid>
+          <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     Text="On the slave: Settings, Remote control slave setup, enable slave, set the port and token, then Save all. Copy the URL and token from the slave's settings." />
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="No machines added yet." Opacity="0.65"
+                 IsVisible="{Binding !RemoteMachines.Count}" />
+
+      <ItemsControl ItemsSource="{Binding RemoteMachines}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:MachineViewModel">
+            <Border Background="{DynamicResource BgSurface2Brush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="6"
+                    Padding="16" Margin="0,0,0,12">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Ellipse Width="10" Height="10" Margin="0,0,10,0" VerticalAlignment="Center"
+                           Fill="{Binding IsOnline, Converter={x:Static conv:ConnectedBrushConverter.Instance}}" />
+                  <StackPanel Grid.Column="1">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <TextBlock Text="{Binding MachineName}" FontSize="15" FontWeight="Bold" />
+                      <TextBlock Text="{Binding StatusText}" FontSize="11" Opacity="0.65" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding MachineUrl}" FontSize="11" Opacity="0.65"
+                               FontFamily="Consolas,Menlo,monospace" />
+                  </StackPanel>
+                  <Button Grid.Column="2" Content="Remove" CommandParameter="{Binding}"
+                          Command="{ReflectionBinding $parent[UserControl].DataContext.RemoveMachineCommand}" />
+                </Grid>
+
+                <TextBlock Text="No servers visible: the slave is offline or has no servers installed."
+                           FontSize="12" Opacity="0.65" Margin="20,0,0,0"
+                           IsVisible="{Binding !Servers.Count}" />
+
+                <ItemsControl ItemsSource="{Binding Servers}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="svc:RemoteServerInfo">
+                      <Border Background="{DynamicResource BgDeepBrush}" CornerRadius="6" Padding="12,8" Margin="0,0,0,6">
+                        <Grid ColumnDefinitions="*,Auto">
+                          <StackPanel VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                              <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                                       Fill="{Binding Status, Converter={x:Static conv:RemoteStatusBrushConverter.Instance}}" />
+                              <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="15,2,0,0" Spacing="6">
+                              <TextBlock Text="{Binding GameId}" FontSize="11" Opacity="0.65" />
+                              <TextBlock Text="·" FontSize="11" Opacity="0.65" />
+                              <TextBlock Text="{Binding Status}" FontSize="11" Opacity="0.65" />
+                            </StackPanel>
+                          </StackPanel>
+                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Button Content="Start" CommandParameter="{Binding}"
+                                    IsEnabled="{Binding Status, Converter={x:Static conv:RemoteActionEnabledConverter.Instance}, ConverterParameter=start}"
+                                    Command="{ReflectionBinding $parent[ItemsControl].DataContext.StartServerCommand}" />
+                            <Button Content="Stop" CommandParameter="{Binding}"
+                                    IsEnabled="{Binding Status, Converter={x:Static conv:RemoteActionEnabledConverter.Instance}, ConverterParameter=stop}"
+                                    Command="{ReflectionBinding $parent[ItemsControl].DataContext.StopServerCommand}" />
+                            <Button Content="Restart" CommandParameter="{Binding}"
+                                    IsEnabled="{Binding Status, Converter={x:Static conv:RemoteActionEnabledConverter.Instance}, ConverterParameter=restart}"
+                                    Command="{ReflectionBinding $parent[ItemsControl].DataContext.RestartServerCommand}" />
+                          </StackPanel>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

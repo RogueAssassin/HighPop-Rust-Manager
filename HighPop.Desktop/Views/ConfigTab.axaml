@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HighPop.ViewModels"
+             xmlns:svc="using:HighPop.Services"
+             xmlns:conv="using:HighPop.Desktop.Converters"
+             xmlns:ctl="using:HighPop.Desktop.Controls"
+             xmlns:oxy="clr-namespace:OxyPlot.Avalonia;assembly=OxyPlot.Avalonia"
+             x:Class="HighPop.Desktop.Views.ConfigTab"
+             x:DataType="vm:ServerViewModel">
+  <Grid RowDefinitions="Auto,*,Auto" Background="{DynamicResource BgDeepBrush}">
+    <Border Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,10">
+      <Grid ColumnDefinitions="Auto,360,*">
+        <Button Content="↻ Scan server + plugin configs" Command="{Binding Config.LoadConfigFilesCommand}" Margin="0,0,12,0" />
+        <ComboBox Grid.Column="1" ItemsSource="{Binding Config.ConfigFiles}" SelectedItem="{Binding Config.SelectedConfigFile}" HorizontalAlignment="Stretch">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="svc:ConfigFileEntry"><TextBlock Text="{Binding DisplayName}" /></DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Grid.Column="2" Text="Oxide and Carbon JSON configs include a live plugin reload action." FontSize="11"
+                   Foreground="{DynamicResource TextMutedBrush}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0" />
+      </Grid>
+    </Border>
+    <Grid Grid.Row="1" ColumnDefinitions="*,220">
+      <TextBox Text="{Binding Config.ConfigContent}" Background="{DynamicResource BgDeepBrush}" BorderThickness="0" CornerRadius="0"
+               FontFamily="Cascadia Code,Consolas,Menlo,monospace" FontSize="13" AcceptsReturn="True" AcceptsTab="True"
+               TextWrapping="NoWrap" Padding="16" VerticalContentAlignment="Top" />
+      <Border Grid.Column="1" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Classes="section" Text="History" Margin="12,12,12,6" />
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Config.ConfigHistory}" Margin="8">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="svc:ConfigSnapshot">
+                  <Border Classes="card" Margin="4,0,4,6" Padding="8">
+                    <StackPanel>
+                      <TextBlock Text="{Binding SavedAt, StringFormat='dd.MM.yyyy HH:mm:ss'}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                      <Button Content="↩ Restore" FontSize="11" Padding="6,3" MinHeight="0" Margin="0,4,0,0" HorizontalAlignment="Left"
+                              Command="{ReflectionBinding $parent[UserControl].DataContext.Config.RestoreConfigSnapshotCommand}" CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,10">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+        <Button Content="↻ Reload selected plugin" Command="{Binding Config.ReloadSelectedPluginCommand}"
+                IsVisible="{Binding Config.SelectedConfigFile.CanReloadPlugin}" />
+        <Button Classes="primary" Command="{Binding Config.SaveConfigFileCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconSave}" Width="14" Height="14" /><TextBlock Text="Save file" /></StackPanel>
+        </Button>
+      </StackPanel>
+    </Border>
+  </Grid></UserControl>
