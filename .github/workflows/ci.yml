@@ -138,6 +138,7 @@ jobs:
 
       - name: Build installers (.deb, AppImage)
         run: |
+          sudo apt-get install -y --no-install-recommends desktop-file-utils
           version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
           scripts/build-linux-deb.sh publish_desktop package_out "$version" desktop
           scripts/build-linux-deb.sh publish_server package_out "$version" server

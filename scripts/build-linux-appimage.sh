@@ -23,6 +23,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tool_url="https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage"
 tool_sha256="46fdd785094c7f6e545b61afcfb0f3d98d8eab243f644b4b17698c01d06083d1"
 
+command -v desktop-file-validate >/dev/null || { echo "desktop-file-validate is required (sudo apt install desktop-file-utils)." >&2; exit 1; }
 mkdir -p "$out"; out="$(cd "$out" && pwd)"
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 

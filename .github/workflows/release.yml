@@ -261,6 +261,7 @@ jobs:
 
       - name: Build installers (.deb, AppImage)
         run: |
+          sudo apt-get install -y --no-install-recommends desktop-file-utils
           version="${{ needs.prepare.outputs.version }}"
           scripts/build-linux-deb.sh publish_desktop . "$version" desktop
           scripts/build-linux-deb.sh publish_server . "$version" server
