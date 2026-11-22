@@ -27,17 +27,17 @@
     <!-- Filter bar -->
     <Border DockPanel.Dock="Top" Background="{DynamicResource BgSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0,0,0,1" Padding="12,8">
-      <Grid ColumnDefinitions="Auto,200,*,Auto">
+      <WrapPanel ItemSpacing="4" LineSpacing="6">
         <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Margin="0,0,8,0" TextElement.Foreground="{DynamicResource TextMutedBrush}">
           <ctl:StrokeIcon Data="{StaticResource IconSearch}" Width="12" Height="12" /><TextBlock Text="Filter:" FontSize="12" />
         </StackPanel>
-        <TextBox Grid.Column="1" Text="{Binding ConsoleFilter}" />
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="5" Margin="12,0,0,0">
+        <TextBox Width="200" Text="{Binding ConsoleFilter}" />
+        <StackPanel Orientation="Horizontal" Spacing="5" Margin="12,0,0,0">
           <ToggleButton Content="Info" IsChecked="{Binding ShowConsoleInfo}" Padding="9,3" />
           <ToggleButton Content="Warnings" IsChecked="{Binding ShowConsoleWarnings}" Padding="9,3" />
           <ToggleButton Content="Errors" IsChecked="{Binding ShowConsoleErrors}" Padding="9,3" />
         </StackPanel>
-        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
           <ToggleButton IsChecked="{Binding IsConsolePaused}" Padding="9,3"
                         ToolTip.Tip="Pause screen updates while the complete log continues recording">
             <StackPanel Orientation="Horizontal" Spacing="6"><ctl:StrokeIcon Data="{StaticResource IconPause}" Width="12" Height="12" /><TextBlock Text="Pause" /></StackPanel>
@@ -49,7 +49,7 @@
           <Button Content="Export" Command="{Binding ExportConsoleCommand}" />
           <Button Content="{Binding Loc.ConsoleClear}" Command="{Binding ClearConsoleCommand}" />
         </StackPanel>
-      </Grid>
+      </WrapPanel>
     </Border>
 
     <!-- Command input -->

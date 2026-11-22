@@ -231,6 +231,8 @@ public static class LinuxSelfUpdateService
         elif [ -d "$STAGED/assets" ]; then
           mkdir -p "$APP/assets"
           cp -a --update=none "$STAGED/assets/." "$APP/assets/" 2>/dev/null || cp -an "$STAGED/assets/." "$APP/assets/"
+          # The assets README is documentation, so it always matches the installed version.
+          [ -f "$STAGED/assets/README.txt" ] && cp -f "$STAGED/assets/README.txt" "$APP/assets/README.txt" 2>/dev/null
         fi
         rm -rf "$OLD" "$STAGED"
         nohup "$EXE" >/dev/null 2>&1 &

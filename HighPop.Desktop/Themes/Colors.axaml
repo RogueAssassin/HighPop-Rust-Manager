@@ -19,7 +19,7 @@
   <!-- Text -->
   <Color x:Key="TextPrimaryColor">#EEF1F8</Color>
   <Color x:Key="TextSecondaryColor">#AEB6C8</Color>
-  <Color x:Key="TextMutedColor">#7A8398</Color>
+  <Color x:Key="TextMutedColor">#8E97AB</Color>
 
   <!-- Border -->
   <Color x:Key="BorderColor">#252B3A</Color>

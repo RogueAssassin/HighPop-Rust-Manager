@@ -259,7 +259,7 @@
                     <TextBlock Text="{Binding LifecycleDetailText}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
                                Margin="20,0,0,8" TextTrimming="CharacterEllipsis" />
                     <!-- Lifecycle command deck -->
-                    <StackPanel Orientation="Horizontal" Spacing="6">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6">
                       <Button Classes="success" Content="▶  Start" Command="{Binding StartCommand}" IsEnabled="{Binding CanStart}" />
                       <Button Classes="primary" Content="■  Stop safely" Command="{Binding StopCommand}" IsEnabled="{Binding CanStop}" />
                       <Button Classes="danger" Content="Force Stop PID" Command="{Binding ForceStopCommand}" IsEnabled="{Binding CanForceStop}"
@@ -295,7 +295,7 @@
                               ToolTip.Tip="Remove server from list">
                         <ctl:StrokeIcon Data="{StaticResource IconTrash}" Width="16" Height="16" />
                       </Button>
-                    </StackPanel>
+                    </WrapPanel>
                   </StackPanel>
                 </Border>
 
