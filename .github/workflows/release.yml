@@ -259,6 +259,21 @@ jobs:
           tag="${{ needs.prepare.outputs.tag }}"
           sha256sum --check "HighPop-$tag-linux-x64.tar.gz.sha256" "HighPop-$tag-linux-server-x64.tar.gz.sha256"
 
+      - name: Prepare the apt signing key (optional)
+        # With the APT_GPG_PRIVATE_KEY secret set, the .deb files also register the HighPop apt repository on first
+        # install, so later versions arrive through apt. Without it the .deb files are built as before.
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -n "$APT_GPG_PRIVATE_KEY" ]; then
+            export GNUPGHOME="$(mktemp -d)"
+            printf "%s" "$APT_GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null
+            gpg --batch --export > "$RUNNER_TEMP/highpop-archive-keyring.gpg"
+            echo "HIGHPOP_APT_KEYRING=$RUNNER_TEMP/highpop-archive-keyring.gpg" >> "$GITHUB_ENV"
+          else
+            echo "::notice::APT_GPG_PRIVATE_KEY is not set; building .deb files without the apt source."
+          fi
+
       - name: Build installers (.deb, AppImage)
         run: |
           sudo apt-get install -y --no-install-recommends desktop-file-utils
@@ -310,3 +325,52 @@ jobs:
             HighPop-${{ needs.prepare.outputs.tag }}-x86_64.AppImage.sha256
             install-desktop.sh
             install-server.sh
+
+  apt-repo:
+    # Publishes the signed apt repository to GitHub Pages. A failure here leaves the finished release untouched.
+    needs: [prepare, linux-x64]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Download the packages
+        uses: actions/download-artifact@v8
+        with:
+          name: HighPop-${{ needs.prepare.outputs.tag }}-linux-x64
+          path: debs
+
+      - name: Build the signed repository
+        id: build
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APT_GPG_PRIVATE_KEY" ]; then echo "::notice::APT_GPG_PRIVATE_KEY is not set, so the apt repository is not published."; exit 0; fi
+          echo "have_key=true" >> "$GITHUB_OUTPUT"
+          sudo apt-get install -y --no-install-recommends apt-utils gnupg xz-utils
+          export GNUPGHOME="$(mktemp -d)"
+          printf "%s" "$APT_GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null
+          export APT_GPG_KEY_ID="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          scripts/build-apt-repo.sh debs site
+
+      - name: Upload the site
+        if: steps.build.outputs.have_key == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        if: steps.build.outputs.have_key == 'true'
+        id: deploy
+        uses: actions/deploy-pages@v5
