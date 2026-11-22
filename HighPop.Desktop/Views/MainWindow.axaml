@@ -68,7 +68,7 @@
                         IsVisible="{x:Static views:MainWindow.CanSelfUpdate}"
                         Command="{Binding PerformUpdateCommand}" IsEnabled="{Binding !UpdateDownloading}" />
                 <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap"
-                           Text="This install cannot update itself (a .deb or AppImage is read-only). Download the new version from the HighPop GitHub releases page."
+                           Text="{x:Static views:MainWindow.CannotSelfUpdateText}"
                            IsVisible="{x:Static views:MainWindow.CannotSelfUpdate}" />
                 <Button Classes="primary" Content="Open releases page" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                         IsVisible="{x:Static views:MainWindow.CannotSelfUpdate}"

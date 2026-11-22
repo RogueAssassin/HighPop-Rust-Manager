@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=HighPop Rust Manager
+Comment=Manage Rust and other game servers
+Exec=highpop-rust-manager
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Categories=Game;Utility;
+StartupWMClass=HighPop.Desktop

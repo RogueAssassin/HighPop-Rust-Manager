@@ -47,3 +47,5 @@ desktop.ini
 
 # graphify knowledge-graph output (local only)
 graphify-out/
+snap/local/publish/
+*.snap

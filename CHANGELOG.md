@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **New: Snap packaging (not yet published).** `snap/` holds a classic-confinement snap of the desktop app, and a CI workflow builds it on Ubuntu, installs it and starts the app under a virtual display. The Snap Store listing needs a publisher account and a classic-confinement approval first; see `docs/snap-publishing.md`. Inside a snap the update banner now says snapd updates it.
+
 ## 1.2.6
 
 - **New: signed apt repository for Ubuntu and Debian.** `https://rogueassassin.github.io/HighPop-Rust-Manager/apt` serves `highpop-desktop` and `highpop-server`, so Software Updater and `apt upgrade` keep HighPop current (see the install guide). A fresh install of a downloaded `.deb` registers the repository automatically. Each release publishes it from the release workflow; `scripts/test-apt-repo.sh` and a new CI workflow test the signing, install, upgrade and tamper refusal on Ubuntu.

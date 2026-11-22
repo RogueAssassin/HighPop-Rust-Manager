@@ -1,0 +1,58 @@
+name: highpop-rust-manager
+title: HighPop Rust Manager
+base: core24
+# Replaced at build time with the <Version> from Directory.Build.props (see .github/workflows/snap-test.yml).
+version: "0.0.0"
+summary: Install, run and administer Rust and other dedicated game servers
+description: |
+  HighPop Rust Manager is a desktop app for installing, running and administering Rust (and other
+  Steam dedicated) game servers: one-click SteamCMD installs and updates, Oxide/Carbon and plugin
+  management, scheduled restarts and wipes, backups, an RCON console, player tools and monitoring.
+
+  It starts and watches game server processes and manages server files on your drives, so it is
+  published with classic confinement. Updates arrive automatically through snapd.
+
+  Developed by RogueAssassin. Source and issues: https://github.com/RogueAssassin/HighPop-Rust-Manager
+license: MIT
+website: https://github.com/RogueAssassin/HighPop-Rust-Manager
+contact: https://github.com/RogueAssassin/HighPop-Rust-Manager/issues
+issues: https://github.com/RogueAssassin/HighPop-Rust-Manager/issues
+source-code: https://github.com/RogueAssassin/HighPop-Rust-Manager
+
+grade: stable
+# Classic confinement needs approval from the Snap Store reviewers before an upload is accepted; until then the
+# snap can only be installed locally with `sudo snap install --dangerous --classic`.
+confinement: classic
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+
+apps:
+  highpop-rust-manager:
+    command: HighPop.Desktop
+    environment:
+      # Classic snaps run on the host's libraries; the few the self-contained app needs are staged below.
+      LD_LIBRARY_PATH: "$SNAP/usr/lib/x86_64-linux-gnu:$SNAP/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+
+parts:
+  highpop:
+    plugin: dump
+    # The self-contained linux-x64 publish output, copied here by CI before `snapcraft pack`.
+    source: snap/local/publish
+    stage-packages:
+      - libx11-6
+      - libxext6
+      - libxcursor1
+      - libxrandr2
+      - libxi6
+      - libice6
+      - libsm6
+      - libfontconfig1
+      - libfreetype6
+      - libicu74
+    override-prime: |
+      craftctl default
+      chmod 755 "$CRAFT_PRIME/HighPop.Desktop"
+      find "$CRAFT_PRIME" -name '*.pdb' -delete
