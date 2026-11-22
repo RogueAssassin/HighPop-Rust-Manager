@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.2.7
 
 - **New: Snap packaging (not yet published).** `snap/` holds a classic-confinement snap of the desktop app, and a CI workflow builds it on Ubuntu, installs it and starts the app under a virtual display. The Snap Store listing needs a publisher account and a classic-confinement approval first; see `docs/snap-publishing.md`. Inside a snap the update banner now says snapd updates it.
+- Advanced metadata to v1.2.7.
 
 ## 1.2.6
 

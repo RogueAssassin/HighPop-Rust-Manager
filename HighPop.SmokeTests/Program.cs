@@ -14,7 +14,7 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.2.6", "application and release metadata report v1.2.6");
+Check(AppInfo.Version == "1.2.7", "application and release metadata report v1.2.7");
 Check(UpdateCheckerService.IsNewerVersion("v1.0.18", "1.0.17")
       && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.18")
       && !UpdateCheckerService.IsNewerVersion("v1.0.18", "1.0.18")
