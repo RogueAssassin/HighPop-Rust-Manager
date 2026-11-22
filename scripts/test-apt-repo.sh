@@ -62,7 +62,9 @@ sudo apt-get install -y --only-upgrade -o Dir::Etc::sourcelist="$sources" -o Dir
 # Change the signed Release text after signing (apt falls back to Release + Release.gpg, so change both): apt must refuse it.
 sed -i 's/^Origin: RogueAssassin$/Origin: Mallory/' "$site/dists/stable/InRelease" "$site/dists/stable/Release"
 grep -q '^Origin: Mallory' "$site/dists/stable/InRelease" || fail "the tamper step did not change the file"
-if apt_update; then fail "a tampered repository was accepted"; fi
+apt_update && rc=0 || rc=$?
+echo "--- apt update on the tampered repository (exit $rc) ---"; cat "$work/update.log"; echo "--- end ---"
+[[ $rc -ne 0 ]] || fail "a tampered repository was accepted"
 pass "a tampered repository is refused"
 
 sudo apt-get purge -y highpop-desktop highpop-server >/dev/null
