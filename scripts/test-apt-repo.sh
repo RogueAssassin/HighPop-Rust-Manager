@@ -62,10 +62,11 @@ sudo apt-get install -y --only-upgrade -o Dir::Etc::sourcelist="$sources" -o Dir
 # Change the signed Release text after signing (apt falls back to Release + Release.gpg, so change both): apt must refuse it.
 sed -i 's/^Origin: RogueAssassin$/Origin: Mallory/' "$site/dists/stable/InRelease" "$site/dists/stable/Release"
 grep -q '^Origin: Mallory' "$site/dists/stable/InRelease" || fail "the tamper step did not change the file"
-apt_update && rc=0 || rc=$?
-echo "--- apt update on the tampered repository (exit $rc) ---"; cat "$work/update.log"; echo "--- end ---"
-[[ $rc -ne 0 ]] || fail "a tampered repository was accepted"
-pass "a tampered repository is refused"
+# apt reports a bad signature as a warning (exit 0) and keeps the previous index, so check for the refusal itself.
+apt_update || true
+grep -qE 'BADSIG|signatures were invalid' "$work/update.log" || { cat "$work/update.log" >&2; fail "apt did not report the bad signature"; }
+! sudo grep -rqs 'Mallory' /var/lib/apt/lists/ || fail "the tampered index was accepted into apt's lists"
+pass "a tampered repository is refused (BADSIG, old index kept)"
 
 sudo apt-get purge -y highpop-desktop highpop-server >/dev/null
 [[ ! -e /etc/apt/sources.list.d/highpop.list ]] && pass "purge removed the HighPop apt source" || fail "apt source left behind after purge"
