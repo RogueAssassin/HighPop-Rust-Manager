@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - **Linux installers.** The release now carries: a `.deb` for the desktop app (`highpop-desktop`) and one for the headless server (`highpop-server`, with a systemd service and a `highpop` service user); a single-file AppImage; and two scripts, `install-desktop.sh` (per-user install with a menu entry, SHA-256 checked) and `install-server.sh` (system service under `/opt/highpop-server`, data in `/var/lib/highpop`). CI installs and removes every package on a clean Ubuntu runner before they ship.
 - **Where installed copies keep their data.** On Linux, when the app folder is read-only (a `.deb` under `/opt`, an AppImage) or `HIGHPOP_HOME` is set, servers, settings, presets and logs live in `~/.local/share/highpop` (or `HIGHPOP_HOME`) instead of beside the program. Windows and the portable tarball are unchanged. The Linux hosts now also restore the bundled presets at startup.
@@ -10,6 +10,8 @@
 - **Three variants by design:** Windows (WPF today, to be replaced by the Avalonia app once it has every page), Linux Headless (`HighPop.Server`) and Linux Desktop (`HighPop.Desktop`). The view-models moved to a new UI-neutral `HighPop.UI` library, and dialogs, pickers, the clipboard and the UI thread now go through small interfaces that each toolkit implements.
 - **Headless Linux host (`HighPop.Server`, preview).** A console program that runs HighPop without a window: it reattaches to running servers, resumes crash recovery, auto-starts profiles, serves the Web API and exits cleanly on SIGTERM while Rust keeps running. Commands: `run`, `setup`, `list`, `add`, `install`, `start`, `stop`, `restart`. `scripts/highpop-server.service` is a ready systemd unit. Tested on Ubuntu 26.04: add, auto-start, stop and start through the Web API, host exit with Rust still running, and reattach after a host restart.
 - **Linux groundwork (not a Linux release yet).** The portable code now lives in `HighPop.Core`, which builds for plain `net10.0`, and every Windows-only call is guarded so it cannot crash on Linux. On Linux: saved secrets use AES-256-GCM with a private key file (`~/.config/highpop/secret.key`); CPU, memory and network come from `/proc`; SteamCMD installs from Valve's `tar.gz`; Rust starts with its native library path set; Oxide installs from `Oxide.Rust-linux.zip` with the same SHA-256 check; firewall and RAM-cap settings explain what to do by hand instead of failing. Installing Carbon from HighPop is blocked on Linux until its Linux layout is tested. The Windows app behaves as before.
+
+- Advanced metadata to v1.1.0.
 
 ## 1.0.18
 
