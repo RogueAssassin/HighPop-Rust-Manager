@@ -60,7 +60,7 @@ sudo apt-get install -y --only-upgrade -o Dir::Etc::sourcelist="$sources" -o Dir
 [[ "$(dpkg-query -W -f='${Version}' highpop-desktop)" == 1.0.1 ]] && pass "upgraded to 1.0.1 through apt" || fail "upgrade did not apply"
 
 # Change the signed Release text after signing (apt falls back to Release + Release.gpg, so change both): apt must refuse it.
-sed -i 's/^Origin: RogueAssassin$/Origin: Mallory/' "$site/dists/stable/InRelease"
+sed -i 's/^Origin: RogueAssassin$/Origin: Mallory/' "$site/dists/stable/InRelease" "$site/dists/stable/Release"
 grep -q '^Origin: Mallory' "$site/dists/stable/InRelease" || fail "the tamper step did not change the file"
 if apt_update; then fail "a tampered repository was accepted"; fi
 pass "a tampered repository is refused"
