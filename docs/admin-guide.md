@@ -176,6 +176,8 @@ the API token or a dashboard user's token.
 
 ## Portable layout
 
+This is the Windows layout. On Linux, where each install keeps its data is in the [install guide](install.md).
+
 The release ZIP contains only the application, its assets, and release history:
 
 ```text
@@ -213,7 +215,7 @@ revision changes, and merges newly introduced keys into edited built-in presets 
 operator values. Custom preset files are never changed. Built-in presets a release retires are removed
 only while they are still byte-identical to the deployed copy; an edited copy stays as a custom preset.
 
-Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up an installation. Secrets are protected with Windows DPAPI for the current Windows user and machine; do not publish `assets/data`.
+Keep `HighPop.exe`, `assets`, and `Servers` together when moving or backing up an installation. Secrets are protected with Windows DPAPI for the current Windows user (on Linux, with an AES-256-GCM key in `~/.config/highpop/secret.key`) and machine; do not publish `assets/data`.
 
 If `servers.json` or `machines.json` cannot be read at startup, HighPop keeps a copy named
 `<file>.unreadable-<date-time>` and does not overwrite the original with an empty list. If saved

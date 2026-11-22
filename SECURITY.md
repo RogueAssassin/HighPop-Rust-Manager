@@ -14,6 +14,8 @@ Please do not open a public issue for an unpatched vulnerability. Use GitHub's p
 - The Web API is plain HTTP. HighPop's firewall rule for it only admits the local subnet; for access across the internet, use a VPN or an HTTPS reverse proxy instead of widening that rule.
 - If you enable the Discord bot, list your admins' Discord user IDs and keep its channel staff-only. With no IDs listed, the bot refuses every action.
 - Rotate API, RCON, Discord, SMTP, and Steam credentials after suspected exposure.
-- Back up `assets/**`, but protect it as sensitive data even though supported secrets are encrypted with DPAPI.
+- Back up `assets/**` (or `/var/lib/highpop`, or `~/.local/share/highpop` on Linux), but protect it as sensitive data even though supported secrets are encrypted (DPAPI on Windows, AES-256-GCM with the owner-only `~/.config/highpop/secret.key` on Linux; back the key up with the data).
 - Review imported custom profiles, presets, server plugins, and executable files before using them.
-- Run the application as a standard user except when a specific Windows configuration task requires elevation.
+- Run the application as a standard user except when a specific Windows configuration task requires elevation. On Linux the headless service runs as the unprivileged `highpop` user; do not run it as root.
+- Download installers from the GitHub Releases page and check the `.sha256` beside them. The install scripts check it for you and refuse an archive that escapes its folder or contains links; read a script before piping it to `sudo bash`.
+- Release downloads are not code-signed, so Windows SmartScreen may warn. A checksum catches a damaged download, not a tampered release; compare it with the value on the release page over HTTPS.

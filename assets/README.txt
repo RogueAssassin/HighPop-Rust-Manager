@@ -1,9 +1,10 @@
 HighPop runtime assets
 ======================
 
-HighPop Rust Manager v1.0.17
+HighPop Rust Manager
 
-HighPop.exe is self-contained. This folder contains HighPop application state; managed Rust
+HighPop is self-contained (HighPop.exe on Windows, HighPop.Desktop or HighPop.Server on Linux).
+This folder contains HighPop application state; managed Rust
 installations are stored separately in the sibling HPRM/Servers folder:
 
 HighPop checks for a newer official release when it starts and every four hours while running.
@@ -38,9 +39,15 @@ RCON/server passwords and Discord webhooks are intentionally omitted from plaint
 Before every server start or restart, completed Rust, Oxide, and Carbon logs are archived into
 logsbackup/<server>/<date_time>.zip. Source logs are removed only after the ZIP succeeds.
 
-Back up the complete HPRM folder, including HighPop.exe, assets, and Servers. Secrets are protected
-with Windows DPAPI for the current Windows user. Do not publish the data folder.
+Back up the complete HPRM folder, including the program, assets, and Servers. Secrets are protected
+with Windows DPAPI for the current Windows user, or on Linux with an AES-256-GCM key kept in
+~/.config/highpop/secret.key. Do not publish the data folder.
 
 The official portable ZIP has an HPRM root folder. Extract that folder as a unit so HighPop.exe
 and assets remain side-by-side. Managed Rust installations now live in HPRM/Servers beside the
 assets folder; existing assets/servers installations migrate automatically on first start.
+
+Linux: when the program folder is read-only (the .deb under /opt, an AppImage), HighPop keeps this
+data in ~/.local/share/highpop instead (or the folder named by HIGHPOP_HOME). The headless .deb and
+install-server.sh keep it in /var/lib/highpop. Installed copies from the AppImage and .deb do not
+update themselves; install the newer file. See docs/install.md for every install.
