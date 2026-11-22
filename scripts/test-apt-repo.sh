@@ -65,7 +65,7 @@ grep -q '^Origin: Mallory' "$site/dists/stable/InRelease" || fail "the tamper st
 # apt reports a bad signature as a warning (exit 0) and keeps the previous index, so check for the refusal itself.
 apt_update || true
 grep -qE 'BADSIG|signatures were invalid' "$work/update.log" || { cat "$work/update.log" >&2; fail "apt did not report the bad signature"; }
-! sudo grep -rqs 'Mallory' /var/lib/apt/lists/ || fail "the tampered index was accepted into apt's lists"
+! sudo grep -rqs --exclude-dir=partial 'Mallory' /var/lib/apt/lists/ || fail "the tampered index was accepted into apt's lists"
 pass "a tampered repository is refused (BADSIG, old index kept)"
 
 sudo apt-get purge -y highpop-desktop highpop-server >/dev/null
