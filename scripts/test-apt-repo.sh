@@ -28,7 +28,8 @@ build_debs() {  # $1 = version
 }
 build_debs 1.0.0
 pass "debs built with the keyring"
-dpkg-deb -c "$work/debs/highpop-desktop_1.0.0_amd64.deb" | grep -q 'apt/highpop-archive-keyring.gpg' && pass "keyring is inside the desktop deb" || fail "no keyring in the desktop deb"
+listing="$(dpkg-deb -c "$work/debs/highpop-desktop_1.0.0_amd64.deb")"
+grep -q "apt/highpop-archive-keyring.gpg" <<<"$listing" && pass "keyring is inside the desktop deb" || fail "no keyring in the desktop deb"
 dpkg-deb -e "$work/debs/highpop-server_1.0.0_amd64.deb" "$work/ctl" && grep -q 'highpop.list' "$work/ctl/postinst" && ! grep -q '#APT#' "$work/ctl/postinst" \
   && sh -n "$work/ctl/postinst" && sh -n "$work/ctl/postrm" && pass "server maintainer scripts are valid" || fail "server maintainer scripts are wrong"
 
@@ -43,7 +44,8 @@ echo "deb [signed-by=$work/keyring.gpg] file://$site stable main" > "$sources"
 apt_update() { sudo apt-get update -o Dir::Etc::sourcelist="$sources" -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 >"$work/update.log" 2>&1; }
 apt_update || { cat "$work/update.log" >&2; fail "apt update on the signed repository"; }
 pass "apt update accepts the signed repository"
-apt-cache policy highpop-desktop | grep -q 'Candidate: 1.0.0' && pass "apt sees highpop-desktop 1.0.0" || fail "package not visible to apt"
+policy="$(apt-cache policy highpop-desktop)"
+grep -q "Candidate: 1.0.0" <<<"$policy" && pass "apt sees highpop-desktop 1.0.0" || fail "package not visible to apt"
 
 sudo apt-get install -y -o Dir::Etc::sourcelist="$sources" -o Dir::Etc::sourceparts=- highpop-desktop highpop-server >/dev/null
 [[ -f /etc/apt/sources.list.d/highpop.list && -f /usr/share/keyrings/highpop-archive-keyring.gpg ]] && pass "install registered the HighPop apt source" || fail "apt source was not registered"
@@ -52,7 +54,8 @@ grep -q 'signed-by=/usr/share/keyrings/highpop-archive-keyring.gpg' /etc/apt/sou
 build_debs 1.0.1
 "$repo_root/scripts/build-apt-repo.sh" "$work/debs" "$work/site" >/dev/null
 apt_update || { cat "$work/update.log" >&2; fail "apt update after publishing 1.0.1"; }
-apt list --upgradable 2>/dev/null | grep -q 'highpop-desktop.*1.0.1' && pass "apt offers the 1.0.1 upgrade" || fail "upgrade not offered"
+upgradable="$(apt list --upgradable 2>/dev/null)"
+grep -q "highpop-desktop.*1.0.1" <<<"$upgradable" && pass "apt offers the 1.0.1 upgrade" || fail "upgrade not offered"
 sudo apt-get install -y --only-upgrade -o Dir::Etc::sourcelist="$sources" -o Dir::Etc::sourceparts=- highpop-desktop highpop-server >/dev/null
 [[ "$(dpkg-query -W -f='${Version}' highpop-desktop)" == 1.0.1 ]] && pass "upgraded to 1.0.1 through apt" || fail "upgrade did not apply"
 
