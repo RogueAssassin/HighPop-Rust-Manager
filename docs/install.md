@@ -83,6 +83,19 @@ chmod +x HighPop-v1.2.5-x86_64.AppImage
 - An AppImage is read-only. Servers and settings live in `~/.local/share/highpop`, and the app does not update itself. To update, download the new AppImage.
 - Remove: delete the file. Delete `~/.local/share/highpop` too if you want your servers and settings gone.
 
+### apt repository (recommended on Ubuntu: updates arrive through Software Updater)
+
+```bash
+sudo install -d -m 0755 /usr/share/keyrings
+curl -fsSL https://rogueassassin.github.io/HighPop-Rust-Manager/apt/highpop-archive-keyring.gpg | sudo tee /usr/share/keyrings/highpop-archive-keyring.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/highpop-archive-keyring.gpg] https://rogueassassin.github.io/HighPop-Rust-Manager/apt stable main" | sudo tee /etc/apt/sources.list.d/highpop.list
+sudo apt update && sudo apt install highpop-desktop
+```
+
+- Packages are signed with the HighPop archive key and published by RogueAssassin. apt checks the signature on every update.
+- After this, Ubuntu's Software Updater and `sudo apt upgrade` install new HighPop versions; the root permission comes from Ubuntu, not from HighPop.
+- Installing a downloaded `.deb` for the first time adds the same repository for you (see below).
+
 ### .deb package (system-wide, Debian and Ubuntu)
 
 ```bash
@@ -90,7 +103,7 @@ sudo apt install ./highpop-desktop_1.2.5_amd64.deb
 ```
 
 - Installs to `/opt/highpop-desktop`, adds an application-menu entry and a `highpop-desktop` command.
-- The program folder is read-only, so servers and settings live in each user's `~/.local/share/highpop`, and the app does not update itself. Install the next `.deb` to upgrade; your data is kept.
+- The program folder is read-only, so servers and settings live in each user's `~/.local/share/highpop`, and the app does not update itself. A fresh install of a downloaded `.deb` also adds the HighPop apt repository (`/etc/apt/sources.list.d/highpop.list`), so later versions arrive through Software Updater and `apt upgrade`; delete that file to opt out. Otherwise install the next `.deb`. Your data is kept.
 - Remove: `sudo apt remove highpop-desktop`. Your data stays in `~/.local/share/highpop`.
 
 ### install-desktop.sh (one user, no root, self-updating)
@@ -121,7 +134,7 @@ Put the `HPRM` folder anywhere you can write to. It behaves like the Windows por
 | Program | read-only | your folder |
 | Servers, settings, presets | `~/.local/share/highpop` (or `$HIGHPOP_HOME`) | beside the program |
 | Saved passwords | AES-256-GCM, key in `~/.config/highpop/secret.key` (owner-only) | same |
-| In-app update | no (install the new file) | yes |
+| In-app update | no (the apt repository updates the `.deb`; for an AppImage, install the new file) | yes |
 
 HighPop uses `$HIGHPOP_HOME` when set. Otherwise it keeps data beside the program, falling back to `~/.local/share/highpop` when that folder is not writable.
 

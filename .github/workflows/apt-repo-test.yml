@@ -1,0 +1,33 @@
+name: Apt repository test
+
+# Builds debs and a signed apt repository with a throwaway key on Ubuntu, then installs, upgrades and tampers with it
+# through the real apt. See scripts/test-apt-repo.sh for what is checked. No secrets are used.
+on:
+  pull_request:
+    paths:
+      - "scripts/build-apt-repo.sh"
+      - "scripts/build-linux-deb.sh"
+      - "scripts/test-apt-repo.sh"
+      - ".github/workflows/apt-repo-test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: apt-repo-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install apt tooling
+        run: sudo apt-get install -y --no-install-recommends apt-utils gnupg xz-utils
+
+      - name: Test the apt repository
+        run: scripts/test-apt-repo.sh

@@ -38,6 +38,30 @@ find "$root" -type d -exec chmod 755 {} +
 find "$root$dir" -type f -exec chmod 644 {} +
 chmod 755 "$root$dir/$main"
 
+# Optional: with HIGHPOP_APT_KEYRING (the public signing key) the package also registers the HighPop apt repository
+# on a fresh install, so later versions arrive through apt and Ubuntu Software Updater.
+apt_url="${HIGHPOP_APT_URL:-https://rogueassassin.github.io/HighPop-Rust-Manager}/apt"
+apt_postinst=""; apt_postrm=""
+if [[ -n "${HIGHPOP_APT_KEYRING:-}" ]]; then
+  [[ -f "$HIGHPOP_APT_KEYRING" ]] || { echo "HIGHPOP_APT_KEYRING does not exist: $HIGHPOP_APT_KEYRING" >&2; exit 1; }
+  mkdir -p "$root$dir/apt"
+  install -m 644 "$HIGHPOP_APT_KEYRING" "$root$dir/apt/highpop-archive-keyring.gpg"
+  IFS= read -r -d '' apt_postinst <<'EOF' || true
+  # First install only: add the HighPop apt repository so updates arrive through apt.
+  if [ -z "$2" ] && [ -d /etc/apt/sources.list.d ] && [ ! -e /etc/apt/sources.list.d/highpop.list ]; then
+    install -d -m 0755 /usr/share/keyrings
+    install -m 0644 @DIR@/apt/highpop-archive-keyring.gpg /usr/share/keyrings/highpop-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/highpop-archive-keyring.gpg] @URL@ stable main" > /etc/apt/sources.list.d/highpop.list
+  fi
+EOF
+  apt_postinst="${apt_postinst//@DIR@/$dir}"; apt_postinst="${apt_postinst//@URL@/$apt_url}"
+  IFS= read -r -d '' apt_postrm <<'EOF' || true
+if [ "$1" = purge ] && [ ! -d /opt/highpop-desktop ] && [ ! -d /opt/highpop-server ]; then
+  rm -f /etc/apt/sources.list.d/highpop.list /usr/share/keyrings/highpop-archive-keyring.gpg
+fi
+EOF
+fi
+
 if [[ "$kind" == desktop ]]; then
   mkdir -p "$root/usr/share/applications" "$root/usr/share/icons/hicolor/256x256/apps"
   cp "$repo_root/HighPop.Desktop/Assets/highpop-mark.png" "$root/usr/share/icons/hicolor/256x256/apps/highpop-desktop.png"
@@ -107,6 +131,7 @@ if [ "$1" = configure ]; then
   if ! getent passwd highpop >/dev/null; then
     adduser --system --group --home /home/highpop --shell /usr/sbin/nologin highpop >/dev/null
   fi
+  #APT#
   install -d -o highpop -g highpop -m 750 /var/lib/highpop
   systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl enable highpop-server >/dev/null 2>&1 || true
@@ -128,6 +153,22 @@ fi
 exit 0
 EOF
   chmod 755 "$root/DEBIAN/postinst" "$root/DEBIAN/prerm"
+fi
+
+# Maintainer scripts for the apt repository registration (the server already has a postinst with an #APT# marker).
+if [[ -n "$apt_postinst" ]]; then
+  if [[ -f "$root/DEBIAN/postinst" ]]; then
+    printf '%s\n' "$apt_postinst" > "$stage/apt_block"
+    awk 'FNR==NR { block = block $0 "\n"; next } /^  #APT#$/ { printf "%s", block; next } { print }' \
+      "$stage/apt_block" "$root/DEBIAN/postinst" > "$stage/postinst.new"
+    mv "$stage/postinst.new" "$root/DEBIAN/postinst"
+  else
+    printf '#!/bin/sh\nset -e\nif [ "$1" = configure ]; then\n%s\nfi\nexit 0\n' "$apt_postinst" > "$root/DEBIAN/postinst"
+  fi
+  printf '#!/bin/sh\nset -e\n%s\nexit 0\n' "$apt_postrm" > "$root/DEBIAN/postrm"
+  chmod 755 "$root/DEBIAN/postinst" "$root/DEBIAN/postrm"
+elif [[ -f "$root/DEBIAN/postinst" ]]; then
+  sed -i '/^  #APT#$/d' "$root/DEBIAN/postinst"
 fi
 
 size_kb="$(du -sk "$root" | cut -f1)"

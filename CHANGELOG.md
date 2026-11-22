@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **New: signed apt repository for Ubuntu and Debian.** `https://rogueassassin.github.io/HighPop-Rust-Manager/apt` serves `highpop-desktop` and `highpop-server`, so Software Updater and `apt upgrade` keep HighPop current (see the install guide). A fresh install of a downloaded `.deb` registers the repository automatically. Each release publishes it from the release workflow; `scripts/test-apt-repo.sh` and a new CI workflow test the signing, install, upgrade and tamper refusal on Ubuntu.
+
 ## 1.2.5
 
 - **CI: Ubuntu now tests the Linux self-update end to end.** A new workflow installs the latest released desktop tarball, updates it to a build from the PR source through the real updater and checks the program files, `CHANGELOG.md`, user data and staging cleanup (`scripts/test-linux-update.sh`). No change to the app.
