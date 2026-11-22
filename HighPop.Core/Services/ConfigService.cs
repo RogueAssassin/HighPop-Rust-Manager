@@ -19,6 +19,38 @@ public class ConfigService
         Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
         ?? AppContext.BaseDirectory;
 
+    /// <summary>
+    /// Where assets/, Servers/ and backups live. Portable by default (beside the app). On Linux, when
+    /// the app folder is read-only (a .deb under /opt, an AppImage) or HIGHPOP_HOME is set, state moves
+    /// to a writable folder so an installed copy never needs to write into its own install directory.
+    /// </summary>
+    public static readonly string DataRoot = ResolveDataRoot(ExeDir);
+
+    internal static string ResolveDataRoot(string exeDir)
+    {
+        var explicitHome = Environment.GetEnvironmentVariable("HIGHPOP_HOME");
+        if (!string.IsNullOrWhiteSpace(explicitHome) && Path.IsPathRooted(explicitHome))
+            return explicitHome;
+        if (!OperatingSystem.IsLinux() || IsWritable(exeDir)) return exeDir;
+
+        var dataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+        if (string.IsNullOrWhiteSpace(dataHome) || !Path.IsPathRooted(dataHome))
+            dataHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+        return Path.Combine(dataHome, "highpop");
+    }
+
+    private static bool IsWritable(string dir)
+    {
+        try
+        {
+            var probe = Path.Combine(dir, ".highpop-write-test-" + Environment.ProcessId);
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
+
     public string AssetsPath { get; }
     public string AppDataPath { get; }
     public string SteamCmdPath { get; }
@@ -57,16 +89,19 @@ public class ConfigService
         // HighPop is intentionally portable. Application state lives under assets/** and
         // managed Rust installations live under Servers/** beside HighPop.exe, so the HPRM
         // directory can be moved, backed up, or removed without leaving state in AppData.
-        AssetsPath         = Path.Combine(ExeDir, "assets");
+        AssetsPath         = Path.Combine(DataRoot, "assets");
         AppDataPath        = Path.Combine(AssetsPath, "data");
         SteamCmdPath       = Path.Combine(AssetsPath, "SteamCMD");
         ServersFile        = Path.Combine(AppDataPath, "servers.json");
         SettingsFile       = Path.Combine(AppDataPath, "settings.json");
-        _legacyDefaultInstallRoot = Path.Combine(ExeDir, "assets", "servers");
-        _portableDefaultInstallRoot = Path.Combine(ExeDir, "Servers");
+        _legacyDefaultInstallRoot = Path.Combine(DataRoot, "assets", "servers");
+        _portableDefaultInstallRoot = Path.Combine(DataRoot, "Servers");
         DefaultInstallRoot = _portableDefaultInstallRoot;
-        BackupPath         = Path.Combine(ExeDir, "assets", "backups");
+        BackupPath         = Path.Combine(DataRoot, "assets", "backups");
         Directory.CreateDirectory(AppDataPath);
+        // The Windows app restores its presets itself at startup; the Linux hosts have no such step.
+        if (!OperatingSystem.IsWindows())
+            try { BundledAssetService.EnsurePresets(DataRoot); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
         PortableLayoutService.MigrateDirectoryContents(
             Path.Combine(AppDataPath, "steamcmd"), SteamCmdPath);
         PortableLayoutService.MigrateServerRoot(

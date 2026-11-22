@@ -21,7 +21,7 @@ public class ConfigPreset
 public class ConfigPresetService
 {
     private static readonly string PresetsDir = Path.Combine(
-        Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)!, "assets", "presets");
+        ConfigService.DataRoot, "assets", "presets");
 
     public List<ConfigPreset> GetPresetsForGame(string gameId)
     {

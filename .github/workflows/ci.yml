@@ -136,6 +136,18 @@ jobs:
           scripts/build-linux-package.sh publish_server package_out "$version" server "$GITHUB_SHA"
           (cd package_out && sha256sum --check ./*.sha256)
 
+      - name: Build installers (.deb, AppImage)
+        run: |
+          version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
+          scripts/build-linux-deb.sh publish_desktop package_out "$version" desktop
+          scripts/build-linux-deb.sh publish_server package_out "$version" server
+          scripts/build-linux-appimage.sh publish_desktop package_out "$version"
+          cp scripts/install-desktop.sh scripts/install-server.sh package_out/
+          (cd package_out && sha256sum --check ./*.deb.sha256 ./*.AppImage.sha256)
+
+      - name: Test the packages and installers
+        run: scripts/test-linux-installers.sh package_out
+
       - name: Compute artifact name
         id: artifact
         run: |
@@ -147,5 +159,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.artifact.outputs.name }}
-          path: package_out/HighPop-v*-linux-*
+          path: |
+            package_out/HighPop-v*-linux-*
+            package_out/*.deb
+            package_out/*.deb.sha256
+            package_out/HighPop-v*.AppImage
+            package_out/HighPop-v*.AppImage.sha256
+            package_out/install-desktop.sh
+            package_out/install-server.sh
           if-no-files-found: error
