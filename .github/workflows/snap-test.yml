@@ -1,0 +1,64 @@
+name: Snap test
+
+# Builds the snap from this source on Ubuntu, installs it locally (classic, unsigned) and starts the real app under a
+# virtual display. Nothing is uploaded to the Snap Store.
+on:
+  pull_request:
+    paths:
+      - "snap/**"
+      - ".github/workflows/snap-test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: snap-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  snap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish the desktop app
+        run: dotnet publish HighPop.Desktop/HighPop.Desktop.csproj -c Release -r linux-x64 --self-contained true -o snap/local/publish
+
+      - name: Set the snap version
+        run: |
+          version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
+          sed -i "s/^version: .*/version: \"$version\"/" snap/snapcraft.yaml
+          grep '^version:' snap/snapcraft.yaml
+
+      - name: Build the snap
+        run: |
+          sudo snap install snapcraft --classic
+          sudo snapcraft pack --destructive-mode --verbosity=brief
+          ls -la ./*.snap
+
+      - name: Install the snap and start the app
+        run: |
+          sudo snap install --dangerous --classic ./*.snap
+          snap list highpop-rust-manager
+          test -f /snap/highpop-rust-manager/current/meta/gui/highpop-rust-manager.desktop
+          sudo apt-get install -y --no-install-recommends xvfb
+          export HIGHPOP_HOME="$(mktemp -d)"
+          rc=0; xvfb-run -a timeout 25 /snap/bin/highpop-rust-manager || rc=$?
+          # 124 means the app was still running when timeout stopped it, which is the pass condition.
+          [ "$rc" -eq 124 ] || { echo "The app exited early with code $rc" >&2; exit 1; }
+          echo "The snap installed and the app stayed up for 25 seconds."
+
+      - name: Upload the snap
+        uses: actions/upload-artifact@v7
+        with:
+          name: highpop-rust-manager-snap
+          path: "*.snap"
+          if-no-files-found: error

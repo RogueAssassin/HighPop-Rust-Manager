@@ -26,6 +26,11 @@ public partial class MainWindow : Window
     public static bool CanSelfUpdate { get; } = Platform.PlatformUpdate.IsSupported;
     public static bool CannotSelfUpdate => !CanSelfUpdate;
 
+    /// <summary>Why an install cannot update itself. A snap is refreshed by snapd, so it is told to wait rather than download.</summary>
+    public static string CannotSelfUpdateText { get; } = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SNAP"))
+        ? "This install cannot update itself (a .deb or AppImage is read-only). Download the new version from the HighPop GitHub releases page."
+        : "This is the Snap Store version. snapd installs new versions automatically (usually within a day), or run: sudo snap refresh highpop-rust-manager";
+
     private bool _exiting;
 
     public MainWindow()
