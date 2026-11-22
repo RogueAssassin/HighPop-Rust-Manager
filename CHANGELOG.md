@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Fix: "Start with Windows" failed for normal users.** Windows only lets administrators create a logon task, so turning the setting on as a regular user ended with "Access is denied". HighPop now falls back to the per-user Run entry, which needs no elevation and starts HighPop with the same `--background` option; the Task Scheduler task is still used when HighPop runs as administrator.
+
 ## 1.2.1
 
 - **The WPF project is retired.** HighPop.Desktop (Avalonia) is the only app for Windows and Linux; the `HighPop` WPF project is removed from the source tree and the solution. The bundled assets (brand icon, presets, `assets/README.txt`) now live in the top-level `assets/` folder, the smoke tests no longer depend on WPF, and `scripts/Test-UiSurface.ps1` now audits the Avalonia views. Nothing changes for users of 1.2.0.
