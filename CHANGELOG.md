@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.5
+
+- **CI: Ubuntu now tests the Linux self-update end to end.** A new workflow installs the latest released desktop tarball, updates it to a build from the PR source through the real updater and checks the program files, `CHANGELOG.md`, user data and staging cleanup (`scripts/test-linux-update.sh`). No change to the app.
+- Advanced metadata to v1.2.5.
+
 ## 1.2.4
 
 - **Maintenance release.** No code changes; it is the first release that a 1.2.3 install updates to, which exercises the updater that now also refreshes `CHANGELOG.md` and `assets/README.txt`.
