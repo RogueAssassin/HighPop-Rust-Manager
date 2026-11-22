@@ -9,6 +9,11 @@
     <IsPackable>false</IsPackable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\HighPop\assets\brand\highpop.ico</ApplicationIcon>
+    <AssemblyTitle>HighPop Rust Manager</AssemblyTitle>
+    <Product>HighPop Rust Manager</Product>
+    <Description>Manage Rust and other dedicated game servers on Windows and Linux.</Description>
+    <Authors>HighPop Contributors</Authors>
     <!-- CS8826: partial method parameter name mismatch with the CommunityToolkit.Mvvm generator (cosmetic only) -->
     <NoWarn>CS8826</NoWarn>
   </PropertyGroup>
@@ -26,4 +31,25 @@
     <ProjectReference Include="..\HighPop.Core\HighPop.Core.csproj" />
     <ProjectReference Include="..\HighPop.UI\HighPop.UI.csproj" />
   </ItemGroup>
+  <!-- Windows release build: one self-contained HighPop.exe (the Avalonia and Skia native libraries are
+       bundled inside it), with the assets folder beside it, so the release keeps the HPRM layout the
+       in-app updater expects. Linux builds are not single-file. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">
+    <Optimize>true</Optimize>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+  <ItemGroup Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">
+    <Content Include="..\HighPop\assets\README.txt" Link="assets\README.txt" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="..\HighPop\assets\presets\**\*.json" Link="assets\presets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+  <!-- The app is HighPop.Desktop internally; on Windows the shipped file is HighPop.exe. -->
+  <Target Name="NameWindowsExe" AfterTargets="Publish" Condition="'$(PublishSingleFile)' == 'true' and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">
+    <Move SourceFiles="$(PublishDir)HighPop.Desktop.exe" DestinationFiles="$(PublishDir)HighPop.exe" />
+  </Target>
 </Project>

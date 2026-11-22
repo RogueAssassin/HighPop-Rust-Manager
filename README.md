@@ -3,14 +3,14 @@
 </p>
 
 <p align="center">
-  <b>A portable Windows control panel for Rust dedicated servers.</b><br>
+  <b>A portable control panel for Rust dedicated servers, on Windows and Linux.</b><br>
   Install, run, update, back up and moderate every server from one window, with no account or subscription.
 </p>
 
 <p align="center">
   <a href="../../releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/RogueAssassin/HighPop-Rust-Manager?color=38BDF8&label=release"></a>
   <img alt=".NET" src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20x64-0078D4?logo=windows">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20x64-0078D4?logo=windows">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-34C77B">
 </p>
 
@@ -32,6 +32,8 @@
 2. Extract the whole `HPRM` folder somewhere writable, for example `C:\HPRM`.
 3. Run `HighPop.exe` and select **+ Add Server**. HighPop suggests four free ports (game, query, WebRCON, Rust+).
 4. Select **Install / Update** to download SteamCMD and Rust, then select **Start**.
+
+The Windows app is the same cross-platform Avalonia app as the Linux desktop build (one `HighPop.exe`, with the `assets` folder beside it). Linux has a desktop app (AppImage, `.deb`, `install-desktop.sh`) and a headless service (`.deb`, `install-server.sh`); see the release assets.
 
 HighPop is self-contained, so no .NET install is needed. It runs on Windows 10/11 and Windows Server 2012–2025. Windows SmartScreen may warn about an unsigned community build. Administrator rights are only needed for firewall and URL reservation changes.
 

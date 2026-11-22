@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- **The Windows app is now the Avalonia app.** Windows and Linux share one app, so a feature or fix lands on both at once. `HighPop-vX.Y.Z-win-x64.zip` and `.exe` now contain the Avalonia build: still one `HighPop.exe` with the `assets` folder beside it inside `HPRM`, so nothing else is added to the HPRM folder, and the in-app updater moves existing installs across by itself. Servers and settings are unchanged. The separate `win-x64-avalonia-preview` download is gone. The self-updater and the "start with Windows" Task Scheduler entry moved into the shared core so both apps use the same code, and a second copy of HighPop now shows "already running" as before. The WPF project stays in the source tree for one more release but is no longer built into releases.
+- Advanced metadata to v1.2.0.
+
 ## 1.1.0
 
 - **Linux installers.** The release now carries: a `.deb` for the desktop app (`highpop-desktop`) and one for the headless server (`highpop-server`, with a systemd service and a `highpop` service user); a single-file AppImage; and two scripts, `install-desktop.sh` (per-user install with a menu entry, SHA-256 checked) and `install-server.sh` (system service under `/opt/highpop-server`, data in `/var/lib/highpop`). CI installs and removes every package on a clean Ubuntu runner before they ship.

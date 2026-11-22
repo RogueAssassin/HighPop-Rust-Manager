@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.Versioning;
 using Microsoft.Win32;
 
 namespace HighPop.Services;
@@ -8,6 +9,7 @@ namespace HighPop.Services;
 /// Manages HighPop's per-user Windows logon task. Task Scheduler is more resilient than the
 /// legacy Run-key entry and starts the manager directly in background/tray mode.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public static class WindowsStartupTaskService
 {
     public const string TaskName = "HighPop Rust Manager";

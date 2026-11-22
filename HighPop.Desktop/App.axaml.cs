@@ -27,7 +27,7 @@ public partial class App : Application
             ConfigureServices(collection);
             Services = collection.BuildServiceProvider();
 
-            LinuxSelfUpdateService.CleanupLeftovers();
+            var updateFailed = PlatformUpdate.CleanupLeftovers();
 
             var config = Services.GetRequiredService<ConfigService>();
             LocalizationService.Instance.Load(config);
@@ -36,6 +36,12 @@ public partial class App : Application
             var main = Services.GetRequiredService<MainViewModel>();
             var window = new MainWindow { DataContext = main };
             desktop.MainWindow = window;
+            if (updateFailed)
+                window.Opened += (_, _) => _ = MessageWindow.ShowAsync(window,
+                    "The last update couldn't finish: the file swap failed and never completed. " +
+                    "You're still on the old version. Try again, or update manually from " +
+                    UpdateCheckerService.ReleasesUrl,
+                    "Update did not apply", DialogButtons.OK, DialogImage.Warning);
             desktop.Exit += (_, _) => OnExit(main);
 
             var tray = (AppTray)Services.GetRequiredService<ITrayStatus>();

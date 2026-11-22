@@ -71,24 +71,26 @@ internal sealed class AvaloniaPlatform : IPlatformUi
             return true;
         });
 
-    public bool SupportsSelfUpdate => LinuxSelfUpdateService.IsSupported();
+    public bool SupportsSelfUpdate => PlatformUpdate.IsSupported;
 
     public Task<bool> DownloadUpdateAsync(string url, IProgress<(int pct, string msg)> progress) =>
-        LinuxSelfUpdateService.DownloadAndPrepareAsync(url, progress);
+        PlatformUpdate.DownloadAndPrepareAsync(url, progress);
 
     public bool ApplyUpdateAndRestart()
     {
-        if (!LinuxSelfUpdateService.StartApply()) return false;
+        if (!PlatformUpdate.StartApply()) return false;
         // The script waits for this process to exit, so shut down now. Running Rust servers detach.
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             (Avalonia.Application.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Shutdown());
         return true;
     }
 
-    public bool IsStartWithSystemEnabled() => false;
+    public bool IsStartWithSystemEnabled() =>
+        OperatingSystem.IsWindows() && WindowsStartupTaskService.IsEnabled();
 
     public bool SetStartWithSystem(bool enabled, out string error)
     {
+        if (OperatingSystem.IsWindows()) return WindowsStartupTaskService.SetEnabled(enabled, out error);
         error = enabled ? "Starting with the system is not available in the desktop app yet." : string.Empty;
         return !enabled;
     }

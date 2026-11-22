@@ -43,7 +43,7 @@ jobs:
         run: dotnet run --project HighPop.SmokeTests/HighPop.SmokeTests.csproj -c Release --no-build
 
       - name: Verify single-file publish
-        run: dotnet publish HighPop/HighPop.csproj -c Release -r win-x64 --self-contained true -o publish_out
+        run: dotnet publish HighPop.Desktop/HighPop.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish_out
 
       - name: Confirm portable output
         shell: pwsh

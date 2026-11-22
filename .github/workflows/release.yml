@@ -87,7 +87,7 @@ jobs:
         run: dotnet run --project HighPop.SmokeTests/HighPop.SmokeTests.csproj -c Release --no-build
 
       - name: Publish self-contained single file
-        run: dotnet publish HighPop/HighPop.csproj -c Release -r win-x64 --self-contained true -o publish_out
+        run: dotnet publish HighPop.Desktop/HighPop.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish_out
 
       - name: Confirm portable output
         shell: pwsh
@@ -310,48 +310,3 @@ jobs:
             HighPop-${{ needs.prepare.outputs.tag }}-x86_64.AppImage.sha256
             install-desktop.sh
             install-server.sh
-
-  windows-avalonia-preview:
-    # The cross-platform app on Windows, shipped beside the WPF app until it replaces it. It is not
-    # what the in-app updater installs: the asset name does not end in -win-x64.zip.
-    needs: [prepare, windows-x64]
-    if: needs.prepare.outputs.publish == 'true'
-    runs-on: windows-2025
-    timeout-minutes: 30
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.prepare.outputs.tag }}
-
-      - name: Set up .NET 10
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Publish and package
-        shell: pwsh
-        run: |
-          dotnet publish HighPop.Desktop/HighPop.Desktop.csproj -c Release -r win-x64 --self-contained true -o publish_avalonia
-          if ($LASTEXITCODE -ne 0) { throw "publish failed" }
-          Get-ChildItem publish_avalonia -Filter *.pdb -Recurse | Remove-Item -Force
-          $exe = Get-Item publish_avalonia/HighPop.Desktop.exe
-          $expected = "${{ needs.prepare.outputs.version }}.0"
-          if ($exe.VersionInfo.FileVersion -ne $expected) { throw "Version $($exe.VersionInfo.FileVersion) does not match $expected" }
-          Copy-Item CHANGELOG.md publish_avalonia/CHANGELOG.md
-          $name = "HighPop-${{ needs.prepare.outputs.tag }}-win-x64-avalonia-preview"
-          New-Item -ItemType Directory -Path stage/HPRM | Out-Null
-          Copy-Item publish_avalonia/* stage/HPRM -Recurse
-          Compress-Archive -Path stage/HPRM -DestinationPath "$name.zip"
-          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $name.zip" | Set-Content -Path "$name.zip.sha256" -Encoding ascii
-
-      - name: Add the preview to the GitHub release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: HighPop Rust Manager ${{ needs.prepare.outputs.tag }}
-          fail_on_unmatched_files: true
-          files: |
-            HighPop-${{ needs.prepare.outputs.tag }}-win-x64-avalonia-preview.zip
-            HighPop-${{ needs.prepare.outputs.tag }}-win-x64-avalonia-preview.zip.sha256

@@ -146,7 +146,12 @@ internal sealed class WpfPlatform : IPlatformUi
     public Task<bool> DownloadUpdateAsync(string url, IProgress<(int pct, string msg)> progress) =>
         SelfUpdateService.DownloadAndPrepareAsync(url, progress);
 
-    public bool ApplyUpdateAndRestart() => SelfUpdateService.ApplyAndRestart();
+    public bool ApplyUpdateAndRestart()
+    {
+        if (!SelfUpdateService.StartApply()) return false;
+        System.Windows.Application.Current.Shutdown();
+        return true;
+    }
 
     public bool IsStartWithSystemEnabled() => WindowsStartupTaskService.IsEnabled();
 
