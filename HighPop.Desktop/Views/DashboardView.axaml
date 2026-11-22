@@ -38,7 +38,7 @@
           </StackPanel>
         </Border>
 
-        <Border Classes="card" Width="260">
+        <Border Classes="card" MinWidth="260">
           <StackPanel>
             <TextBlock Text="MEMORY (RAM)" Classes="head" />
             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
@@ -74,7 +74,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="svc:DriveStats">
-              <Border Classes="card" Width="220">
+              <Border Classes="card" MinWidth="220">
                 <StackPanel>
                   <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                     <TextBlock Text="DISK " FontSize="11" FontWeight="Bold" Opacity="0.6" />

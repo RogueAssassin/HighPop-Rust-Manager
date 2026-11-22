@@ -24,6 +24,7 @@ public static class SelfUpdateService
         var tempZip    = Path.Combine(updateDir, "_highpop_update.zip");
         var newExePath = Path.Combine(updateDir, "_highpop_new.exe");
         var stagedAssetsPath = Path.Combine(updateDir, "_highpop_assets");
+        var newChangelogPath = Path.Combine(updateDir, "_highpop_changelog.md");
         var batPath    = Path.Combine(updateDir, "_highpop_update.bat");
 
         try
@@ -62,6 +63,11 @@ public static class SelfUpdateService
             if (File.Exists(newExePath)) File.Delete(newExePath);
             entry.ExtractToFile(newExePath);
 
+            // The release notes beside HighPop.exe are replaced too, so they match the installed version.
+            if (File.Exists(newChangelogPath)) File.Delete(newChangelogPath);
+            zip.Entries.FirstOrDefault(e => NormalizeEntry(e.FullName).Equals("HPRM/CHANGELOG.md", StringComparison.OrdinalIgnoreCase))
+                ?.ExtractToFile(newChangelogPath);
+
             var stagedAssetCount = 0;
             foreach (var assetEntry in zip.Entries)
             {
@@ -97,6 +103,9 @@ robocopy ""{stagedAssetsPath}"" ""{Path.Combine(exeDir, "assets")}"" /E /XC /XN 
 if errorlevel 8 goto update_failed
 move /y ""{newExePath}"" ""{exePath}""
 if errorlevel 1 goto update_failed
+rem The release notes and the assets README are documentation, so a failure here never fails the update.
+if exist ""{newChangelogPath}"" move /y ""{newChangelogPath}"" ""{Path.Combine(exeDir, "CHANGELOG.md")}"" >nul 2>nul
+copy /y ""{Path.Combine(stagedAssetsPath, "README.txt")}"" ""{Path.Combine(exeDir, "assets", "README.txt")}"" >nul 2>nul
 rmdir /s /q ""{stagedAssetsPath}"" 2>nul
 start """" ""{exePath}""
 del ""{tempZip}"" 2>nul
@@ -116,6 +125,7 @@ exit /b 1
             Report(progress, 0, $"Error: {ex.Message}");
             try { if (File.Exists(tempZip))    File.Delete(tempZip); }    catch { }
             try { if (File.Exists(newExePath)) File.Delete(newExePath); } catch { }
+            try { if (File.Exists(newChangelogPath)) File.Delete(newChangelogPath); } catch { }
             try { if (Directory.Exists(stagedAssetsPath)) Directory.Delete(stagedAssetsPath, true); } catch { }
             try { if (File.Exists(batPath))    File.Delete(batPath); }    catch { }
             return false;
@@ -170,7 +180,7 @@ exit /b 1
         var updateDir = Path.Combine(exeDir, "assets", "data", "update");
         var updateFailed = File.Exists(Path.Combine(updateDir, "_highpop_new.exe"));
 
-        foreach (var name in new[] { "_highpop_update.bat", "_highpop_update.zip", "_highpop_new.exe" })
+        foreach (var name in new[] { "_highpop_update.bat", "_highpop_update.zip", "_highpop_new.exe", "_highpop_changelog.md" })
         {
             try
             {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.3
+
+- **Fix: updates now refresh `CHANGELOG.md` and `assets/README.txt`.** The in-app updater swapped the program and added new asset files but left the old release notes and assets README beside it, so an updated install kept showing an old changelog. Both files are now replaced during an update on Windows, and `assets/README.txt` on Linux (the Linux updater already replaced `CHANGELOG.md`). Presets, settings and everything else in `assets` are still never overwritten.
+- **UI: narrow windows no longer clip controls.** The server action buttons and the console filter bar wrap onto a second row, dashboard disk cards grow to fit large sizes, muted text is lighter so it passes the WCAG AA contrast ratio on raised surfaces, and icon-only buttons now expose their tooltip as an accessible name for screen readers.
+
+- Advanced metadata to v1.2.3.
+
 ## 1.2.2
 
 - **Documentation for v1.2.2.** A new [install guide](docs/install.md) covers the Windows, Linux Desktop (AppImage, `.deb`, `install-desktop.sh`, tarball) and Linux Headless (`.deb`, `install-server.sh`, systemd) installs, with data locations, updates, removal and troubleshooting. The README quick start, roadmap, security policy, contributing guide, admin guide, Linux test plan and `assets/README.txt` were brought up to date.

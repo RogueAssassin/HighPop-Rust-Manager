@@ -9,6 +9,11 @@
     <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
   </Style>
 
+  <!-- Icon-only buttons (the 36 and 26 px squares and the bottom icon row) take their accessible name from their tooltip. -->
+  <Style Selector="Button[Width=36], Button[Width=26], Button[Height=32]">
+    <Setter Property="AutomationProperties.Name" Value="{ReflectionBinding $self.(ToolTip.Tip)}" />
+  </Style>
+
   <!-- Buttons: every plain button is the quiet "ghost" look; classes add the accent variants. -->
   <Style Selector="Button">
     <Setter Property="CornerRadius" Value="8" />
