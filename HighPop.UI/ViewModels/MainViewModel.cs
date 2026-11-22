@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HighPop.Games;
@@ -1395,9 +1395,7 @@ public partial class MainViewModel : BaseViewModel
     {
         try
         {
-            var exeDir = System.IO.Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)
-                         ?? AppContext.BaseDirectory;
-            var path = System.IO.Path.Combine(exeDir, "assets", "logs", "crash.log");
+            var path = System.IO.Path.Combine(ConfigService.DataRoot, "assets", "logs", "crash.log");
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
             System.IO.File.AppendAllText(path, $"[{DateTime.Now:HH:mm:ss}] NAV: {msg}\n");
         }

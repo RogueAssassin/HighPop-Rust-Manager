@@ -35,6 +35,7 @@ cp -a "$publish/." "$stage/HPRM/"
 find "$stage/HPRM" -name '*.pdb' -delete
 cp "$repo_root/CHANGELOG.md" "$stage/HPRM/CHANGELOG.md"
 [[ "$kind" == server ]] && cp "$repo_root/scripts/highpop-server.service" "$stage/HPRM/"
+[[ "$kind" == desktop ]] && cp "$repo_root/HighPop.Desktop/Assets/highpop-mark.png" "$stage/HPRM/highpop.png"
 echo "$version $commit" > "$stage/HPRM/BUILD.txt"
 
 # Archives built on any host must unpack to the same modes, and never carry links.

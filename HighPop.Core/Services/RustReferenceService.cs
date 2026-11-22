@@ -155,7 +155,7 @@ public sealed class RustReferenceService
     }
 
     private static string CachePath => Path.Combine(
-        Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory) ?? AppContext.BaseDirectory,
+        ConfigService.DataRoot,
         "assets", "cache", "rogue-rust-reference.json");
 
     private static async Task TryWriteCacheAsync(
