@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.2.6
 
 - **New: signed apt repository for Ubuntu and Debian.** `https://rogueassassin.github.io/HighPop-Rust-Manager/apt` serves `highpop-desktop` and `highpop-server`, so Software Updater and `apt upgrade` keep HighPop current (see the install guide). A fresh install of a downloaded `.deb` registers the repository automatically. Each release publishes it from the release workflow; `scripts/test-apt-repo.sh` and a new CI workflow test the signing, install, upgrade and tamper refusal on Ubuntu.
+- **Fix: the update banner on `.deb` and AppImage installs now has an "Open releases page" button.** Those installs are read-only and cannot update themselves, but the banner only said to download the new version and gave no way to do it, so the update looked broken. The wording now says why.
+- Advanced metadata to v1.2.6.
 
 ## 1.2.5
 
