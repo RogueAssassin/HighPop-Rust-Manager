@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.2.1
 
 - **The WPF project is retired.** HighPop.Desktop (Avalonia) is the only app for Windows and Linux; the `HighPop` WPF project is removed from the source tree and the solution. The bundled assets (brand icon, presets, `assets/README.txt`) now live in the top-level `assets/` folder, the smoke tests no longer depend on WPF, and `scripts/Test-UiSurface.ps1` now audits the Avalonia views. Nothing changes for users of 1.2.0.
+- Advanced metadata to v1.2.1.
 
 ## 1.2.0
 
