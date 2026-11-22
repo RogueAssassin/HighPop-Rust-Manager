@@ -9,7 +9,7 @@
     <IsPackable>false</IsPackable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>..\HighPop\assets\brand\highpop.ico</ApplicationIcon>
+    <ApplicationIcon>..\assets\brand\highpop.ico</ApplicationIcon>
     <AssemblyTitle>HighPop Rust Manager</AssemblyTitle>
     <Product>HighPop Rust Manager</Product>
     <Description>Manage Rust and other dedicated game servers on Windows and Linux.</Description>
@@ -45,8 +45,8 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">
-    <Content Include="..\HighPop\assets\README.txt" Link="assets\README.txt" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
-    <Content Include="..\HighPop\assets\presets\**\*.json" Link="assets\presets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="..\assets\README.txt" Link="assets\README.txt" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="..\assets\presets\**\*.json" Link="assets\presets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
   <!-- The app is HighPop.Desktop internally; on Windows the shipped file is HighPop.exe. -->
   <Target Name="NameWindowsExe" AfterTargets="Publish" Condition="'$(PublishSingleFile)' == 'true' and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">

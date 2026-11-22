@@ -40,4 +40,4 @@ Rust protocol or command changes should cite an official Facepunch, Valve, Carbo
 
 ## Releases
 
-A push to `main` builds, tests and packages HighPop, then publishes a GitHub release tagged with the version in `HighPop/HighPop.csproj`. Bump that version (and the version check in `HighPop.SmokeTests/Program.cs`) in the same change as the changelog entry.
+A push to `main` builds, tests and packages HighPop, then publishes a GitHub release tagged with the version in `Directory.Build.props`. Bump that version (and the version check in `HighPop.SmokeTests/Program.cs`) in the same change as the changelog entry.

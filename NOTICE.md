@@ -21,4 +21,4 @@ The following products and projects were reviewed for publicly described feature
 
 Rust and Facepunch are trademarks or registered trademarks of Facepunch Studios. Steam and Valve are trademarks or registered trademarks of Valve Corporation. HighPop is not affiliated with or endorsed by those companies.
 
-NuGet dependencies are restored from their publishers and retain their respective licenses. See `HighPop/HighPop.csproj` for the dependency list.
+NuGet dependencies are restored from their publishers and retain their respective licenses. See the `.csproj` files under `HighPop.Core`, `HighPop.UI` and `HighPop.Desktop` for the dependency list.

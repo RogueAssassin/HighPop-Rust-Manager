@@ -20,7 +20,7 @@ New-Item $publish -ItemType Directory -Force | Out-Null
 dotnet restore (Join-Path $root "HighPop.sln")
 dotnet build (Join-Path $root "HighPop.sln") -c $Configuration --no-restore
 dotnet run --project (Join-Path $root "HighPop.SmokeTests\HighPop.SmokeTests.csproj") -c $Configuration --no-build
-dotnet publish (Join-Path $root "HighPop\HighPop.csproj") `
+dotnet publish (Join-Path $root "HighPop.Desktop\HighPop.Desktop.csproj") `
     -c $Configuration -r $Runtime --self-contained true -o $publish
 
 $version = (Select-String -Path (Join-Path $root "Directory.Build.props") -Pattern '<Version>([^<]+)</Version>').Matches.Groups[1].Value

@@ -8,6 +8,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\HighPop\HighPop.csproj" />
+    <ProjectReference Include="..\HighPop.Core\HighPop.Core.csproj" />
+    <ProjectReference Include="..\HighPop.UI\HighPop.UI.csproj" />
   </ItemGroup>
 </Project>

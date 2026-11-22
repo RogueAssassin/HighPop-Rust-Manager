@@ -10,7 +10,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="HighPop" />
     <InternalsVisibleTo Include="HighPop.SmokeTests" />
     <InternalsVisibleTo Include="HighPop.LinuxCheck" />
     <InternalsVisibleTo Include="HighPop.UI" />
@@ -18,8 +17,8 @@
     <InternalsVisibleTo Include="HighPop.Server" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="../HighPop/assets/brand/highpop.ico" LogicalName="HighPop.assets.brand.highpop.ico" />
-    <EmbeddedResource Include="../HighPop/assets/presets/**/*.json" LogicalName="HighPop.assets.presets.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../assets/brand/highpop.ico" LogicalName="HighPop.assets.brand.highpop.ico" />
+    <EmbeddedResource Include="../assets/presets/**/*.json" LogicalName="HighPop.assets.presets.%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />

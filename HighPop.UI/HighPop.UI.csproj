@@ -17,7 +17,6 @@
     <ProjectReference Include="..\HighPop.Core\HighPop.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="HighPop" />
     <InternalsVisibleTo Include="HighPop.Desktop" />
     <InternalsVisibleTo Include="HighPop.SmokeTests" />
   </ItemGroup>
