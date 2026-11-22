@@ -15,12 +15,12 @@ packages/
 .nuget/
 
 # HighPop portable runtime state (source assets remain tracked)
-HighPop/assets/data/
-HighPop/assets/servers/
-HighPop/assets/backups/
-HighPop/assets/logs/
-HighPop/assets/plugins/
-HighPop/assets/cache/
+assets/data/
+assets/servers/
+assets/backups/
+assets/logs/
+assets/plugins/
+assets/cache/
 
 # Game/server and diagnostic output
 appcache/
