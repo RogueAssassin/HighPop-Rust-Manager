@@ -3,10 +3,12 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 
 namespace HighPop.Services;
 
+[SupportedOSPlatform("windows")]
 public static class SelfUpdateService
 {
     public static async Task<bool> DownloadAndPrepareAsync(
@@ -118,7 +120,11 @@ exit /b 1
         }
     }
 
-    public static bool ApplyAndRestart()
+    /// <summary>The updater swaps HighPop.exe in place, so it only runs for the real release executable.</summary>
+    public static bool IsSupported() =>
+        string.Equals(Path.GetFileName(Environment.ProcessPath), "HighPop.exe", StringComparison.OrdinalIgnoreCase);
+
+    public static bool StartApply()
     {
         var exeDir  = Path.GetDirectoryName(
             Environment.ProcessPath
@@ -150,7 +156,6 @@ exit /b 1
             return false;
         }
 
-        System.Windows.Application.Current.Shutdown();
         return true;
     }
 

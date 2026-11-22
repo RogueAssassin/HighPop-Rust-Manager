@@ -23,7 +23,7 @@ public partial class MainWindow : Window
     public static string VersionText { get; } = HighPop.AppInfo.VersionDisplay;
 
     /// <summary>Whether this install can replace itself, so the update banner offers Install.</summary>
-    public static bool CanSelfUpdate { get; } = LinuxSelfUpdateService.IsSupported();
+    public static bool CanSelfUpdate { get; } = Platform.PlatformUpdate.IsSupported;
     public static bool CannotSelfUpdate => !CanSelfUpdate;
 
     private bool _exiting;

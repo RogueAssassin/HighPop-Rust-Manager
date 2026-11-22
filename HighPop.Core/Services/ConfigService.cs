@@ -99,9 +99,7 @@ public class ConfigService
         DefaultInstallRoot = _portableDefaultInstallRoot;
         BackupPath         = Path.Combine(DataRoot, "assets", "backups");
         Directory.CreateDirectory(AppDataPath);
-        // The Windows app restores its presets itself at startup; the Linux hosts have no such step.
-        if (!OperatingSystem.IsWindows())
-            try { BundledAssetService.EnsurePresets(DataRoot); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
+        try { BundledAssetService.EnsurePresets(DataRoot); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { }
         PortableLayoutService.MigrateDirectoryContents(
             Path.Combine(AppDataPath, "steamcmd"), SteamCmdPath);
         PortableLayoutService.MigrateServerRoot(
