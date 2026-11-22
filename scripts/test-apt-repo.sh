@@ -59,7 +59,7 @@ grep -q "highpop-desktop.*1.0.1" <<<"$upgradable" && pass "apt offers the 1.0.1 
 sudo apt-get install -y --only-upgrade -o Dir::Etc::sourcelist="$sources" -o Dir::Etc::sourceparts=- highpop-desktop highpop-server >/dev/null
 [[ "$(dpkg-query -W -f='${Version}' highpop-desktop)" == 1.0.1 ]] && pass "upgraded to 1.0.1 through apt" || fail "upgrade did not apply"
 
-# Change the signed Release text after signing: apt must refuse it.
+# Change the signed Release text after signing (apt falls back to Release + Release.gpg, so change both): apt must refuse it.
 sed -i 's/^Origin: RogueAssassin$/Origin: Mallory/' "$site/dists/stable/InRelease"
 grep -q '^Origin: Mallory' "$site/dists/stable/InRelease" || fail "the tamper step did not change the file"
 if apt_update; then fail "a tampered repository was accepted"; fi
