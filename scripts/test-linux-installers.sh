@@ -69,6 +69,7 @@ sudo bash "$repo_root/scripts/install-server.sh" --tarball "$dir/HighPop-v${vers
 check "script install binary"            test -x /opt/highpop-server/HighPop.Server
 check "script install unit"              test -f /etc/systemd/system/highpop-server.service
 check "script install CLI wrapper"       test -x /usr/local/bin/highpop-server
+check "script CLI wrapper runs"          sudo /usr/local/bin/highpop-server list
 sudo systemctl start highpop-server
 sleep 6
 systemctl is-active --quiet highpop-server || { sudo journalctl -u highpop-server --no-pager -n 40 || true; fail "script-installed service did not stay running"; }

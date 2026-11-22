@@ -138,13 +138,13 @@ systemctl enable highpop-server >/dev/null
 
 # A command that always runs the CLI as the service user with the same data folder.
 cat > /usr/local/bin/highpop-server <<EOF
-#!/usr/bin/env bash
-if [[ $EUID -eq 0 ]]; then
-  exec runuser -u  -- env HIGHPOP_HOME= /HighPop.Server "$@"
-elif [[ "$(id -un)" == "" ]]; then
-  exec env HIGHPOP_HOME= /HighPop.Server "$@"
+#!/bin/sh
+if [ "\$(id -u)" = 0 ]; then
+  exec runuser -u $svc_user -- env HIGHPOP_HOME=$state $prefix/HighPop.Server "\$@"
+elif [ "\$(id -un)" = $svc_user ]; then
+  exec env HIGHPOP_HOME=$state $prefix/HighPop.Server "\$@"
 else
-  exec sudo -u  env HIGHPOP_HOME= /HighPop.Server "$@"
+  exec sudo -u $svc_user env HIGHPOP_HOME=$state $prefix/HighPop.Server "\$@"
 fi
 EOF
 chmod 755 /usr/local/bin/highpop-server

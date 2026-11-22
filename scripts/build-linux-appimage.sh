@@ -76,7 +76,6 @@ exec "$HERE/usr/lib/highpop/HighPop.Desktop" "$@"
 EOF
 chmod 755 "$appdir/AppRun"
 
-+
 
 name="HighPop-v${version}-x86_64.AppImage"
 rm -f "$out/$name" "$out/$name.sha256"

@@ -39,7 +39,8 @@ fi
 if [[ $uninstall -eq 1 ]]; then
   rm -f "$apps_dir/highpop-desktop.desktop" "$icon_dir/highpop-desktop.png" "$bin_dir/highpop-desktop"
   # Remove only the program files, so servers and settings survive.
-  if [[ -d "$prefix" ]]; then
+  # Only touch a folder that really holds a HighPop install (guards against a mistyped --prefix).
+  if [[ -d "$prefix" && -f "$prefix/HighPop.Desktop" ]]; then
     find "$prefix" -mindepth 1 -maxdepth 1 \
       ! -name assets ! -name Servers -exec rm -rf {} +
   fi
