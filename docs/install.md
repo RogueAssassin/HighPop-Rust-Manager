@@ -1,4 +1,4 @@
-# Installing HighPop (v1.2.5)
+# Installing HighPop (v1.2.6)
 
 HighPop comes in three variants. They share the same code, so a feature or fix lands in all of them.
 
@@ -14,13 +14,13 @@ Every download is on the [Releases page](../../../releases/latest). Each file ha
 
 ```powershell
 # Windows PowerShell
-(Get-FileHash .\HighPop-v1.2.5-win-x64.zip -Algorithm SHA256).Hash.ToLower()
-Get-Content .\HighPop-v1.2.5-win-x64.zip.sha256
+(Get-FileHash .\HighPop-v1.2.6-win-x64.zip -Algorithm SHA256).Hash.ToLower()
+Get-Content .\HighPop-v1.2.6-win-x64.zip.sha256
 ```
 
 ```bash
 # Linux
-sha256sum -c HighPop-v1.2.5-linux-x64.tar.gz.sha256
+sha256sum -c HighPop-v1.2.6-linux-x64.tar.gz.sha256
 ```
 
 All three variants are 64-bit (x86-64) and self-contained: you do not install .NET.
@@ -33,12 +33,12 @@ All three variants are 64-bit (x86-64) and self-contained: you do not install .N
 
 **Install**
 
-1. Download `HighPop-v1.2.5-win-x64.zip` from Releases.
+1. Download `HighPop-v1.2.6-win-x64.zip` from Releases.
 2. Extract the whole `HPRM` folder somewhere you can write to, such as `C:\HPRM`. Do not use `C:\Program Files`, because HighPop keeps its data next to the program.
 3. Run `HPRM\HighPop.exe`. Windows SmartScreen may warn about an unsigned community build: choose **More info**, then **Run anyway**.
 4. Select **+ Add Server**, then **Install / Update** to fetch SteamCMD and Rust, then **Start**.
 
-The release also has a bare `HighPop-v1.2.5-win-x64.exe` for people who only want the program. Put it in its own folder: it creates `assets` and `Servers` beside itself.
+The release also has a bare `HighPop-v1.2.6-win-x64.exe` for people who only want the program. Put it in its own folder: it creates `assets` and `Servers` beside itself.
 
 **What the folder holds**
 
@@ -75,11 +75,11 @@ The desktop app is the same one you get on Windows, so everything in the [admin 
 ### AppImage (one file, no install)
 
 ```bash
-chmod +x HighPop-v1.2.5-x86_64.AppImage
-./HighPop-v1.2.5-x86_64.AppImage
+chmod +x HighPop-v1.2.6-x86_64.AppImage
+./HighPop-v1.2.6-x86_64.AppImage
 ```
 
-- Needs FUSE 2: `sudo apt install libfuse2t64` (Ubuntu 24.04 and newer) or `libfuse2` (older). Without it, run `./HighPop-v1.2.5-x86_64.AppImage --appimage-extract-and-run`.
+- Needs FUSE 2: `sudo apt install libfuse2t64` (Ubuntu 24.04 and newer) or `libfuse2` (older). Without it, run `./HighPop-v1.2.6-x86_64.AppImage --appimage-extract-and-run`.
 - An AppImage is read-only. Servers and settings live in `~/.local/share/highpop`, and the app does not update itself. To update, download the new AppImage.
 - Remove: delete the file. Delete `~/.local/share/highpop` too if you want your servers and settings gone.
 
@@ -99,7 +99,7 @@ sudo apt update && sudo apt install highpop-desktop
 ### .deb package (system-wide, Debian and Ubuntu)
 
 ```bash
-sudo apt install ./highpop-desktop_1.2.5_amd64.deb
+sudo apt install ./highpop-desktop_1.2.6_amd64.deb
 ```
 
 - Installs to `/opt/highpop-desktop`, adds an application-menu entry and a `highpop-desktop` command.
@@ -121,7 +121,7 @@ bash install-desktop.sh
 ### Tarball (manual, portable)
 
 ```bash
-tar -xzf HighPop-v1.2.5-linux-x64.tar.gz
+tar -xzf HighPop-v1.2.6-linux-x64.tar.gz
 ./HPRM/HighPop.Desktop
 ```
 
@@ -158,7 +158,7 @@ The headless host (`HighPop.Server`) runs without a window as a systemd service.
 ### .deb package (recommended on Debian and Ubuntu)
 
 ```bash
-sudo apt install ./highpop-server_1.2.5_amd64.deb
+sudo apt install ./highpop-server_1.2.6_amd64.deb
 ```
 
 - Installs to `/opt/highpop-server`, creates the system user `highpop`, and enables `highpop-server.service`. A fresh install is **not started** until you add a server.
@@ -181,7 +181,7 @@ sudo bash install-server.sh
 
 ### Tarball (manual)
 
-Use `HighPop-v1.2.5-linux-server-x64.tar.gz` and the sample unit `scripts/highpop-server.service` from the source tree. Set `User=`, `WorkingDirectory=` and `ExecStart=` to match where you unpacked it.
+Use `HighPop-v1.2.6-linux-server-x64.tar.gz` and the sample unit `scripts/highpop-server.service` from the source tree. Set `User=`, `WorkingDirectory=` and `ExecStart=` to match where you unpacked it.
 
 ### First server
 
@@ -222,4 +222,4 @@ journalctl -u highpop-server -f               # follow the host log
 | Windows: "Access is denied" when starting with Windows | Update to v1.2.2 or newer: normal users now use the per-user Run entry |
 | Linux Desktop: no tray icon | Your desktop has no system tray (stock GNOME); install a tray extension |
 | Headless service exits at once | `journalctl -u highpop-server -n 50`; the user needs write access to `/var/lib/highpop` |
-| Update banner missing | AppImage and `.deb` installs do not self-update; install the new file |
+| Update banner has no "Install update" button | AppImage and `.deb` installs do not self-update: use **Open releases page**, or add the apt repository so Software Updater installs it |

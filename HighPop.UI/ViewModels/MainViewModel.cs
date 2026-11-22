@@ -705,6 +705,21 @@ public partial class MainViewModel : BaseViewModel
     [RelayCommand]
     private Task PerformUpdateAsync() => PerformUpdateCoreAsync(requireConfirmation: true);
 
+    /// <summary>For installs that cannot replace themselves (.deb, AppImage): opens the download page.</summary>
+    [RelayCommand]
+    private void OpenReleasesPage()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                Services.UpdateCheckerService.ReleasesUrl) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            UpdateStatusText = $"Could not open the browser. Download it from {Services.UpdateCheckerService.ReleasesUrl}";
+        }
+    }
+
     private async Task PerformUpdateCoreAsync(bool requireConfirmation)
     {
         // Count running servers
