@@ -1,0 +1,50 @@
+name: Linux update test
+
+# Drives the real Linux self-updater on Ubuntu: installs the latest released desktop tarball, then updates it to
+# a tarball built from this source, served over local HTTP. See scripts/test-linux-update.sh for what is checked.
+on:
+  pull_request:
+    paths:
+      - "HighPop.Core/Services/LinuxSelfUpdateService.cs"
+      - "HighPop.LinuxCheck/**"
+      - "scripts/test-linux-update.sh"
+      - "scripts/build-linux-package.sh"
+      - ".github/workflows/linux-update-test.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: linux-update-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build the update driver
+        run: dotnet build HighPop.LinuxCheck/HighPop.LinuxCheck.csproj -c Release
+
+      - name: Publish and package the desktop app from this source
+        run: |
+          dotnet publish HighPop.Desktop/HighPop.Desktop.csproj -c Release -r linux-x64 --self-contained true -o publish_desktop
+          version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
+          scripts/build-linux-package.sh publish_desktop package_new "$version" desktop "$GITHUB_SHA"
+
+      - name: Download the latest released desktop tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download --repo "$GITHUB_REPOSITORY" --pattern '*-linux-x64.tar.gz' --dir package_old
+
+      - name: Update the old install to the new build
+        run: scripts/test-linux-update.sh package_old/*-linux-x64.tar.gz package_new/*-linux-x64.tar.gz
