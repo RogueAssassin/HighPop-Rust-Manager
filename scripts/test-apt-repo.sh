@@ -8,7 +8,7 @@ set -euo pipefail
 
 [[ "${CI:-}" == "true" || "${1:-}" == "--yes" ]] || { echo "Refusing to change this machine; pass --yes on a disposable host." >&2; exit 1; }
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-work="$(mktemp -d)"
+work="$(mktemp -d)"; chmod 755 "$work"   # apt runs as the _apt user and must be able to read the test repository and keyring
 trap 'rm -rf "$work"' EXIT
 pass() { echo "ok: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
