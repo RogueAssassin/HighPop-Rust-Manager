@@ -39,22 +39,63 @@ public static class WindowsStartupTaskService
             return false;
         }
 
-        var success = enabled ? CreateTask(out error) : DeleteTask(out error);
-        if (!success) return false;
+        if (!enabled)
+        {
+            var deleted = DeleteTask(out error);
+            ClearRunKey();
+            return deleted;
+        }
 
+        if (CreateTask(out error))
+        {
+            ClearRunKey();
+            return true;
+        }
+
+        // Task Scheduler refuses a logon trigger without administrator rights, so a normal user
+        // gets "Access is denied". The per-user Run key needs no elevation and starts the same command.
+        var taskError = error;
+        if (SetRunKey(out var runKeyError))
+        {
+            error = string.Empty;
+            return true;
+        }
+        error = $"{taskError} (the Run-key fallback also failed: {runKeyError})";
+        return false;
+    }
+
+    private static string CurrentExecutable() =>
+        Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "HighPop.exe");
+
+    private static bool SetRunKey(out string error)
+    {
+        error = string.Empty;
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(LegacyRunKey, true);
+            key.SetValue(LegacyRunValue, BuildTaskAction(CurrentExecutable()));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    private static void ClearRunKey()
+    {
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(LegacyRunKey, true);
             key?.DeleteValue(LegacyRunValue, throwOnMissingValue: false);
         }
         catch { }
-        return true;
     }
 
     private static bool CreateTask(out string error)
     {
-        var executable = Environment.ProcessPath
-            ?? Path.Combine(AppContext.BaseDirectory, "HighPop.exe");
+        var executable = CurrentExecutable();
         return RunSchtasks([
             "/Create", "/TN", TaskName,
             "/SC", "ONLOGON",
