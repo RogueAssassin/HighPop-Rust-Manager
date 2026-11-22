@@ -1,7 +1,6 @@
 # Linux test plan
 
-HighPop has no Linux app yet. These tests check the Linux groundwork in `HighPop.Core` on a real host before the
-headless service is built on top of it.
+HighPop runs on Linux as a desktop app and a headless host (see [the install guide](install.md)). These tests check the Linux groundwork in `HighPop.Core` on a real host, and the installers on a disposable machine.
 
 ## Stage 1: self-check (about 5 minutes)
 
@@ -53,6 +52,18 @@ whether Rust really needs it; that tells us whether HighPop must set it.
 
 ## Not covered yet
 
-- Running HighPop itself on Linux (the headless host does not exist yet).
+- Carbon and the RAM cap are listed below. Running HighPop itself on Linux is covered by Stage 3.
 - Carbon on Linux (blocked in HighPop until its archive layout and start environment are tested).
 - Oxide loading under a running server, and the RAM cap (not enforced on Linux).
+## Stage 3: the installers (about 10 minutes, disposable machine only)
+
+`scripts/test-linux-installers.sh <package-dir> --yes` installs and removes every package for real: both `.deb`
+files, `install-desktop.sh`, `install-server.sh` (with its systemd service) and the AppImage. It uses `sudo` and
+changes the system, so run it on a throwaway VM or a CI runner. CI runs it on every push to `main` and on pull requests.
+
+```bash
+# <package-dir> holds the .deb files, the tarballs, the AppImage and their .sha256 files
+scripts/test-linux-installers.sh ./package_out --yes
+```
+
+**Pass:** it ends with `All installer checks passed.`

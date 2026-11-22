@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.2.2
 
+- **Documentation for v1.2.2.** A new [install guide](docs/install.md) covers the Windows, Linux Desktop (AppImage, `.deb`, `install-desktop.sh`, tarball) and Linux Headless (`.deb`, `install-server.sh`, systemd) installs, with data locations, updates, removal and troubleshooting. The README quick start, roadmap, security policy, contributing guide, admin guide, Linux test plan and `assets/README.txt` were brought up to date.
+- **Hardening: the Windows updater only downloads from github.com over HTTPS,** the same rule the Linux updater already applied.
 - **Fix: "Start with Windows" failed for normal users.** Windows only lets administrators create a logon task, so turning the setting on as a regular user ended with "Access is denied". HighPop now falls back to the per-user Run entry, which needs no elevation and starts HighPop with the same `--background` option; the Task Scheduler task is still used when HighPop runs as administrator.
+- Advanced metadata to v1.2.2.
 
 ## 1.2.1
 

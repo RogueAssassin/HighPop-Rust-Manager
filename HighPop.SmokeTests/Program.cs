@@ -14,7 +14,7 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.2.1", "application and release metadata report v1.2.1");
+Check(AppInfo.Version == "1.2.2", "application and release metadata report v1.2.2");
 Check(UpdateCheckerService.IsNewerVersion("v1.0.18", "1.0.17")
       && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.18")
       && !UpdateCheckerService.IsNewerVersion("v1.0.18", "1.0.18")
@@ -721,6 +721,13 @@ try
           && !SelfUpdateService.TryGetSafeAssetRelativePath(
               "/HPRM/assets/presets/escaped.json", out _),
         "self-update asset staging accepts packaged assets and rejects traversal");
+
+    Check(SelfUpdateService.IsTrustedUpdateUrl("https://github.com/RogueAssassin/HighPop-Rust-Manager/releases/download/v1.2.2/HighPop-v1.2.2-win-x64.zip")
+          && !SelfUpdateService.IsTrustedUpdateUrl("http://github.com/x/y.zip")
+          && !SelfUpdateService.IsTrustedUpdateUrl("https://github.com.evil.example/x/y.zip")
+          && !SelfUpdateService.IsTrustedUpdateUrl("https://example.com/HighPop-v9.9.9-win-x64.zip")
+          && !SelfUpdateService.IsTrustedUpdateUrl("not a url"),
+        "the Windows updater only accepts github.com HTTPS release URLs");
 
     {
         static byte[] MakeTarGz(params (string Name, TarEntryType Type, string Content)[] entries)

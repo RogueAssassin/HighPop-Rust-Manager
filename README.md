@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="docs/install.md">Install guide</a> ·
   <a href="#a-look-around">Screenshots</a> ·
   <a href="#features">Features</a> ·
   <a href="docs/admin-guide.md">Admin guide</a> ·
@@ -28,14 +29,17 @@
 
 ## Quick start
 
-1. Download the latest **HPRM ZIP** from [Releases](../../releases/latest) and, if you like, check it against the `.sha256` file.
-2. Extract the whole `HPRM` folder somewhere writable, for example `C:\HPRM`.
-3. Run `HighPop.exe` and select **+ Add Server**. HighPop suggests four free ports (game, query, WebRCON, Rust+).
-4. Select **Install / Update** to download SteamCMD and Rust, then select **Start**.
+HighPop v1.2.2 has three installs; the full steps, options and troubleshooting are in the **[install guide](docs/install.md)**.
 
-The Windows app is the same cross-platform Avalonia app as the Linux desktop build (one `HighPop.exe`, with the `assets` folder beside it). Linux has a desktop app (AppImage, `.deb`, `install-desktop.sh`) and a headless service (`.deb`, `install-server.sh`); see the release assets.
+| Variant | Download from [Releases](../../releases/latest) | Run |
+|---|---|---|
+| **Windows** | `HighPop-vX.Y.Z-win-x64.zip` | Extract the `HPRM` folder somewhere writable (for example `C:\HPRM`) and run `HighPop.exe` |
+| **Linux Desktop** | `HighPop-vX.Y.Z-x86_64.AppImage`, `highpop-desktop_X.Y.Z_amd64.deb` or `install-desktop.sh` | `chmod +x` the AppImage and run it, or `sudo apt install ./highpop-desktop_X.Y.Z_amd64.deb` |
+| **Linux Headless** | `highpop-server_X.Y.Z_amd64.deb` or `install-server.sh` | `sudo apt install ./highpop-server_X.Y.Z_amd64.deb`, then `highpop-server add "My Rust"` |
 
-HighPop is self-contained, so no .NET install is needed. It runs on Windows 10/11 and Windows Server 2012–2025. Windows SmartScreen may warn about an unsigned community build. Administrator rights are only needed for firewall and URL reservation changes.
+Then select **+ Add Server** (HighPop suggests four free ports: game, query, WebRCON, Rust+), **Install / Update** to download SteamCMD and Rust, and **Start**. On a headless host, use `highpop-server install` and `sudo systemctl start highpop-server` instead. Check any download against the `.sha256` file beside it.
+
+Windows and Linux Desktop are the same Avalonia app, so a feature or fix lands on both. HighPop is self-contained and needs no .NET install. It runs on Windows 10/11 and Windows Server 2012–2025, and on 64-bit Linux (Ubuntu 22.04 / Debian 12 or newer). Windows SmartScreen may warn about an unsigned community build. Administrator rights are only needed for Windows Firewall and URL reservation changes.
 
 ## A look around
 
@@ -100,13 +104,15 @@ Actions that need input open over the workspace, so you never lose your place.
 | **Automation** | Scheduled restarts, updates, backups, wipes, broadcasts and commands, with in-game countdowns |
 | **Monitoring** | CPU, RAM, network and player charts, health checks with recovery restarts, log watchers, crash warnings and support bundles with secrets removed |
 | **Remote** | Optional token-protected REST API and dashboard (local-subnet firewall rule, token lockout), Discord status boards and admin-only controls, webhooks, email alerts and multi-machine control |
-| **Windows** | Portable folder, system tray, start with Windows, firewall rules, optional UPnP and verified in-place updates |
+| **Windows** | Portable folder, system tray, start with Windows (no administrator needed), firewall rules, optional UPnP and verified in-place updates |
+| **Linux** | Desktop app (AppImage, `.deb`, script install) and a headless systemd service with a command-line tool; the `.deb` and AppImage keep data in `~/.local/share/highpop` or `/var/lib/highpop` |
 | **Light on resources** | Releases idle memory when minimised to the tray (about 55 MB in testing) and only redraws charts while they are on screen |
 
 ## Documentation
 
 | Guide | What it covers |
 |---|---|
+| [Install guide](docs/install.md) | Windows, Linux Desktop and Linux Headless installs: AppImage, `.deb`, install scripts, systemd service, updates, data locations and removal |
 | [Admin guide](docs/admin-guide.md) | WebRCON, player tools, `server.cfg`, RogueRust channels, plugin catalog, Log Watcher, Discord bot, Web API security, folder layout and production tips |
 | [Custom join domains](docs/custom-domains.md) | `client.connect rust.example.com` with DNS steps for Cloudflare, GoDaddy, Namecheap, Route 53 and more |
 | [Changelog](CHANGELOG.md) | What changed in every release |
@@ -127,7 +133,7 @@ HighPop follows each release channel instead of pinning a build number, so it ke
 
 ## Privacy
 
-HighPop runs on your machine and needs no account. It goes online only for the features you use: Steam (SteamCMD), GitHub (HighPop, Oxide, Carbon and RogueRust downloads), Discord, Cloudflare DNS and ipify (join-domain check), and the Rogue Gaming hosts `api.roguegaming.com.au` (command reference) and `plugins.roguegaming.com.au` (plugin catalog). Passwords and tokens are encrypted with Windows DPAPI; keep `assets/data` private all the same.
+HighPop runs on your machine and needs no account. It goes online only for the features you use: Steam (SteamCMD), GitHub (HighPop, Oxide, Carbon and RogueRust downloads), Discord, Cloudflare DNS and ipify (join-domain check), and the Rogue Gaming hosts `api.roguegaming.com.au` (command reference) and `plugins.roguegaming.com.au` (plugin catalog). Passwords and tokens are encrypted (Windows DPAPI on Windows, AES-256-GCM with an owner-only key file on Linux); keep the data folder private all the same.
 
 ---
 

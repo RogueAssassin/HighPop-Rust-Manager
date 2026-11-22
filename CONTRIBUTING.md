@@ -4,7 +4,7 @@ Contributions are welcome through focused pull requests.
 
 ## Build from source
 
-Requirements: Windows 10 / Server 2019 or newer and the .NET 10 SDK.
+Requirements: the .NET 10 SDK on Windows 10 / Server 2019 or newer, or on 64-bit Linux (Ubuntu 22.04 or newer). The Windows scripts (`Build-HighPop.ps1`, the smoke tests and `Test-UiSurface.ps1`) need Windows; the Linux projects build and test with `dotnet` and `scripts/*.sh`.
 
 ```powershell
 git clone https://github.com/RogueAssassin/HighPop-Rust-Manager.git
@@ -30,7 +30,7 @@ The `Process` scope ends when the window closes. Do not set `LocalMachine` to `U
 
 1. Open an issue first for large behaviour or data-format changes.
 2. Branch from `main` and keep unrelated refactors out of the pull request.
-3. Run the smoke tests and `scripts/Test-UiSurface.ps1` (checks every XAML view and command binding) before opening the pull request. CI runs both. For changes to the Oxide or Carbon installers, also run the smoke tests once with `HIGHPOP_NETWORK_TESTS=1`, which downloads and installs the real latest releases into a temporary folder.
+3. Run the smoke tests and `scripts/Test-UiSurface.ps1` (checks every Avalonia view and command binding) before opening the pull request. CI runs both. For changes to the Oxide or Carbon installers, also run the smoke tests once with `HIGHPOP_NETWORK_TESTS=1`, which downloads and installs the real latest releases into a temporary folder.
 4. For lifecycle, WebRCON, backup or wipe changes, also try the affected flow on a real Rust server: start, safe stop, force stop, restore or wipe.
 5. Add a line to `CHANGELOG.md` for anything users will notice.
 6. Do not commit server binaries, credentials, runtime `assets/data`, backups, logs or game installations.

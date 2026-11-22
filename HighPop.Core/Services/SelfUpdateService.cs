@@ -28,6 +28,8 @@ public static class SelfUpdateService
 
         try
         {
+            if (!IsTrustedUpdateUrl(zipUrl))
+                throw new InvalidDataException("Updates are only downloaded from github.com over HTTPS.");
             Report(progress, 5, "Downloading update...");
             using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true });
             http.Timeout = TimeSpan.FromMinutes(5);
@@ -187,6 +189,12 @@ exit /b 1
 
         return updateFailed;
     }
+
+    /// <summary>Release downloads come only from github.com over HTTPS, the same rule the Linux updater applies.</summary>
+    internal static bool IsTrustedUpdateUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase);
 
     internal static bool TryGetSafeAssetRelativePath(string entryName, out string relativePath)
     {

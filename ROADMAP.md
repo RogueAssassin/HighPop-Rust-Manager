@@ -9,10 +9,12 @@ For what has already shipped, see the [changelog](CHANGELOG.md).
 - **v0.8–v0.9**: a lifecycle coordinator that keeps start, stop and restart in a fixed order; safe stop (save, then quit, with a deadline); reattaching to running servers after HighPop restarts; per-server RogueRust Stable/Testing channels; the portable `HPRM` layout.
 - **v1.0**: log archives, one shared SteamCMD, world-size presets, firewall controls, profile export/import and verified self-updates.
 - **v1.0.1–v1.0.12**: the RogueRust plugin catalog, custom join domains with a DNS checker, a reliable WebRCON (delivery-confirmed `say`, live chat and F7 reports), Players admin tools, and a console that stays on the newest line after RDP reconnects.
-- **v1.0.13–v1.0.14**: the grouped server sidebar, faster server switching, lower RAM use in the tray and a fix for chart errors after RDP reconnects. This delivers part of the v1.2 interface work below.
+- **v1.0.13–v1.0.14**: the grouped server sidebar, faster server switching, lower RAM use in the tray and a fix for chart errors after RDP reconnects. This delivers part of the interface work below.
 - **v1.0.15–v1.0.18**: one-click "Update all" for catalog plugins, protection against console floods and runaway logs, Oxide and Carbon downloads verified against the SHA-256 GitHub publishes, a Discord bot that refuses actions without configured admins, a local-subnet firewall rule, token lockout and request limits for the Web API, protection against losing `servers.json`, and safer Log Watcher and health-check recovery.
+- **v1.1.0**: Linux. A native desktop app (AppImage, `.deb`, script install), a headless systemd host (`.deb`, `install-server.sh`) and a shared core, with the view-models moved into a UI-neutral library.
+- **v1.2.0–v1.2.2**: the Windows app is now the Avalonia app, so Windows and Linux share one codebase, and the WPF project is retired. Windows ships as one `HighPop.exe` in the same `HPRM` layout and existing installs update across by themselves. "Start with Windows" works without administrator rights. Install guides for Windows, Linux Desktop and Linux Headless.
 
-## v1.1: Safer updates and recovery
+## Next: Safer updates and recovery
 
 - Maintenance windows with player thresholds, deferral, operator override and cancellable countdowns.
 - Checks before stopping Rust: disk space, Steam build, backup destination, framework state and room for a rollback copy.
@@ -20,7 +22,7 @@ For what has already shipped, see the [changelog](CHANGELOG.md).
 - Snapshot Carbon, Oxide, RogueRust, plugins and config before maintenance, and only reopen the server once they pass health checks.
 - Verify every maintenance backup before anything destructive, optional restore drills, and retention that never deletes the last good full backup.
 
-## v1.2: Interface overhaul (partly delivered)
+## Next: Interface overhaul (partly delivered)
 
 - ✅ Server pages grouped into a sidebar and loaded on demand.
 - An operations timeline that ties lifecycle, update, backup, RCON and scheduler events together.
@@ -28,16 +30,16 @@ For what has already shipped, see the [changelog](CHANGELOG.md).
 - Consistent confirmations, validation, keyboard navigation, focus order, high contrast and multi-monitor behaviour.
 - Virtualised large logs and player lists. Target: no UI stall over 250 ms during background work.
 
-## v1.3: Secure RogueRust live map
+## Later: Secure RogueRust live map
 
 - A local-only RogueRust bridge by default, with a random key per Rust boot, authenticated sessions, replay protection and TLS for any remote access.
 - Read-only map access by default, with separate scopes for player identity, administration and diagnostics.
 - A live map with monuments, grid, players, Bradley, helicopters, supply drops, locked crates and events, with filters, follow mode and team colours.
 - Delta updates, 1–5 second sampling and under 1% Rust main-thread overhead. A 72-hour soak test must show no unbounded memory, queue or disk growth.
 
-## v2.0: Service-grade HighPop
+## Later: Service-grade HighPop
 
-- Run lifecycle, scheduling, health, updates and recovery in a headless Windows service, with the window as a client.
+- Run lifecycle, scheduling, health, updates and recovery in a headless Windows service, with the window as a client. (The Linux headless host already does this under systemd.)
 - Authenticated local IPC, operator roles and tamper-evident audit records.
 - Staged HighPop self-updates with automatic rollback.
 - Prometheus/OpenTelemetry metrics and versioned webhook schemas.
