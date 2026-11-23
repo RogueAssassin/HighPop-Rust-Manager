@@ -29,7 +29,7 @@
 
 ## Quick start
 
-HighPop v1.3.2 has three installs; the full steps, options and troubleshooting are in the **[install guide](docs/install.md)**.
+HighPop v1.3.3 has three installs; the full steps, options and troubleshooting are in the **[install guide](docs/install.md)**.
 
 | Variant | Download from [Releases](../../releases/latest) | Run |
 |---|---|---|
