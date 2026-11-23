@@ -14,7 +14,19 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.2.8", "application and release metadata report v1.2.8");
+Check(AppInfo.Version == "1.2.9", "application and release metadata report v1.2.9");
+{
+    var legacySalt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
+    var legacy = Convert.ToBase64String(legacySalt) + ":" + Convert.ToBase64String(System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
+        System.Text.Encoding.UTF8.GetBytes("pw"), legacySalt, 100_000, System.Security.Cryptography.HashAlgorithmName.SHA256, 32));
+    var fresh = UserService.HashPassword("pw");
+    Check(UserService.VerifyPassword("pw", legacy, out var legacyUpgrade) && legacyUpgrade
+          && !UserService.VerifyPassword("bad", legacy, out _),
+        "pre-1.2.9 password hashes still verify and are flagged for upgrade");
+    Check(fresh.StartsWith("pbkdf2-sha256:600000:") && UserService.VerifyPassword("pw", fresh, out var freshUpgrade) && !freshUpgrade
+          && !UserService.VerifyPassword("bad", fresh, out _),
+        "new password hashes use 600000 iterations and verify");
+}
 Check(UpdateCheckerService.IsNewerVersion("v1.0.18", "1.0.17")
       && UpdateCheckerService.IsNewerVersion("1.1.0", "1.0.18")
       && !UpdateCheckerService.IsNewerVersion("v1.0.18", "1.0.18")
