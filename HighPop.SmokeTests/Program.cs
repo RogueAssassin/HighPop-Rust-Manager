@@ -14,7 +14,7 @@ void Check(bool condition, string name)
     if (!condition) failures.Add(name);
 }
 
-Check(AppInfo.Version == "1.2.9", "application and release metadata report v1.2.9");
+Check(AppInfo.Version == "1.3.0", "application and release metadata report v1.3.0");
 {
     var legacySalt = System.Security.Cryptography.RandomNumberGenerator.GetBytes(16);
     var legacy = Convert.ToBase64String(legacySalt) + ":" + Convert.ToBase64String(System.Security.Cryptography.Rfc2898DeriveBytes.Pbkdf2(
@@ -22,7 +22,7 @@ Check(AppInfo.Version == "1.2.9", "application and release metadata report v1.2.
     var fresh = UserService.HashPassword("pw");
     Check(UserService.VerifyPassword("pw", legacy, out var legacyUpgrade) && legacyUpgrade
           && !UserService.VerifyPassword("bad", legacy, out _),
-        "pre-1.2.9 password hashes still verify and are flagged for upgrade");
+        "pre-1.3.0 password hashes still verify and are flagged for upgrade");
     Check(fresh.StartsWith("pbkdf2-sha256:600000:") && UserService.VerifyPassword("pw", fresh, out var freshUpgrade) && !freshUpgrade
           && !UserService.VerifyPassword("bad", fresh, out _),
         "new password hashes use 600000 iterations and verify");
@@ -1767,6 +1767,25 @@ static int GetFreeTcpPort()
     return port;
 }
 
+{
+    // The Web API answers on this machine only unless network access is allowed.
+    using var local = new WebApiService();
+    var probe = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); probe.Start();
+    var port = ((System.Net.IPEndPoint)probe.LocalEndpoint).Port; probe.Stop();
+    try
+    {
+        local.Start(port, "smoke-token");
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        var viaLocalhost = await http.GetAsync($"http://localhost:{port}/api/servers");
+        var viaLoopback  = await http.GetAsync($"http://127.0.0.1:{port}/api/servers");
+        Check(!local.BoundToAllInterfaces
+              && viaLocalhost.StatusCode == System.Net.HttpStatusCode.Unauthorized
+              && viaLoopback.StatusCode == System.Net.HttpStatusCode.Unauthorized,
+            "Web API listens on this machine only by default and still enforces the token");
+    }
+    catch (Exception ex) { Check(false, "Web API default local binding: " + ex.Message); }
+    finally { local.Stop(); }
+}
 if (failures.Count > 0)
 {
     Console.Error.WriteLine("HighPop smoke tests failed:");

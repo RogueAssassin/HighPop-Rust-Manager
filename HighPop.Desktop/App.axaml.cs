@@ -59,9 +59,10 @@ public partial class App : Application
         {
             var port = config.WebApiPort;
             var token = config.WebApiToken;
+            var bindAll = config.WebApiBindAll;
             _ = Task.Run(() =>
             {
-                try { webApi.Start(port, token); }
+                try { webApi.Start(port, token, bindAll); }
                 catch (Exception ex) { Console.Error.WriteLine($"[HighPop] Web API could not start: {ex.Message}"); }
             });
         }

@@ -74,11 +74,12 @@ internal static class Cli
     {
         var config = new ConfigService();
         config.WebApiEnabled = true;
+        if (args.Contains("--allow-remote")) config.WebApiAllowRemote = true;
         if (int.TryParse(Option(args, "--port"), out var port) && port is > 0 and < 65536) config.WebApiPort = port;
         if (string.IsNullOrWhiteSpace(config.WebApiToken))
             config.WebApiToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
         config.Save();
-        Console.WriteLine($"Web API enabled on port {config.WebApiPort}.");
+        Console.WriteLine($"Web API enabled on port {config.WebApiPort} ({(config.WebApiBindAll ? "network access allowed" : "this machine only; add --allow-remote to reach it from other computers")}).");
         Console.WriteLine($"The access token is stored in {config.SettingsFile} (kept private; not printed here).");
         Console.WriteLine("Restart the host for the change to take effect.");
         return 0;

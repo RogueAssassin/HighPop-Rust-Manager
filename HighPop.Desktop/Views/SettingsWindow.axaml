@@ -168,6 +168,8 @@
         <Border Classes="card"><StackPanel Spacing="8">
           <TextBlock Text="Web remote control (HTTP API)" Classes="title" />
           <CheckBox Content="Enable Web API" IsChecked="{Binding WebApiEnabled}" />
+          <CheckBox Content="Allow other computers on the network to connect (off = this computer only)" IsChecked="{Binding WebApiAllowRemote}" />
+          <TextBlock Text="Slave mode always allows network access. The API is plain HTTP: use a trusted network, VPN or HTTPS proxy." Classes="label" TextWrapping="Wrap" />
           <Grid ColumnDefinitions="110,*" ColumnSpacing="10">
             <StackPanel Spacing="4"><TextBlock Text="Port" Classes="label" /><NumericUpDown Value="{Binding WebApiPort}" Minimum="1" Maximum="65535" FormatString="0" /></StackPanel>
             <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="Access token (blank = generate on save)" Classes="label" /><TextBox Text="{Binding WebApiToken}" PasswordChar="●" /></StackPanel>

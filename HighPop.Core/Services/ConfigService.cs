@@ -62,6 +62,8 @@ public class ConfigService
     public string SteamPassword { get; set; } = string.Empty;
     public bool   WebApiEnabled          { get; set; } = false;
     public int    WebApiPort             { get; set; } = 8765;
+    /// <summary>When false (the default for new installs) the Web API only answers on this machine. Slave mode always allows network access.</summary>
+    public bool   WebApiAllowRemote      { get; set; } = false;
     public string WebApiToken            { get; set; } = string.Empty;
     public bool   SlaveMode              { get; set; } = false;
     public string SlaveName              { get; set; } = "This Machine";
@@ -83,6 +85,9 @@ public class ConfigService
 
     /// <summary>True when the Web API must be started — either by user choice or slave mode.</summary>
     public bool WebApiRequired => WebApiEnabled || SlaveMode;
+
+    /// <summary>True when the Web API should listen on the network rather than on this machine only.</summary>
+    public bool WebApiBindAll => WebApiAllowRemote || SlaveMode;
 
     public ConfigService()
     {
@@ -140,7 +145,8 @@ public class ConfigService
         bool   HasSeenOnboarding = false,
         bool   HealthCheckEnabled = true,
         int    HealthCheckFailThreshold = 3,
-        HealthCheckAction HealthCheckAction = HealthCheckAction.Notify);
+        HealthCheckAction HealthCheckAction = HealthCheckAction.Notify,
+        bool?  WebApiAllowRemote = null);
 
     private void LoadSettings()
     {
@@ -173,6 +179,8 @@ public class ConfigService
             HealthCheckEnabled       = d.HealthCheckEnabled;
             HealthCheckFailThreshold = d.HealthCheckFailThreshold > 0 ? d.HealthCheckFailThreshold : 3;
             HealthCheckAction        = d.HealthCheckAction;
+            // Settings saved by earlier versions had no such key: keep the old behaviour for installs already using remote access.
+            WebApiAllowRemote        = d.WebApiAllowRemote ?? (d.WebApiEnabled || d.SlaveMode);
         }
         catch { }
     }
@@ -186,7 +194,7 @@ public class ConfigService
             WebApiEnabled, WebApiPort, Protect(WebApiToken), SlaveMode, SlaveName, CrashPredictionDiscord,
             EnableUPnP, SortMode, CrashPredictionLowMemOnly, CrashPredictionLowMemPercent,
             CrashPredictionHighCpuOnly, CrashPredictionHighCpuPercent, HasSeenOnboarding,
-            HealthCheckEnabled, HealthCheckFailThreshold, HealthCheckAction);
+            HealthCheckEnabled, HealthCheckFailThreshold, HealthCheckAction, WebApiAllowRemote);
         AtomicWrite(SettingsFile, JsonConvert.SerializeObject(d, Formatting.Indented));
     }
 
