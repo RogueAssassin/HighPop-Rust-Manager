@@ -24,9 +24,9 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Override vulnerable transitive dependency from Microsoft.Data.Sqlite -->
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- Windows-only: throws PlatformNotSupportedException on Linux, guarded at the call site. -->
-    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.14" />
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.15" />
   </ItemGroup>
 </Project>
