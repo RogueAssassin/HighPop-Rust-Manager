@@ -402,5 +402,5 @@ jobs:
           export APT_GPG_KEY_ID="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
           mkdir signing-work
           gh release download "$TAG" --dir signing-work --pattern '*' --skip-existing
-          scripts/sign-release-assets.sh signing-work
+          bash scripts/sign-release-assets.sh signing-work
           gh release upload "$TAG" signing-work/*.asc --clobber

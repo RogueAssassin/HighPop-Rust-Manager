@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.3
+
+- Fix: the release-signing script was committed without its executable bit, so the signing job failed again in 1.3.2. The workflow now runs it through `bash` and the mode is corrected. Release files are signed from this version; 1.3.1 and 1.3.2 stay unsigned.
+- Advanced metadata to v1.3.3.
+
 ## 1.3.2
 
 - Fix: the job that signs release files used a folder name that clashed with the repository's own `assets` folder, so 1.3.1 shipped without signatures. Release files are now signed from 1.3.2 (see 1.3.1 for how to check one); 1.3.1 stays unsigned.
