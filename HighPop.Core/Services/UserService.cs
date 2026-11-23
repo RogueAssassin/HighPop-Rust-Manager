@@ -186,7 +186,7 @@ public class UserService
             using var r = cmd.ExecuteReader();
             if (!r.Read()) { WriteAudit(username, "login_fail", "bad password"); return false; }
             var hash = r.GetString(5);
-            if (!VerifyPassword(password, hash)) { WriteAudit(username, "login_fail", "bad password"); return false; }
+            if (!VerifyPassword(password, hash, out var needsRehash)) { WriteAudit(username, "login_fail", "bad password"); return false; }
             user = new WgsUser
             {
                 Id        = r.GetInt32(0),
@@ -197,11 +197,26 @@ public class UserService
                 LastLogin = r.IsDBNull(6) ? null : DateTime.Parse(r.GetString(6)),
             };
             RecordLogin(user.Id, user.Username, "password");
+            if (needsRehash) UpgradeHash(user.Id, password);
             return true;
         }
         catch (Exception ex) { Debug.WriteLine($"[UserService] ValidatePassword error for '{username}': {ex.Message}"); return false; } // #5
     }
 
+
+    private void UpgradeHash(int userId, string password)
+    {
+        try
+        {
+            using var db  = OpenDb();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = "UPDATE users SET password_hash=$h WHERE id=$id";
+            cmd.Parameters.AddWithValue("$h",  HashPassword(password));
+            cmd.Parameters.AddWithValue("$id", userId);
+            cmd.ExecuteNonQuery();
+        }
+        catch (Exception ex) { Debug.WriteLine($"[UserService] password hash upgrade failed: {ex.Message}"); }
+    }
     private void RecordLogin(int userId, string username, string method)
     {
         try
@@ -389,28 +404,42 @@ public class UserService
     }
 
     // ── Password hashing (PBKDF2-SHA256) ──────────────────────────────────────
+    // Stored as "pbkdf2-sha256:<iterations>:<salt>:<hash>". Hashes from before 1.2.9 are "<salt>:<hash>" at
+    // 100,000 iterations; they still verify and are rewritten at the current cost on the next successful login.
 
-    private static string HashPassword(string password)
+    internal const int CurrentIterations = 600_000;
+    private const int LegacyIterations = 100_000;
+    private const string HashPrefix = "pbkdf2-sha256";
+
+    internal static string HashPassword(string password, int iterations = CurrentIterations)
     {
         var salt  = RandomNumberGenerator.GetBytes(16);
         var hash  = Rfc2898DeriveBytes.Pbkdf2(
             Encoding.UTF8.GetBytes(password), salt,
-            iterations: 100_000, HashAlgorithmName.SHA256, outputLength: 32);
-        return Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(hash);
+            iterations, HashAlgorithmName.SHA256, outputLength: 32);
+        return $"{HashPrefix}:{iterations}:{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
     }
 
-    private static bool VerifyPassword(string password, string storedHash)
+    internal static bool VerifyPassword(string password, string storedHash, out bool needsRehash)
     {
+        needsRehash = false;
         try
         {
             var parts = storedHash.Split(':');
-            if (parts.Length != 2) return false;
-            var salt     = Convert.FromBase64String(parts[0]);
-            var expected = Convert.FromBase64String(parts[1]);
+            int iterations;
+            string saltText, hashText;
+            if (parts.Length == 2) { iterations = LegacyIterations; saltText = parts[0]; hashText = parts[1]; }
+            else if (parts.Length == 4 && parts[0] == HashPrefix && int.TryParse(parts[1], out iterations)
+                     && iterations is >= LegacyIterations and <= 10_000_000) { saltText = parts[2]; hashText = parts[3]; }
+            else return false;
+            var salt     = Convert.FromBase64String(saltText);
+            var expected = Convert.FromBase64String(hashText);
             var actual   = Rfc2898DeriveBytes.Pbkdf2(
                 Encoding.UTF8.GetBytes(password), salt,
-                iterations: 100_000, HashAlgorithmName.SHA256, outputLength: 32);
-            return CryptographicOperations.FixedTimeEquals(expected, actual);
+                iterations, HashAlgorithmName.SHA256, outputLength: 32);
+            var ok = CryptographicOperations.FixedTimeEquals(expected, actual);
+            needsRehash = ok && iterations < CurrentIterations;
+            return ok;
         }
         catch { return false; }
     }

@@ -49,3 +49,5 @@ desktop.ini
 graphify-out/
 snap/local/publish/
 *.snap
+
+.roguekit/

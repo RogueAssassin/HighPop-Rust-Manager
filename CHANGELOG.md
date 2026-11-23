@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.9
+
+- **Security: stronger password hashing.** Web dashboard passwords are now hashed with 600,000 PBKDF2-SHA256 iterations (was 100,000), matching current guidance. Existing passwords keep working and are upgraded automatically the next time each user signs in; nothing needs resetting.
+- Advanced metadata to v1.2.9.
+
 ## 1.2.8
 
 - Updated the Microsoft runtime packages (SQLite, dependency injection, performance counters) to the 10.0.15 patch release.
