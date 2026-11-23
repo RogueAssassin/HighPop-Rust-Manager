@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2
+
+- Fix: the job that signs release files used a folder name that clashed with the repository's own `assets` folder, so 1.3.1 shipped without signatures. Release files are now signed from 1.3.2 (see 1.3.1 for how to check one); 1.3.1 stays unsigned.
+- Advanced metadata to v1.3.2.
+
 ## 1.3.1
 
 - **New: signed release files.** Every release file now has a detached GPG signature (`<file>.asc`) from the same key that signs the apt repository (fingerprint `1CC16092E3B11AE7AAA718360101AA059EDB0C8C`), plus `highpop-release-key.asc`. See the install guide for how to check one. The in-app updater still checks the SHA-256 only.

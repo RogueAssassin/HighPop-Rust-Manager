@@ -400,7 +400,7 @@ jobs:
           export GNUPGHOME="$(mktemp -d)"
           printf "%s" "$APT_GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null
           export APT_GPG_KEY_ID="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
-          mkdir assets
-          gh release download "$TAG" --dir assets --pattern '*' --skip-existing
-          scripts/sign-release-assets.sh assets
-          gh release upload "$TAG" assets/*.asc --clobber
+          mkdir signing-work
+          gh release download "$TAG" --dir signing-work --pattern '*' --skip-existing
+          scripts/sign-release-assets.sh signing-work
+          gh release upload "$TAG" signing-work/*.asc --clobber
