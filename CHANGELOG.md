@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0
+
+- **Security: the Web API now listens on this computer only by default.** A new **Allow other computers on the network to connect** setting (and `highpop-server setup --allow-remote`) opts in; slave mode always allows the network. Installs that already had the Web API or slave mode switched on keep working as before. New installs no longer open a firewall rule or need administrator rights for the API until you allow network access.
+- Advanced metadata to v1.3.0.
+
 ## 1.2.9
 
 - **Security: stronger password hashing.** Web dashboard passwords are now hashed with 600,000 PBKDF2-SHA256 iterations (was 100,000), matching current guidance. Existing passwords keep working and are upgraded automatically the next time each user signs in; nothing needs resetting.

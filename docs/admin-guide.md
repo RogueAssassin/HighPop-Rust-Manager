@@ -164,6 +164,7 @@ name and choose **Copy User ID**. Keep the bot's channel staff-only as well.
 controlling servers on other PCs) and, if you enable it, a browser dashboard. Every `/api` request needs
 the API token or a dashboard user's token.
 
+- A new install only answers on this computer. Tick **Allow other computers on the network to connect** (or run `highpop-server setup --allow-remote`) to reach it from elsewhere; slave mode always allows it.
 - The API is plain HTTP. HighPop adds a Windows Firewall rule for its port that admits only the local
   subnet, and removes the rule when the API stops or the port changes. To use it across the internet,
   put it behind a VPN or an HTTPS reverse proxy and open the port yourself.

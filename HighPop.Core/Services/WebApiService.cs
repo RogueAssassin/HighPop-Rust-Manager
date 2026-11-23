@@ -63,7 +63,7 @@ public class WebApiService : IDisposable
     /// <summary>True when the web dashboard and full REST API are enabled. False = slave-only mode (master/slave comms still work).</summary>
     public bool DashboardEnabled { get; set; } = false;
 
-    public void Start(int port, string token)
+    public void Start(int port, string token, bool allowRemote = false)
     {
         if (port is <= 0 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(port), "Web API port must be between 1 and 65535.");
@@ -72,6 +72,20 @@ public class WebApiService : IDisposable
         Stop();
         Port  = port;
         Token = token;
+
+        if (!allowRemote)
+        {
+            // Default: answer only on this machine. Needs no firewall rule and no administrator rights.
+            _listener = new HttpListener();
+            _listener.Prefixes.Add($"http://localhost:{port}/");
+            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            _listener.Start();
+            BoundToAllInterfaces = false;
+            _cts        = new CancellationTokenSource();
+            _serverTask = Task.Run(() => ListenLoop(_cts.Token));
+            IsRunning   = true;
+            return;
+        }
 
         // Ensure Windows Firewall allows inbound traffic on this port
         AddFirewallRule(port);

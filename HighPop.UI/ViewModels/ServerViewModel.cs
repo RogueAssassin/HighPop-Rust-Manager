@@ -1696,7 +1696,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
         catch (Exception ex) { AppendLog($"[Connect] {ex.Message}", ConsoleMessageType.Error); }
     }
 
-    public bool HasShareableStatusLink => _config.WebApiRequired && _config.WebApiPort > 0;
+    public bool HasShareableStatusLink => _config.WebApiRequired && _config.WebApiBindAll && _config.WebApiPort > 0;
 
     [RelayCommand]
     private void CleanupJunkFiles()
@@ -1737,7 +1737,7 @@ public partial class ServerViewModel : BaseViewModel, IDisposable
     {
         if (!HasShareableStatusLink)
         {
-            AppendLog("[Status] Enable the Web Dashboard in Settings to get a shareable link.", ConsoleMessageType.Warning);
+            AppendLog("[Status] Enable the Web Dashboard and allow network access in Settings to get a shareable link.", ConsoleMessageType.Warning);
             return;
         }
         var link = $"http://<your-ip>:{_config.WebApiPort}/status/{Server.Id}";

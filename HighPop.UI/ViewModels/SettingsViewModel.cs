@@ -51,6 +51,7 @@ public partial class SettingsViewModel : BaseViewModel
 
     // ── Web API ───────────────────────────────────────────────────────────────
     [ObservableProperty] private bool   _webApiEnabled;
+    [ObservableProperty] private bool   _webApiAllowRemote;
     [ObservableProperty] private int    _webApiPort    = 8765;
     [ObservableProperty] private string _webApiToken   = string.Empty;
     [ObservableProperty] private string _webApiStatus  = string.Empty;
@@ -141,6 +142,7 @@ public partial class SettingsViewModel : BaseViewModel
         SteamPassword      = _config.SteamPassword;
         BotStatus          = _bot.IsRunning ? "🟢 Running" : "⚫ Stopped";
         WebApiEnabled            = _config.WebApiEnabled;
+        WebApiAllowRemote        = _config.WebApiAllowRemote;
         WebApiPort               = _config.WebApiPort;
         WebApiToken              = _config.WebApiToken;
         WebApiStatus             = BuildWebApiStatus();
@@ -244,6 +246,7 @@ public partial class SettingsViewModel : BaseViewModel
         _config.SteamLogin             = SteamLogin;
         _config.SteamPassword          = SteamPassword;
         _config.WebApiEnabled          = WebApiEnabled;
+        _config.WebApiAllowRemote      = WebApiAllowRemote;
         _config.WebApiPort             = WebApiPort;
         _config.WebApiToken            = string.IsNullOrWhiteSpace(WebApiToken)
             ? Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
@@ -275,10 +278,11 @@ public partial class SettingsViewModel : BaseViewModel
             // keep it off the UI thread so the Settings window stays responsive.
             var port = WebApiPort;
             var token = WebApiToken;
+            var bindAll = WebApiAllowRemote || SlaveMode;
             try
             {
                 SettingsStatus = "Starting remote access...";
-                await Task.Run(() => _webApi.Start(port, token));
+                await Task.Run(() => _webApi.Start(port, token, bindAll));
                 WebApiStatus = BuildWebApiStatus();
             }
             catch (Exception ex)
@@ -396,6 +400,7 @@ public partial class SettingsViewModel : BaseViewModel
             ok ? DialogImage.Information : DialogImage.Warning);
     }
 
+    partial void OnWebApiAllowRemoteChanged(bool value) => OnPropertyChanged(nameof(SlaveConnectionUrl));
     partial void OnWebApiPortChanged(int value) => OnPropertyChanged(nameof(SlaveConnectionUrl));
     partial void OnSlaveModeChanged(bool value) => OnPropertyChanged(nameof(SlaveConnectionUrl));
 
@@ -428,9 +433,10 @@ public partial class SettingsViewModel : BaseViewModel
         OnPropertyChanged(nameof(WebApiIsRunning));
         OnPropertyChanged(nameof(WebApiStatusIsWarning));
         if (!_webApi.IsRunning) return "Stopped";
-        if (!_webApi.BoundToAllInterfaces)
+        if (!_webApi.BoundToAllInterfaces && (_config.WebApiBindAll))
             return $"localhost:{_webApi.Port} only — run HighPop as Administrator or: " +
                    $"netsh http add urlacl url=http://+:{_webApi.Port}/ user=Everyone";
+        if (!_webApi.BoundToAllInterfaces) return $"Running on port {_webApi.Port} (this machine only)";
         return $"Running on port {_webApi.Port}  (network reachable)";
     }
 

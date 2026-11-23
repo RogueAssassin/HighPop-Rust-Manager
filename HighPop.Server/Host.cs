@@ -84,8 +84,8 @@ internal sealed class Host
         }
         try
         {
-            api.Start(_config.WebApiPort, _config.WebApiToken);
-            Log($"Web API listening on port {_config.WebApiPort}");
+            api.Start(_config.WebApiPort, _config.WebApiToken, _config.WebApiBindAll);
+            Log($"Web API listening on port {_config.WebApiPort} ({(_config.WebApiBindAll ? "network" : "this machine only")})");
         }
         catch (Exception ex) { Log($"Web API could not start: {ex.Message}"); }
     }
