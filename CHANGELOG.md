@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- **New: signed release files.** Every release file now has a detached GPG signature (`<file>.asc`) from the same key that signs the apt repository (fingerprint `1CC16092E3B11AE7AAA718360101AA059EDB0C8C`), plus `highpop-release-key.asc`. See the install guide for how to check one. The in-app updater still checks the SHA-256 only.
+- Advanced metadata to v1.3.1.
+
 ## 1.3.0
 
 - **Security: the Web API now listens on this computer only by default.** A new **Allow other computers on the network to connect** setting (and `highpop-server setup --allow-remote`) opts in; slave mode always allows the network. Installs that already had the Web API or slave mode switched on keep working as before. New installs no longer open a firewall rule or need administrator rights for the API until you allow network access.

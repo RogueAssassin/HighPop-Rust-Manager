@@ -374,3 +374,33 @@ jobs:
         if: steps.build.outputs.have_key == 'true'
         id: deploy
         uses: actions/deploy-pages@v5
+
+  sign-assets:
+    # Adds a detached GPG signature (.asc) for every release file, signed with the same key as the apt repository, and
+    # the public key. A failure here leaves the finished release untouched.
+    needs: [prepare, linux-x64]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Sign and upload the release files
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if [ -z "$APT_GPG_PRIVATE_KEY" ]; then echo "::notice::APT_GPG_PRIVATE_KEY is not set, so the release files are not signed."; exit 0; fi
+          export GNUPGHOME="$(mktemp -d)"
+          printf "%s" "$APT_GPG_PRIVATE_KEY" | gpg --batch --import 2>/dev/null
+          export APT_GPG_KEY_ID="$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')"
+          mkdir assets
+          gh release download "$TAG" --dir assets --pattern '*' --skip-existing
+          scripts/sign-release-assets.sh assets
+          gh release upload "$TAG" assets/*.asc --clobber
